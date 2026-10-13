@@ -1010,7 +1010,10 @@ const SF = (() => {
     out.odFrom = odl ? odl.from : null; out.odFamily = odl ? odl.family : '';
     if (out.sub && !(out.sub.usableAs || []).includes(q.op)) out.notUsable = true;
     if (out.sub && !d0) out.noOpDefaults = true;
-    if (d0) { ['apD', 'aeD', 'coolant', 'note'].forEach(f => { if (out[f] === undefined && !blank(d0[f])) { out[f] = d0[f]; out.src[f] = { tier: 9.5, key: 'sub-cycle opDefaults' }; } }); out.vcMult = blank(d0.vcMult) ? 1 : +d0.vcMult; }
+    /* Phase 7: ap / ae order is user override › sub-cycle opDefaults (its own, then its family's) › baseline row › family default › code default,
+       so a sub-cycle's ap / ae beat a baseline row; coolant and note still come from the most specific baseline row first. Rules (below) apply last. */
+    if (d0) { ['apD', 'aeD'].forEach(f => { if (!blank(d0[f])) { if (out[f] !== undefined && out.src[f]) out.src[f].shadowedBy = 'sub-cycle'; out[f] = d0[f]; out.src[f] = { tier: 9.5, key: 'sub-cycle opDefaults' }; } });
+      ['coolant', 'note'].forEach(f => { if (out[f] === undefined && !blank(d0[f])) { out[f] = d0[f]; out.src[f] = { tier: 9.5, key: 'sub-cycle opDefaults' }; } }); out.vcMult = blank(d0.vcMult) ? 1 : +d0.vcMult; }
     else out.vcMult = 1;
     if (Array.isArray(q.rules) && q.rules.length) applyRules(out, q.rules, { material: q.material, iso: q.iso, tool: q.tool, op: q.op, band: q.band, diameter: q.diameter });
     return out;
@@ -3372,7 +3375,7 @@ const xplBtn=o=>`<button class="xpl" data-xpl="${xplReg(o)}" title="Explain this
 const XF={apD:'ap ×Ø',aeD:'ae ×Ø',apDmax:'ap limit ×Ø',Vc:'Vc (absolute)',fz:'fz (absolute)',coolant:'coolant',note:'note',r_D_band:'r/D band',vcMult:'Vc multiplier',fzMode:'fz mode'};
 function xplRowTxt(r){return ['material','subcycle','tool','op','band','r_D_band'].filter(k=>r[k]!=null&&r[k]!=='').map(k=>`${k} <b>${esc(String(r[k]))}</b>`).join(' · ')}
 function xplEng(w){const e=w&&w.eng;if(!e)return '';const src=e.src||{},od=e.odFrom||{},rows=[];
- const fields=['apD','aeD','apDmax','Vc','fz','coolant','note','vcMult'];
+ const fields=['apD','aeD','apDmax','Vc','fz','coolant','note','vcMult'];/* Phase 7: ap / ae — sub-cycle values beat a baseline row */
  fields.forEach(f=>{const s=src[f];let v,where;
   if(f==='vcMult'){if(!e.subName&&!(od.vcMult))return;v=e.vcMult;where=od.vcMult==='family'?`family default (${esc(e.odFamily)})`:od.vcMult==='sub-cycle'?`sub-cycle ${esc(e.subName)}`:'none set (×1)'}
   else if(!s){return}
@@ -3579,7 +3582,7 @@ function calc6Html(){const d=C6.def||c6Defaults(),t=d.t,v=CALCV;if(!t||!v.mat)re
   <div class="c6body"><div class="c6fields">${rows}</div><div class="c6svg">${c6Svg()}</div></div>
   <div class="out c6louds">${loud}</div>
   <div class="row" style="margin-top:10px"><button class="b s" id="c6reset">Reset</button><button class="b" id="c6log">Send to Log cut</button><button class="b s" id="c6save">Save as preset</button>${presets.length?`<select id="c6pre" style="max-width:220px"><option value="">Load a preset…</option>${presets.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('')}</select>`:''}<span class="mu" id="c6msg"></span></div>`}
-function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.tag,v.mach,v.band,C6.op,C6.adv.coolant,(L.calc_fields||[]).length,JSON.stringify(SET.tiers||null)])}
+function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.tag,v.mach,v.band,C6.op,C6.adv.coolant,(L.calc_fields||[]).length,JSON.stringify(SET.tiers||null),JSON.stringify(L.rules||[]),SET.raK,(L.baseline||[]).length])}
 function drawCalc6(force){const h=$('#calc6');if(!h)return;const sg=c6Sig();if(force||sg!==C6.sig){C6.sig=sg;c6Reset()}h.innerHTML=calc6Html()}
 /* live update without re-rendering the field being typed in */
 function c6Refresh(skip){const ck=c6Checks();calcFields().forEach(r=>{const el=document.getElementById('c6_'+r.key);if(el&&el!==skip){el.value=C6_LOUD.includes(r.key)&&ck.warn.length?'':c6Fmt(r.key,C6.st[r.key])}const s=document.querySelector(`[data-c6s="${r.key}"]`);if(s)s.innerHTML=c6Tag(r.key);
@@ -4304,7 +4307,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.10';
+const APP_V='2026-10-13.11';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
