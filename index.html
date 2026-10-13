@@ -2498,6 +2498,21 @@ async function load(){
    db = (typeof DB !== 'undefined') ? DB : null;
   sample = (typeof AI !== 'undefined') ? ((m,o)=>AI.ask(m,o)) : null;
   dl = dlShim;
+  /* Phase 1: if ./sheets.json exists with a real Sheet ID, load the library tables from that Google Sheet.
+     On any failure, the IndexedDB values loaded below are kept for the tables that did not come from the Sheet. */
+  let sheetData = null;
+  try{
+    const r = await fetch('./sheets.json',{cache:'no-store'});
+    if(r.ok){
+      const cfg = await r.json();
+      if(cfg&&cfg.id&&cfg.id!=='PASTE_ID_HERE'){
+        SHEET_CFG={id:cfg.id,tabs:Array.isArray(cfg.tabs)?cfg.tabs:[]};
+        sheetData=await loadSheets(cfg.id,SHEET_CFG.tabs);
+        Object.entries(sheetData).forEach(([k,rows])=>{if(Object.prototype.hasOwnProperty.call(L,k))L[k]=rows});
+        try{localStorage.setItem('sheets.lastSync',new Date().toISOString())}catch(e){}
+      }
+    }
+  }catch(e){console.warn('sheets.json:',e);sheetData=null}
   if(!db){
     OFFLINE=true;Object.assign(L,JSON.parse(JSON.stringify(DEFAULT_LIB)));
     TD={items:TDSEED.map((x,i)=>({id:'s'+i,cat:x[0],text:x[1],pri:x[2],done:false,note:''}))};
