@@ -2580,7 +2580,7 @@ const AI = {
    Key from localStorage 'gemini.key' (Library → Setup). Streams over SSE; the app's TOOLS become Gemini
    functionDeclarations (inputSchema → parameters). Tool calls are run here and their results sent back until the
    model answers in text. onText receives the whole answer so far, as the old client did. */
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-3.8-flash';
 const GEMINI_URL = m => 'https://generativelanguage.googleapis.com/v1beta/models/' + m + ':streamGenerateContent?alt=sse';
 const GEM_SCHEMA_KEYS = ['type', 'description', 'enum', 'properties', 'required', 'items', 'format', 'nullable', 'minimum', 'maximum', 'minItems', 'maxItems'];
 function geminiSchema(s){
@@ -4327,7 +4327,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.13';
+const APP_V='2026-10-13.14';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
