@@ -287,6 +287,8 @@ table.gt .l1 .k b{font-size:calc(20px * var(--zoom, 1))}table.gt td.id .big{font
 table.gt .l2,table.gt td.tl{font-size:calc(13px * var(--zoom, 1))}table.gt .l3,table.gt .l1 .k i{font-size:calc(12px * var(--zoom, 1))}
 @media(max-width:860px){.out b{font-size:calc(24px * var(--zoom, 1))}.top h1{font-size:calc(22px * var(--zoom, 1))}}
 details.cpsec{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;margin:6px 0}details.cpsec>summary{cursor:pointer;padding:2px 0}details.cpsec[open]>summary{margin-bottom:6px}
+.fxh{cursor:grab;user-select:none;padding:0 6px 0 0;color:var(--mu,#888);font-size:18px}.fxh:active{cursor:grabbing}
+.fxgw{display:flex;align-items:flex-start;gap:2px}.fxgw>.fxh{padding-top:10px}
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
@@ -2296,6 +2298,7 @@ const setupLine=c=>`${c.material} | Tool: ${c.tool} | Vc: ${c.vc??''} | RPM: ${c
 /* ---------- speeds-and-feeds engine context ---------- */
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
 let SET={ra:1.6,pref:'balanced',raK:1};/* lib/settings (raK is stored as ra_cusp_k) */
+let SETDOC={};/* the whole lib/settings document (Phase 3b: formulaGroupOrder) */
 function sfctx(matName,machine,coolant){const m=L.materials.find(x=>x.Material===matName)||L.materials[0];const k=(m&&m.Material)+'|'+(machine||'')+'|'+(coolant||'');const mc=L.machines.find(x=>x.Machine===machine)||{};const c=SFC[k]||(SFC[k]={});if(c.mat!==m||c.tools!==L.tools||c.cuts!==CUTS||c.materials!==L.materials||c.machines!==L.machines||c.baseline!==L.baseline||c.bands!==L.bands||c.rules!==L.rules||c.raK!==SET.raK)SF.invalidate(c);return Object.assign(c,{tools:L.tools,cuts:CUTS,materials:L.materials,machines:L.machines,baseline:L.baseline,bands:L.bands,rules:L.rules,mat:m,cap:capOf(machine),sfxOf:AUD.sfxOf,parse:AUD.parseDesc,tree:CTREE(),coolant:coolant||'Flood',ra:+SET.ra||1.6,raK:+SET.raK||1,pref:SET.pref||'balanced',kw:+mc['Spindle Power (kW)']||0})}
 function sfLookup(matName,code,op,machine){const t=tool(code);if(!t||!matName||!L.materials.length)return null;const ctx=sfctx(matName,machine),sfx=AUD.sfxOf(code),d=+t['Diameter (mm)'];
  const secs=SF.build(ctx).filter(s=>s.sfx===sfx||(sfx==='HSS'&&s.sfx==='HSS'));const s=secs[0];if(!s)return null;if(s.kind==='blocked')return{warn:s.note};
@@ -2635,8 +2638,11 @@ async function load(){
     TD={items:TDSEED.map((x,i)=>({id:'s'+i,cat:x[0],text:x[1],pri:x[2],done:false,note:''}))};
     $('#offc').hidden=false;SF.invalidate();setStatus(`Offline — starter library (${L.tools.length} tools)`,false);renderAll();return}
   try{
-    const RAW={};for(const k of Object.keys(L)){try{RAW[k]=await readLib(k);if(sheetData&&Object.prototype.hasOwnProperty.call(sheetData,k)){RAW[k]={rows:L[k],v:LIB_V,exists:true}}else{L[k]=RAW[k].rows}}catch(e){RAW[k]={rows:L[k]||[],v:LIB_V,exists:false}}}
-    try{const s=await db.doc('lib/settings').get();if(s.exists){const d=dat(s);SET={ra:+d.ra>0?+d.ra:1.6,pref:['balanced','life','cycle'].includes(d.pref)?d.pref:'balanced',raK:+d.ra_cusp_k>0?+d.ra_cusp_k:1}}}catch(e){}
+    const RAW={};for(const k of Object.keys(L)){try{RAW[k]=await readLib(k);if(sheetData&&Object.prototype.hasOwnProperty.call(sheetData,k)){
+      /* Phase 3b: the Sheet has no order column — keep the card order saved in lib/formulas */
+      if(k==='formulas'){const om={};(RAW[k].rows||[]).forEach(x=>{if(x&&x.key&&x.order!=null&&x.order!=='')om[x.key]=x.order});L[k]=(L[k]||[]).map(x=>x&&om[x.key]!=null&&(x.order==null||x.order==='')?Object.assign({},x,{order:om[x.key]}):x)}
+      RAW[k]={rows:L[k],v:LIB_V,exists:true}}else{L[k]=RAW[k].rows}}catch(e){RAW[k]={rows:L[k]||[],v:LIB_V,exists:false}}}
+    try{const s=await db.doc('lib/settings').get();if(s.exists){const d=dat(s);SETDOC=d||{};SET={ra:+d.ra>0?+d.ra:1.6,pref:['balanced','life','cycle'].includes(d.pref)?d.pref:'balanced',raK:+d.ra_cusp_k>0?+d.ra_cusp_k:1}}}catch(e){}
     try{const s=await db.doc('lib/auditmeta').get();AM=s.exists?{dismissed:[],resolved:{},...dat(s)}:{dismissed:[],resolved:{}}}catch(e){}
     try{const q=await db.collection('changelog').get();CLOGDOCS={};q.docs.forEach(d=>CLOGDOCS[d.id]=(dat(d).entries||[]));CLOG={entries:Object.values(CLOGDOCS).flat().sort((a,b)=>String(a.at).localeCompare(String(b.at)))}}catch(e){}
     /* v2 seed documents: created once, on first run, from the code defaults; edited in Library → Data afterwards */
@@ -3446,7 +3452,7 @@ async function reloadSheets(btn){const msg=document.getElementById('sh_msg');if(
   SF.invalidate();renderAll();toast(`Reloaded ${n} tables from the Sheet ✓`);
  }catch(e){if(msg)msg.textContent='Failed: '+(e.message||e);toast('Reload failed: '+(e.message||e))}}
 async function saveSettings(){SF.invalidate();renderCheat();if($('#sg'))drawSG();if(OFFLINE||!db){if($('#set_msg'))$('#set_msg').textContent='Applied for this session — offline, not saved';return toast('Offline — not saved')}
-try{await db.doc('lib/settings').set({v:LIB_V,ra:SET.ra,pref:SET.pref,ra_cusp_k:SET.raK});if($('#set_msg'))$('#set_msg').textContent='Saved ✓';toast('Setup saved')}catch(e){if($('#set_msg'))$('#set_msg').textContent='Save failed: '+(e.message||e.code)}}
+try{await db.doc('lib/settings').update({v:LIB_V,ra:SET.ra,pref:SET.pref,ra_cusp_k:SET.raK});if($('#set_msg'))$('#set_msg').textContent='Saved ✓';toast('Setup saved')}catch(e){if($('#set_msg'))$('#set_msg').textContent='Save failed: '+(e.message||e.code)}}
 function drawPrompts(){
  const keys=[['ask.core','Ask AI — core instructions'],['ask.knowledge','Ask AI — machining knowledge'],['learn.tutor','Learn AI — tutor instructions']];
  const cur=k=>{const p=(L.prompts||[]).find(x=>x&&x.key===k);return (p&&p.text)||promptFor(k)};
@@ -3751,13 +3757,18 @@ function drawCatAudit(){const R=CA.rows||[];
 /* ---------- Formulas (Phase 7): lib/formulas, editable; the seed is FX.SEED (the calculators before v2 + the Phase 2 Ra fix) ---------- */
 const cloneF=o=>JSON.parse(JSON.stringify(o));
 /* stored formulas first (in their order), then any seed formula the store does not have yet */
-const FXL=()=>{const st=(L.formulas||[]).filter(x=>x&&x.key),have=new Set(st.map(x=>x.key));return st.concat(FX.SEED.filter(x=>!have.has(x.key)))};
-const FXGROUPS=()=>[...new Set([...FX.GROUPS,...FXL().map(x=>x.group).filter(Boolean)])];
+const FXL=()=>{const st=(L.formulas||[]).filter(x=>x&&x.key),have=new Set(st.map(x=>x.key)),all=st.concat(FX.SEED.filter(x=>!have.has(x.key)));
+ /* Phase 3b: a saved card order (order field on each row) wins; rows without one keep their natural place after the ordered ones */
+ return all.map((F,i)=>[F,isFinite(+F.order)&&F.order!==''&&F.order!=null?+F.order:1e6+i]).sort((a,b)=>a[1]-b[1]).map(x=>x[0])};
+const FXGROUPS=()=>{const g=[...new Set([...FX.GROUPS,...FXL().map(x=>x.group).filter(Boolean)])],o=Array.isArray(SETDOC.formulaGroupOrder)?SETDOC.formulaGroupOrder:[];
+ return g.map((x,i)=>[x,o.includes(x)?o.indexOf(x):1e6+i]).sort((a,b)=>a[1]-b[1]).map(x=>x[0])};
+let FXOPEN=null;/* Phase 3b: which formula groups are open (default: the first only) */
+const fxNoOrder=F=>{const c=Object.assign({},F);delete c.order;return c};
 let FXED=null;/* {key, F (draft)} while a formula is being edited */
 const fxVal=(r)=>r.text!=null?esc(r.text):isFinite(r.value)?(r.dp!=null?(+r.value).toFixed(r.dp):String(+(+r.value).toPrecision(6))):'–';
-function fxCard(F,i){const ed=FXED&&FXED.key===F.key,seed=FX.SEED.find(x=>x.key===F.key),changed=seed&&JSON.stringify(seed)!==JSON.stringify(F),stored=(L.formulas||[]).some(x=>x.key===F.key);
+function fxCard(F,i){const ed=FXED&&FXED.key===F.key,seed=FX.SEED.find(x=>x.key===F.key),changed=seed&&JSON.stringify(seed)!==JSON.stringify(fxNoOrder(F)),stored=(L.formulas||[]).some(x=>x.key===F.key);
  if(ed)return `<div class="card" id="fc${i}">${fxEditor(i)}</div>`;
- return `<div class="card" id="fc${i}"><div class="row" style="align-items:baseline"><h2 style="flex:1;margin:0">${esc(F.name)}${changed?' <span class="tag" title="Edited — differs from the built-in version">edited</span>':''}${!seed?' <span class="tag">yours</span>':''}</h2><button class="b s sm" data-fxe="${esc(F.key)}">Edit</button>${changed||(!seed&&stored)?`<button class="b s sm" data-fxr="${esc(F.key)}" title="${seed?'Restore the built-in version':'Delete this formula'}">${seed?'Reset to default':'Delete'}</button>`:''}</div>
+ return `<div class="card" id="fc${i}"><div class="row" style="align-items:baseline"><span class="fxh" draggable="true" data-fxdrag="${esc(F.key)}" title="Drag to reorder" aria-label="Drag to reorder ${esc(F.name)}">⠿</span><h2 style="flex:1;margin:0">${esc(F.name)}${changed?' <span class="tag" title="Edited — differs from the built-in version">edited</span>':''}${!seed?' <span class="tag">yours</span>':''}</h2><button class="b s sm" data-fxe="${esc(F.key)}">Edit</button>${changed||(!seed&&stored)?`<button class="b s sm" data-fxr="${esc(F.key)}" title="${seed?'Restore the built-in version':'Delete this formula'}">${seed?'Reset to default':'Delete'}</button>`:''}</div>
  <div class="g" style="margin-top:8px">${(F.inputs||[]).map(x=>`<div title="${esc(x.hint||'')}"><label for="fi_${i}_${esc(x.k)}">${esc(x.label||x.k)}</label>${x.presets&&x.presets.length?`<select aria-label="${esc(x.label)} — preset" data-pre="${i}-${esc(x.k)}"><option value="">Preset…</option>${x.presets.map(q=>`<option value="${q[1]}"${+q[1]===+x.dflt?' selected':''}>${esc(q[0])}</option>`).join('')}</select>`:''}<input id="fi_${i}_${esc(x.k)}" data-i="${i}" data-k="${esc(x.k)}" type="number" step="any" inputmode="decimal" value="${esc(x.setting==='raK'?(SET.raK||x.dflt):x.dflt)}"${x.min!=null?` min="${x.min}"`:''}></div>`).join('')}</div><div class="out" id="r${i}"></div><p class="mu">${esc(F.doc||'')}</p></div>`}
 /* editor: plain fields; outputs are "key | label | expression | decimals" or "key | label | r<=3 → text; r<=5 → text; else → text" */
 const fxOutLine=o=>o.cases?`${o.k} | ${o.label||''} | ${o.cases.map(c=>`${c.when} → ${c.text}`).join('; ')}${o.else!=null?'; else → '+o.else:''}`:`${o.k} | ${o.label||''} | ${o.expr||''} | ${o.dp!=null?o.dp:''}${o.hide?' | hidden':''}`;
@@ -3778,9 +3789,10 @@ function fxEditor(i){const F=FXED.F,err=FX.check(F);
  <p class="row"><button class="b" data-fxs="1"${err?' disabled':''}>Save</button><button class="b s" data-fxx="1">Cancel</button></p>`}
 const fxChk=err=>{if(err)return `<div class="note e">⚠ ${esc(err)} — fix it to save.</div>`;const r=FX.run(FXED.F,{});return `<div class="note o">✓ Runs on the default inputs: ${r.rows.filter(x=>!x.hide).map(x=>`${esc(x.label)} <b>${fxVal(x)}</b>`).join(' · ')}</div>`};
 async function fxSaveAll(list,why,key,from,to){if(OFFLINE||!db)return toast('Offline — not saved');await writeLib('formulas',list);L.formulas=list;logChange('formulas',key,'formula',from,to,'Formulas',why);await saveCLOG();renderForm();toast('Formula saved')}
-function renderForm(){const all=FXL(),G=FXGROUPS();
- $('#form').innerHTML=`<div class="cs"><nav class="sb">${G.map(g=>{const fs=all.map((F,i)=>[F,i]).filter(([F])=>(F.group||G[0])===g);return fs.length?`<a class="h">${esc(g)}</a>`+fs.map(([F,i])=>`<a data-j="fc${i}">${esc(F.name)}</a>`).join(''):''}).join('')}</nav><div>`+
-  G.map((g,n)=>{const fs=all.map((F,i)=>[F,i]).filter(([F])=>(F.group||G[0])===g);return fs.length?`<details open id="g${n}" style="margin-bottom:12px"><summary class="gs">${esc(g)}</summary>`+fs.map(([F,i])=>fxCard(F,i)).join('')+'</details>':''}).join('')+'</div></div>';
+function renderForm(){const all=FXL(),G=FXGROUPS();if(!FXOPEN)FXOPEN=new Set(G.filter(g=>all.some(F=>(F.group||G[0])===g)).slice(0,1));
+ const custom=all.some(F=>F.order!=null&&F.order!=='')||(Array.isArray(SETDOC.formulaGroupOrder)&&SETDOC.formulaGroupOrder.length);
+ $('#form').innerHTML=`<div class="row noprint" style="margin-bottom:8px"><button class="b s sm" id="fx_coll">Collapse all</button><button class="b s sm" id="fx_exp">Expand all</button><button class="b s sm" id="fx_rdo"${custom?'':' disabled'}>Restore default order</button><span class="mu">Drag ⠿ to reorder formulas within a group, or a group heading to move the group.</span></div><div class="cs"><nav class="sb">${G.map(g=>{const fs=all.map((F,i)=>[F,i]).filter(([F])=>(F.group||G[0])===g);return fs.length?`<a class="h">${esc(g)}</a>`+fs.map(([F,i])=>`<a data-j="fc${i}">${esc(F.name)}</a>`).join(''):''}).join('')}</nav><div>`+
+  G.map((g,n)=>{const fs=all.map((F,i)=>[F,i]).filter(([F])=>(F.group||G[0])===g);return fs.length?`<div class="fxgw" data-fxgw="${esc(g)}"><span class="fxh" draggable="true" data-fxgdrag="${esc(g)}" title="Drag to move this group" aria-label="Drag to move group ${esc(g)}">⠿</span><details${FXOPEN.has(g)?' open':''} id="g${n}" data-fxg="${esc(g)}" style="margin-bottom:12px;flex:1;min-width:0"><summary class="gs">${esc(g)}</summary>`+fs.map(([F,i])=>fxCard(F,i)).join('')+'</details></div>':''}).join('')+'</div></div>';
  const upd=i=>{const F=all[i],h=$('#r'+i);if(!h)return;const v={};$$(`#form input[data-i="${i}"]`).forEach(e=>v[e.dataset.k]=e.value===''?'':+e.value);const r=FX.run(F,v);
   h.innerHTML=r.rows.filter(x=>!x.hide).map(x=>`<div>${esc(x.label)}<b${x.text!=null?' style="font-size:16px"':''}>${fxVal(x)}</b></div>`).join('')+(r.err?`<div class="bad" style="font-size:13px">${esc(r.err)}</div>`:'')};
  all.forEach((F,i)=>upd(i));
@@ -3792,9 +3804,32 @@ function renderForm(){const all=FXL(),G=FXGROUPS();
  $('#form').onclick=async e=>{const d=e.target.dataset||{};
   if(d.fxe){FXED={key:d.fxe,F:cloneF(all.find(x=>x.key===d.fxe))};renderForm();const c=document.querySelector('[data-fxf="name"]');if(c)c.closest('.card').scrollIntoView({block:'start'});return}
   if(d.fxx){FXED=null;renderForm();return}
+  if(e.target.id==='fx_coll'||e.target.id==='fx_exp'){const o=e.target.id==='fx_exp';$$('#form details[data-fxg]').forEach(x=>x.open=o);FXOPEN=new Set(o?G:[]);return}
+  if(e.target.id==='fx_rdo'){const b=e.target;if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Restore? Click again';setTimeout(()=>{if(b.isConnected){b.dataset.sure='';b.textContent='Restore default order'}},3000);return}
+   if(OFFLINE||!db)return toast('Offline — not saved');const list=(L.formulas||[]).filter(x=>x&&x.key).map(fxNoOrder),og=SETDOC.formulaGroupOrder||[];
+   try{await writeLib('formulas',list);L.formulas=list;await db.doc('lib/settings').update({formulaGroupOrder:null});SETDOC.formulaGroupOrder=null;logChange('formulas','(all)','order','custom','default','Formulas','Restore default order'+(og.length?' (groups too)':''));await saveCLOG();renderForm();toast('Default order restored')}catch(x){toast('Save failed: '+(x.message||x.code))}return}
   if(d.fxs&&FXED){const err=FX.check(FXED.F);if(err)return toast(err);const list=FXL().map(F=>F.key===FXED.key?FXED.F:F),old=all.find(x=>x.key===FXED.key);const k=FXED.key;FXED=null;await fxSaveAll(list,'edited',k,JSON.stringify(old.out),JSON.stringify(list.find(x=>x.key===k).out));return}
   if(d.fxr){const seed=FX.SEED.find(x=>x.key===d.fxr),b=e.target;if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent=seed?'Reset? Click again':'Delete? Click again';setTimeout(()=>{if(b.isConnected){b.dataset.sure='';b.textContent=seed?'Reset to default':'Delete'}},3000);return}
-   const cur=all.find(x=>x.key===d.fxr),list=seed?FXL().map(F=>F.key===d.fxr?cloneF(seed):F):FXL().filter(F=>F.key!==d.fxr);await fxSaveAll(list,seed?'reset to default':'deleted',d.fxr,JSON.stringify(cur.out),seed?JSON.stringify(seed.out):'');return}}}
+   const cur=all.find(x=>x.key===d.fxr),list=seed?FXL().map(F=>F.key===d.fxr?Object.assign(cloneF(seed),F.order!=null&&F.order!==''?{order:F.order}:{}):F):FXL().filter(F=>F.key!==d.fxr);await fxSaveAll(list,seed?'reset to default':'deleted',d.fxr,JSON.stringify(cur.out),seed?JSON.stringify(seed.out):'');return}}}
+/* Phase 3b: drag and drop — formula cards within their group (order field in lib/formulas), groups (lib/settings.formulaGroupOrder) */
+let FXDRAG=null;
+document.addEventListener('toggle',e=>{const d=e.target;if(d&&d.dataset&&d.dataset.fxg&&FXOPEN){if(d.open)FXOPEN.add(d.dataset.fxg);else FXOPEN.delete(d.dataset.fxg)}},true);
+document.addEventListener('dragstart',e=>{const d=e.target&&e.target.closest&&(e.target.closest('[data-fxdrag],[data-fxgdrag]')||{}).dataset;if(!d)return;if(d.fxdrag)FXDRAG={card:d.fxdrag};else if(d.fxgdrag)FXDRAG={group:d.fxgdrag};else return;try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',d.fxdrag||d.fxgdrag)}catch(x){}});
+document.addEventListener('dragover',e=>{if(!FXDRAG)return;const t=FXDRAG.card?e.target.closest&&e.target.closest('#form .card[id^="fc"]'):e.target.closest&&e.target.closest('#form [data-fxgw]');if(t)e.preventDefault()});
+document.addEventListener('dragend',()=>{FXDRAG=null});
+document.addEventListener('drop',async e=>{if(!FXDRAG)return;const drag=FXDRAG;FXDRAG=null;
+ if(drag.card){const t=e.target.closest&&e.target.closest('#form .card[id^="fc"]');if(!t)return;e.preventDefault();const tk=t.querySelector('[data-fxdrag]')&&t.querySelector('[data-fxdrag]').dataset.fxdrag;if(!tk||tk===drag.card)return;await fxMoveCard(drag.card,tk)}
+ else{const t=e.target.closest&&e.target.closest('#form [data-fxgw]');if(!t||t.dataset.fxgw===drag.group)return;e.preventDefault();await fxMoveGroup(drag.group,t.dataset.fxgw)}});
+async function fxMoveCard(k,before){const all=FXL(),G=FXGROUPS(),a=all.find(F=>F.key===k),b=all.find(F=>F.key===before);if(!a||!b)return;
+ if((a.group||G[0])!==(b.group||G[0]))return toast('Formulas can only be moved within their own group');
+ if(OFFLINE||!db)return toast('Offline — not saved');const from=all.indexOf(a),to=all.indexOf(b),list=all.slice();list.splice(from,1);list.splice(list.indexOf(b)+(from<to?1:0),0,a);
+ /* rows stay in their stored sequence (so Restore default order brings back the original); only the order field changes */
+ const st=(L.formulas||[]).filter(x=>x&&x.key),have=new Set(st.map(x=>x.key)),pos={};list.forEach((F,i)=>pos[F.key]=i+1);
+ const rows=st.concat(FX.SEED.filter(x=>!have.has(x.key)).map(cloneF)).map(F=>Object.assign({},F,{order:pos[F.key]}));
+ try{await writeLib('formulas',rows);L.formulas=rows;logChange('formulas',k,'order',String(from+1),String(rows.findIndex(F=>F.key===k)+1),'Formulas','dragged');await saveCLOG();renderForm()}catch(x){toast('Save failed: '+(x.message||x.code))}}
+async function fxMoveGroup(g,before){const G=FXGROUPS(),from=G.indexOf(g),to=G.indexOf(before);if(from<0||to<0)return;if(OFFLINE||!db)return toast('Offline — not saved');
+ const list=G.slice();list.splice(from,1);list.splice(list.indexOf(before)+(from<to?1:0),0,g);
+ try{await db.doc('lib/settings').update({formulaGroupOrder:list});SETDOC.formulaGroupOrder=list;logChange('formulas',g,'group order',String(from+1),String(list.indexOf(g)+1),'Formulas','dragged');await saveCLOG();renderForm()}catch(x){toast('Save failed: '+(x.message||x.code))}}
 document.addEventListener('click',e=>{const j=e.target.dataset?.j;if(!j||j.startsWith('cs-'))return;const el=document.getElementById(j);if(el){const d=el.closest('details');if(d)d.open=true;el.scrollIntoView({behavior:'smooth',block:'start'})}});
 
 /* ---------- Setup sheet ---------- */
@@ -3845,7 +3880,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.4';
+const APP_V='2026-10-13.5';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
