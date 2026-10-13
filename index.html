@@ -290,6 +290,7 @@ details.cpsec{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;marg
 .fxh{cursor:grab;user-select:none;padding:0 6px 0 0;color:var(--mu,#888);font-size:18px}.fxh:active{cursor:grabbing}
 .fxgw{display:flex;align-items:flex-start;gap:2px}.fxgw>.fxh{padding-top:10px}
 #cutModal[hidden]{display:none}#cbody tbody tr[data-cid]{cursor:pointer}
+.xpl{border:1px solid var(--bd2);background:none;color:var(--mu,#777);font:inherit;font-size:11px;padding:0 6px;border-radius:9px;cursor:pointer;line-height:16px}.xpl:hover{color:var(--tx)}#xplModal[hidden]{display:none}#xplModal ol,#xplModal ul{padding-left:20px;margin:4px 0}#xplModal li{margin:3px 0;font-size:14px}
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
@@ -915,8 +916,18 @@ const SF = (() => {
   const fixedOpOf = (family, tree) => { const f = treeOf(tree).find(x => !x.parent && x.name === family); return f && f.fixedOp ? f.fixedOp : null; };
   /* sub-cycles of a family usable in op ('' / null = all) — what the Sub-cycle dropdown lists */
   const subsFor = (family, op, tree) => treeOf(tree).filter(x => x.parent === family && (!op || (x.usableAs || []).includes(op))).sort((a, b) => (a.order || 0) - (b.order || 0));
-  function opDefaultsFor(sub, op) {
-    if (!sub) return null; const o = sub.opDefaults && sub.opDefaults[op]; if (o) return o;
+  /* Phase 9 — layered sub-cycle defaults: the family row may carry opDefaults[op] shared by its sub-cycles; a sub-cycle
+     that has opDefaults[op] (even {}) takes the family's values for the fields it does not set itself. A sub-cycle with
+     no opDefaults[op] still has no seeded values (never inherits). Pass the tree so the family can be found. */
+  function opDefaultsLayers(sub, op, tree) {
+    if (!sub) return null; const o = sub.opDefaults && sub.opDefaults[op]; if (!o) return null;
+    const fam = familyOf(sub, tree), fo = fam && fam.opDefaults && fam.opDefaults[op], m = {}, from = {};
+    if (fo) Object.keys(fo).forEach(k => { if (!blank(fo[k])) { m[k] = fo[k]; from[k] = 'family'; } });
+    Object.keys(o).forEach(k => { if (!blank(o[k])) { m[k] = o[k]; from[k] = 'sub-cycle'; } });
+    return { values: fo ? m : o, from, family: fam ? fam.name : '' };
+  }
+  function opDefaultsFor(sub, op, tree) {
+    if (!sub) return null; const ly = opDefaultsLayers(sub, op, tree); if (ly) return ly.values;
     if (sub.ap && (sub.usableAs || []).length === 1 && sub.usableAs[0] === op) return od(sub.ap.mult, sub.ae && sub.ae.mult, sub.vcMult, sub.coolant, sub.note, sub.fzMode ? { fzMode: sub.fzMode } : null);
     return null;
   }
@@ -977,7 +988,9 @@ const SF = (() => {
   }
   function resolveBaseline(q) {
     const rows = Array.isArray(q.rows) && q.rows.length ? q.rows : DEFAULT_BASELINE, out = { src: {}, sub: subOf(q.subcycle, q.tree) };
-    const L = (a, b) => String(a == null || a === '' ? '*' : a).trim().toLowerCase() === String(b).trim().toLowerCase();
+    /* Phase 9: a key cell may list several values, comma-separated ("roughing.trochoidal, tube.rough") — the row matches any of them */
+    const L = (a, b) => { const B = String(b).trim().toLowerCase(), A = String(a == null || a === '' ? '*' : a); return A.indexOf(',') < 0 ? A.trim().toLowerCase() === B : A.split(',').some(x => (x.trim() || '*').toLowerCase() === B); };
+    out.chain = [];
     const uq = a => [...new Set(a.map(x => x == null || x === '' ? '*' : String(x)))];
     const mats = uq([q.material, q.iso ? '*' + q.iso : '*', '*']), subs = uq([q.subcycle, '*']), tools = uq([q.tool, '*']), ops = uq([q.op, '*']), bands = uq([q.band, '*']);
     /* r_D_band: a tool with no band (null) only matches rows WITHOUT r_D_band ('*'); a bull-nose tool matches its own band, then rows without one */
@@ -985,8 +998,11 @@ const SF = (() => {
     let tier = 0;
     for (const m of mats) for (const s of subs) for (const t of tools) for (const o of ops) for (const b of bands) for (const rd of rdbs) { tier++;
       for (const r of rows) { if (!(L(r.material, m) && L(r.subcycle, s) && L(r.tool, t) && L(r.op, o) && L(r.band, b) && L(r.r_D_band, rd))) continue;
-        BFIELDS.forEach(f => { if (out[f] === undefined && !blank(r[f])) { out[f] = typeof r[f] === 'string' && f !== 'coolant' && f !== 'note' && isFinite(+r[f]) ? +r[f] : r[f]; out.src[f] = { tier, key: [m, s, t, o, b, rd].join(' | '), row: r }; } }); } }
-    const d0 = opDefaultsFor(out.sub, q.op);
+        const gave = [], had = [];
+        BFIELDS.forEach(f => { if (blank(r[f])) return; if (out[f] === undefined) { out[f] = typeof r[f] === 'string' && f !== 'coolant' && f !== 'note' && isFinite(+r[f]) ? +r[f] : r[f]; out.src[f] = { tier, key: [m, s, t, o, b, rd].join(' | '), row: r }; gave.push(f); } else had.push(f); });
+        out.chain.push({ tier, key: [m, s, t, o, b, rd].join(' | '), row: r, gave, had }); } }
+    const odl = opDefaultsLayers(out.sub, q.op, q.tree), d0 = opDefaultsFor(out.sub, q.op, q.tree);
+    out.odFrom = odl ? odl.from : null; out.odFamily = odl ? odl.family : '';
     if (out.sub && !(out.sub.usableAs || []).includes(q.op)) out.notUsable = true;
     if (out.sub && !d0) out.noOpDefaults = true;
     if (d0) { ['apD', 'aeD', 'coolant', 'note'].forEach(f => { if (out[f] === undefined && !blank(d0[f])) { out[f] = d0[f]; out.src[f] = { tier: 9.5, key: 'sub-cycle opDefaults' }; } }); out.vcMult = blank(d0.vcMult) ? 1 : +d0.vcMult; }
@@ -1037,7 +1053,7 @@ const SF = (() => {
       return { ap, ae, ball, apD, aeD, txt, caps, res, from: { ap: from('apD'), ae: from('aeD') } };
     };
     let e;
-    if (op === 'S' && !(sub && opDefaultsFor(subOf(sub, ctx.tree), 'semi'))) {
+    if (op === 'S' && !(sub && opDefaultsFor(subOf(sub, ctx.tree), 'semi', ctx.tree))) {
       /* semi with no seeded semi values: midway between this tool's rough and finish engagement */
       const r = one('R'), f = one('F'), s0 = one('S');
       e = s0 && s0.from.ap !== 'default' ? s0 : r && f ? Object.assign({}, r, { ap: r.ap != null && f.ap != null ? (r.ap + f.ap) / 2 : null, ae: r.ae != null && f.ae != null ? (r.ae + f.ae) / 2 : null, txt: (sfx === 'BN' ? 'ball semi-finish' : 'semi-finish') + ' (midway between roughing and finishing)', caps: [...new Set([...r.caps])], res: s0 ? s0.res : r.res }) : s0;
@@ -1047,7 +1063,9 @@ const SF = (() => {
     const rn = (e.res.appliedRules || []).map(x => x.note).filter(Boolean);
     return { ap: e.ap, ae: e.ae, ball: e.ball, txt: e.txt + (tags.length ? ' · ' + tags.join(' ') : '') + (rn.length ? ' · rule: ' + rn.join('; ') : ''), caps: e.caps, band, edge: !!(band && band.edge),
       vcMult: e.res.vcMult || 1, Vc: e.res.Vc, fzAbs: e.res.fz, coolant: e.res.coolant, note: e.res.note, notUsable: e.res.notUsable, src: e.res.src, from: e.from,
-      block: !!e.res.block, blockNote: e.res.blockNote || '', rules: e.res.appliedRules || [], ruleVcMult: e.res.ruleVcMult };
+      block: !!e.res.block, blockNote: e.res.blockNote || '', rules: e.res.appliedRules || [], ruleVcMult: e.res.ruleVcMult,
+      chain: e.res.chain || [], odFrom: e.res.odFrom || null, odFamily: e.res.odFamily || '', subName: e.res.sub ? e.res.sub.name : '',
+      bvals: { apD: e.res.apD, aeD: e.res.aeD, apDmax: e.res.apDmax, Vc: e.res.Vc, fz: e.res.fz, coolant: e.res.coolant, note: e.res.note, r_D_band: e.res.r_D_band } };
   }
   /* core: given target Vc, reference hex and an engagement, produce RPM / fz / feed */
   function solve(ctx, d, z, vcT, hex, eng, R, src, extra) {
@@ -1081,7 +1099,9 @@ const SF = (() => {
       e2.txt = eng.txt + (bits.length ? ' · GEM cycle: ' + bits.join(', ') : '') + (gc.notes ? ' · GEM: ' + gc.notes : '');
       e2.gemCycle = gc; eng = e2;
     }
-    return { vcT, hex, eng, R, adjTxt: adj.txt };
+    /* Phase 9: how the target Vc was built, for "Explain this value" */
+    const vcWhy = { from: eng.Vc > 0 ? 'baseline' : 'model', base: eng.Vc > 0 ? +eng.Vc : vc0, vcMult: eng.Vc > 0 ? 1 : (eng.vcMult || 1), gem: gvm, adj: adj.k, adjTxt: adj.txt || '', rule: eng.ruleVcMult > 0 ? eng.ruleVcMult : 1 };
+    return { vcT, hex, eng, R, adjTxt: adj.txt, vcWhy };
   }
   /* other tool types: [Vc, fz] by ISO group */
   const SLOT = { N1: 300, N2: 200, PL: 200, C: 120, P1: 150, P2: 110, H1: 70, H2: 45, M: 80, K: 130, S1: 40, S2: 25 };
@@ -1327,7 +1347,7 @@ const SF = (() => {
         const b = emTyp(ctx, info, sec.sfx, o.op, d, z, cl, R, undefined, undefined, rdb);
         r.blocked = b && b.eng && b.eng.block ? 'Blocked by rule: ' + b.eng.blockNote : null;
         if (b) {
-          typ = solve(ctx, d, z, b.vcT, b.hex, b.eng, R, 'TYP', b.adjTxt ? { adjTxt: b.adjTxt } : null);
+          typ = solve(ctx, d, z, b.vcT, b.hex, b.eng, R, 'TYP', b.adjTxt ? { adjTxt: b.adjTxt } : null); whyOn(typ, { eng: b.eng, vcWhy: b.vcWhy });
           const k = cal[((sec.sfx === 'BN' || sec.sfx === 'LP') ? 'emball' : 'em') + '|' + o.op];
           if (k) { const L = v => isFinite(cl) && cl > 0 ? Math.min(v, cl) : v;
             const ap0 = L(k.eng ? k.eng.apD * d : 0), aeMax = k.eng ? aeLim(ap0 / d, isFerrousIso(info.iso)) : 1, eng = k.eng && sec.sfx !== 'CH' ? { ap: ap0, ae: Math.min(aeMax, k.eng.aeD) * d, ball: b.eng.ball, txt: `your usual${k.eng.name ? ' ' + k.eng.name : ''} cut: ap ${sig(k.eng.apD, 2)}×Ø, ae ${sig(Math.min(aeMax, k.eng.aeD), 2)}×Ø${k.eng.aeD > aeMax + 1e-9 ? ' (your ' + sig(k.eng.aeD, 2) + '×Ø reduced to ' + sig(aeMax, 2) + '×Ø — realistic at this depth)' : ''}` } : b.eng;
@@ -1428,6 +1448,8 @@ const SF = (() => {
     const m = k => { const v = use.map(c => +c[k]).filter(x => isFinite(x) && x > 0); return v.length ? med(v) : null; };
     return { tier: exact.length ? 'DB-SUB' : 'DB-SUB-FAM', n: use.length, vc: m('vc'), fz: m('fz'), ap: m('doc'), ae: m('woc'), ids: use.map(c => c.id), tools: [...new Set(use.map(c => c.tool))], res: [...new Set(use.map(c => c.result))].join('/') };
   }
+  /* Phase 9: attach the "Explain this value" trail without making it part of the value's JSON */
+  const whyOn = (x, w) => { if (x && w) try { Object.defineProperty(x, 'why', { value: w, enumerable: false, configurable: true, writable: true }); } catch (e) {} return x; };
   /* the source tag a value carries in the single-column display (Phase 4) */
   const srcOf = (r, x) => !x ? null : x === r.ownV ? 'DB' : x === r.mfr ? (x.derived || x.sim ? 'MFR≈' : 'MFR') : x === r.gem ? 'GEM' : x === r.cal ? 'CAL' : x === r.typ ? 'BASE' : x.src;
   /* Phase 4 ladder for one built row: first hit wins */
@@ -1465,13 +1487,13 @@ const SF = (() => {
       const ctx = Object.assign({}, cb, { fam: famOf(cb.mat), k: matFactor(cb.mat), info: matInfo(cb.mat) }), T = {}; ctx.tools.forEach(x => T[x['Tool Code']] = x);
       const Rr = minR(row, T), gc = gemCycle(sub, ctx.info.iso, ctx.tree), b = emTyp(ctx, ctx.info, sfx, o, d, z, minCut(row, T), Rr, null, sub, rdBandOf(Rr, d), gc);
       if (b) {
-        if (!p || p.src === 'BASE') p = { val: solve(ctx, d, z, b.vcT, b.hex, b.eng, Rr, 'BASE', b.adjTxt ? { adjTxt: b.adjTxt } : null), src: 'BASE' };
+        if (!p || p.src === 'BASE') p = { val: whyOn(solve(ctx, d, z, b.vcT, b.hex, b.eng, Rr, 'BASE', b.adjTxt ? { adjTxt: b.adjTxt } : null), { eng: b.eng, vcWhy: b.vcWhy }), src: 'BASE' };
         else { const x = p.val, hx = isFinite(x.hex) && x.hex > 0 ? x.hex : null, eng = hx ? b.eng : Object.assign({}, b.eng, { noThin: true });
           /* the GEM cycle multipliers also apply to a GEM-sourced value (same data set); catalogue / calibrated values keep theirs */
           const gm = p.src === 'GEM' && gc ? { v: +gc.vc_multiplier > 0 ? +gc.vc_multiplier : 1, h: +gc.hex_multiplier > 0 ? +gc.hex_multiplier : 1 } : { v: 1, h: 1 };
           const v2 = solve(ctx, d, z, (x.vcT || x.vc) * gm.v, (hx || x.fz) * gm.h, eng, Rr, x.src, { note: x.note, calNote: x.calNote, calN: x.calN, calTier: x.calTier, calMats: x.calMats, derived: x.derived, sim: x.sim, maker: x.maker, adjTxt: x.adjTxt, gemRow: x.gemRow, conf: x.conf });
           v2.engTxt = b.eng.txt + (hx ? ` · fz from the ${p.src === 'CAL' ? 'calibrated' : p.src === 'GEM' ? 'GEM' : 'catalogue'} chip thickness ${sig(hx, 2)} mm at this engagement` : ' · printed fz (catalogue gives no ap / ae)');
-          p = { val: v2, src: p.src, atSub: true }; }
+          whyOn(v2, { eng: b.eng, vcWhy: null, atSub: true }); p = { val: v2, src: p.src, atSub: true }; }
       }
     }
     if (!p) return null; const v = p.val;
@@ -1498,7 +1520,7 @@ const SF = (() => {
     ['CTE magazine — Thread milling machining parameters', 'https://www.ctemag.com/articles/thread-milling-machining-parameters']
   ];
   return { FAMS, famOf, matFactor, matInfo, build, suggest, invalidate, KC11: KC, TT, OPN, REFS, interp: lerp, sig, ISO_NAME, sRad, sAx, deffOf, aeLim,
-    trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
+    trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, opDefaultsLayers, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
 })();
 if (typeof module !== 'undefined') module.exports = SF;
 /* @end sf.js */
@@ -2001,7 +2023,7 @@ const DEFAULT_LIB = {
 };
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)],esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],formulas:[],prompts:[],rules:[],calc_fields:[]};
-let SHEET_CFG={id:'',tabs:[]};let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
+let SHEET_CFG={id:'',tabs:[]};let SHEET_HEAD={};/* Phase 9: each Sheet tab's header row, so exports keep the Sheet's column order */let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
 const TABS=[['ask','Ask AI','A'],['log','Log cut','+'],['cuts','Cut database','D'],['cheat','Speeds & Feeds','C'],['form','Formulas','ƒ'],['learn','Learn AI','K'],['lib','Library','L'],['setup','Setup sheet','S'],['todo','To-do','✓'],['guide','User Guide','?']];
 $('#nav').innerHTML=TABS.map(t=>`<button data-t="${t[0]}"><i>${t[2]}</i>${t[1]}</button>`).join('');
 let CUR='ask';
@@ -2666,7 +2688,7 @@ async function loadSheets(id,tabs){
     if(!csv||csv.trim().startsWith('<'))continue;
     const rows=parseCSV(csv);
     if(rows.length<1){out[tab]=[];continue}
-    const head=rows[0],body=rows.slice(1);
+    const head=rows[0],body=rows.slice(1);SHEET_HEAD[tab]=head.slice();
     const objs=body.map(r=>{const o={};head.forEach((h,i)=>{let v=r[i];if(v==null)v='';v=String(v).trim();
       if(v==='')o[h]='';else if(!isNaN(+v))o[h]=+v;else o[h]=v});
       return o}).filter(o=>Object.values(o).some(v=>v!==''&&v!=null));
@@ -3333,9 +3355,50 @@ function originTxt(r,x,s){const ex=[x.hex?'max chip '+(+x.hex).toFixed(3)+' mm':
   :s==='DB'?`${x.n} verified cut${x.n>1?'s':''}${x.exact?' with this Ø':' (same material family)'} · results ${x.res||'–'} · materials ${(x.mats||[]).join(', ')}`
   :s==='CAL'?(x.calNote||''):s==='GEM'?`${x.gemRow&&x.gemRow.name?x.gemRow.name+' · ':''}${x.note||'typical European mould-shop practice'}${x.conf?' · confidence '+x.conf:''}${x.engTxt?' · '+x.engTxt:''}`:(SRCT.BASE+(x.src==='REF'?' · from published reference data (Formulas → References)':x.src==='TYP'?' · typical shop practice':'')+(x.engTxt?' · '+x.engTxt:''));
  return [SRCT[s]||'',head,ex].filter(Boolean).join('\n')}
+/* ---------- Phase 9: "Explain this value" — which source won (the ladder), and for baseline values which rows matched,
+   in what order, and which field came from which row / sub-cycle / family default / rule / code default. ---------- */
+const XPL=new Map();let XPLN=0;
+function xplReg(o){if(XPL.size>4000)XPL.clear();const id='x'+(++XPLN);XPL.set(id,o);return id}
+const xplBtn=o=>`<button class="xpl" data-xpl="${xplReg(o)}" title="Explain this value — the chain of rows that produced it">Explain</button>`;
+const XF={apD:'ap ×Ø',aeD:'ae ×Ø',apDmax:'ap limit ×Ø',Vc:'Vc (absolute)',fz:'fz (absolute)',coolant:'coolant',note:'note',r_D_band:'r/D band',vcMult:'Vc multiplier',fzMode:'fz mode'};
+function xplRowTxt(r){return ['material','subcycle','tool','op','band','r_D_band'].filter(k=>r[k]!=null&&r[k]!=='').map(k=>`${k} <b>${esc(String(r[k]))}</b>`).join(' · ')}
+function xplEng(w){const e=w&&w.eng;if(!e)return '';const src=e.src||{},od=e.odFrom||{},rows=[];
+ const fields=['apD','aeD','apDmax','Vc','fz','coolant','note','vcMult'];
+ fields.forEach(f=>{const s=src[f];let v,where;
+  if(f==='vcMult'){if(!e.subName&&!(od.vcMult))return;v=e.vcMult;where=od.vcMult==='family'?`family default (${esc(e.odFamily)})`:od.vcMult==='sub-cycle'?`sub-cycle ${esc(e.subName)}`:'none set (×1)'}
+  else if(!s){return}
+  else if(s.tier===9.5){v=(e.bvals||{})[f];where=od[f]==='family'?`family default (${esc(e.odFamily)}) — sub-cycle ${esc(e.subName)} does not set it`:`sub-cycle ${esc(e.subName)} opDefaults`}
+  else if(s.tier===11){v=(e.bvals||{})[f];where=`rule: <code>${esc(s.rule&&s.rule.when||'')}</code>${s.rule&&s.rule.note?' — '+esc(s.rule.note):''}`}
+  else{v=(e.bvals||{})[f];where=`baseline row (match ${s.tier}: ${esc(s.key)})<br><small class="mu">${xplRowTxt(s.row||{})}</small>`}
+  rows.push(`<tr><td>${esc(XF[f]||f)}</td><td class="n"><b>${esc(v!=null&&v!==''?String(v):'–')}</b></td><td>${where}</td></tr>`)});
+ const used=new Set(Object.keys(src));
+ const chain=(e.chain||[]).map((c,i)=>`<li>Match ${c.tier} <code>${esc(c.key)}</code> — ${xplRowTxt(c.row)}<br><small>${c.gave.length?'gave '+c.gave.map(f=>esc(XF[f]||f)).join(', '):'gave nothing new'}${c.had.length?' · already set above: '+c.had.map(f=>esc(XF[f]||f)).join(', '):''}</small></li>`).join('');
+ const rules=(e.rules||[]).map(x=>`<li><code>${esc(x.rule.when)}</code> → <code>${esc(x.rule.set)}</code>${x.note?' — '+esc(x.note):''}</li>`).join('');
+ return `<h3>Engagement: where each field came from</h3><p class="mu" style="margin:0 0 6px">First match wins, field by field: material (exact → ISO family → *) › sub-cycle › tool › op › band, then the sub-cycle's defaults (its own values, then its family's), then rules (last), then the code default.</p>
+  ${rows.length?`<div class="tw"><table><thead><tr><th>Field</th><th class="n">Value</th><th>From</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`:'<p class="mu">No baseline row, sub-cycle default or rule set any field — the code default was used.</p>'}
+  <p class="mu" style="margin:6px 0 0">${['ap','ae'].map(k=>e.from&&e.from[k]?`${k}: <b>${esc(e.from[k])}</b>`:'').filter(Boolean).join(' · ')}${e.txt?' · '+esc(e.txt):''}</p>
+  <h3>Baseline rows that matched, in order</h3>${chain?`<ol>${chain}</ol>`:'<p class="mu">None.</p>'}${rules?`<h3>Rules applied</h3><ul>${rules}</ul>`:''}`}
+function xplVc(w){const v=w&&w.vcWhy;if(!v)return '';const p=[`${v.from==='baseline'?'baseline row Vc':'material model Vc'} ${f(v.base,1)}`];if(v.vcMult!==1)p.push(`× ${v.vcMult} (sub-cycle Vc multiplier)`);if(v.gem!==1)p.push(`× ${v.gem} (GEM cycle)`);if(v.adj!==1)p.push(`× ${f(v.adj,2)} (${esc(v.adjTxt||'coolant / preference')})`);if(v.rule!==1)p.push(`× ${v.rule} (rule vc_mult)`);
+ return `<h3>Target Vc</h3><p>${p.join(' ')} = <b>${f(v.base*v.vcMult*v.gem*v.adj*v.rule,1)} m/min</b> (before the spindle limit)</p>`}
+function explainHtml(o){const r=o.row||{},x=o.best,s=o.src;
+ const L1=[['DB-SUB / DB-SUB-FAM','Your verified cuts tagged with this sub-cycle',o.dbsub||null],['DB','Your verified cuts, same Ø',r.ownV&&r.ownV.exact?r.ownV:null],['DB','Your verified cuts, same material family',r.ownV&&!r.ownV.exact?r.ownV:null],['MFR','Manufacturer catalogue',r.mfr&&!r.mfr.derived&&!r.mfr.sim?r.mfr:null],['MFR≈','Catalogue, scaled or similar tool',r.mfr&&(r.mfr.derived||r.mfr.sim)?r.mfr:null],['GEM','Gemini baseline',r.gem||null],['CAL','Calibrated on your verified cuts (tool type + op)',r.cal&&r.cal.calTier==='op'?r.cal:null],['BASE','Baseline rules',r.typ||null]];
+ let hit=false;const lad=L1.filter(([k])=>k!=='DB-SUB / DB-SUB-FAM'||o.sub).map(([k,l,v0])=>{const win=!hit&&!!v0&&(v0===x||k===s||(k.startsWith('DB-SUB')&&/^DB-SUB/.test(s||'')));if(win)hit=true;const v=win&&x?x:v0,ok=v&&isFinite(v.fz!=null?v.fz:v.f);
+  return `<tr${win?' style="font-weight:700"':''}><td>${win?'▶ ':''}${esc(k)}</td><td>${esc(l)}</td><td>${v?`Vc ${vcF(v.vc)} · fz ${fzF(v.fz!=null?v.fz:v.f)}${v.ap!=null&&isFinite(v.ap)?' · ap '+f(v.ap,2):''}${v.ae!=null&&isFinite(v.ae)?' · ae '+f(v.ae,2):''}`:'<span class="mu">—</span>'}</td><td>${win?'used':v?(ok?'available, lower priority':'no fz'):'not available'}</td></tr>`}).join('');
+ const w=x&&x.why||(s==='BASE'&&r.typ&&r.typ.why)||null,base=(r.typ&&r.typ.why)||null;
+ return `<div class="modal-in card" style="width:min(1000px,100%)"><div class="row" style="align-items:baseline"><h2 style="margin:0;flex:1">Explain — ${esc(o.title||'')}</h2><button class="b s sm" data-xplx="1" aria-label="Close">✕</button></div>
+  ${r.blocked?`<div class="note e">${esc(r.blocked)} — every source is switched off for this row.</div>`:''}
+  <p style="margin:6px 0">Recommended: ${x?`<b>Vc ${vcF(x.vc)} · fz ${fzF(x.fz!=null?x.fz:x.f)}</b>${x.ap!=null&&isFinite(x.ap)?' · ap '+f(x.ap,2)+' mm':''}${x.ae!=null&&isFinite(x.ae)?' · ae '+f(x.ae,2)+' mm':''} from ${srcB(s)}`:'<b>no value</b>'}${o.atSub?' (applied at the sub-cycle engagement)':''}</p>
+  <h3>Sources, in priority order (first available wins)</h3><div class="tw"><table><thead><tr><th>Source</th><th>What it is</th><th>Value</th><th>Status</th></tr></thead><tbody>${lad}</tbody></table></div>
+  ${o.basedOn?`<p class="mu">${esc(o.basedOn)}</p>`:''}${s==='BASE'?xplVc(w):''}${xplEng(w||base)}</div>`}
+function openExplain(id){const o=XPL.get(id);if(!o)return toast('Refresh the page and try again');let m=$('#xplModal');
+ if(!m){m=document.createElement('div');m.id='xplModal';m.className='modal';m.setAttribute('role','dialog');m.setAttribute('aria-modal','true');m.setAttribute('aria-label','Explain this value');document.body.appendChild(m);m.addEventListener('click',e=>{if(e.target===m||e.target.closest('[data-xplx]'))m.hidden=true})}
+ m.innerHTML=explainHtml(o);m.hidden=false;const b=m.querySelector('[data-xplx]');if(b)b.focus()}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-xpl]');if(!b)return;e.preventDefault();e.stopPropagation();openExplain(b.dataset.xpl)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){const m=$('#xplModal');if(m&&!m.hidden)m.hidden=true}});
 function oneCell(r,perRev){const x=r.best,s=r.bestSrc,d=r.dia!=null?r.dia:r.d;
  const ref=r.own&&!r.ownV?`<span class="src TYP" title="${esc(SRCT.REFLOG+(r.lg?' · '+r.lg.replace(/^★ /,''):''))}">○ ref</span> <span class="mu">${r.own.n} logged, unverified: Vc ${vcF(r.own.vc)} · ${perRev?'f':'Fz'} ${fzF(r.own.fz)}</span>`:'';
- if(!x)return `<td class="gc none" title="${esc(r.mfrWhy||'no data')}"><span class="mu">No value</span>${ref?'<div class="l3">'+ref+'</div>':''}</td>`;
+ const xb=xplBtn({row:r,best:x,src:s,title:`${(r.tc||[]).join(', ')||r.code||''} Ø${d}`});
+ if(!x)return `<td class="gc none" title="${esc(r.mfrWhy||'no data')}"><span class="mu">No value</span> ${xb}${ref?'<div class="l3">'+ref+'</div>':''}</td>`;
  const fl=perRev?'f':'Fz',fzv=isFinite(x.fz)?fzF(x.fz):'–',feedV=isFinite(x.feed)?nf(x.feed)+' mm/min':(s==='MFR'||s==='MFR≈'?'feed: Vc only':'feed: enter Z');
  const mm=v=>v==null||!isFinite(v)?'–':(v<1?(+v).toFixed(2):v<10?(+v).toFixed(1):(+v).toFixed(0)),pc=v=>v!=null&&isFinite(v)&&d?` <small>${f(v/d*100)}%</small>`:'';
  const cap=x.capped?` <span class="cap" title="${x.vcT?'Ideal Vc '+f(x.vcT)+' m/min exceeds the spindle limit; ':''}RPM capped at ${f(x.rpm)}">⚠ spindle limit</span>`:'';
@@ -3343,7 +3406,7 @@ function oneCell(r,perRev){const x=r.best,s=r.bestSrc,d=r.dia!=null?r.dia:r.d;
  const pw=x.pw&&x.pw.pct>70?` <span class="${x.pw.pct>90?'cap':'dl'}" title="~${x.pw.kw.toFixed(1)} kW of a ${x.pw.of} kW spindle (${Math.round(x.pw.pct)}%)">⚡</span>`:'';
  const gw=(r.gemWarn?` <span class="gemw" title="${esc(r.gemWarn)}">⚠</span>`:'')+(r.gemFlags&&r.gemFlags.length?` <span class="gemw" title="${esc('GEM red flag (advisory): '+r.gemFlags.join(' · '))}">⚠</span>`:'');
  const who=s==='MFR'||s==='MFR≈'?`${x.sim?'similar tool: ':x.derived?'scaled: ':''}${esc(x.maker||'')}`:s==='DB'?`${x.n} verified cut${x.n>1?'s':''}${x.exact?'':' (family)'}`:s==='CAL'?`${x.calN||''} verified cuts`:'';
- return `<td class="gc g1 s-${esc(s)}" title="${esc(originTxt(r,x,s))}"><div class="l1"><span class="k"><i>Vc m/min</i><b>${vcF(x.vc)}</b></span><span class="k"><i>${fl} ${perRev?'mm/rev':'mm/t'}</i><b>${fzv}</b></span>${eng}</div><div class="l2">${feedV} · ${nf(x.rpm)} rpm${cap}${pw}${x.engTxt&&!perRev?` · <span class="mu">${esc(x.engTxt)}</span>`:''}</div><div class="l3">${srcB(s,s==='DB'?x:s==='CAL'?{n:x.calN,tier:x.calTier,mats:x.calMats}:s==='GEM'?{note:x.note}:null)}${gw} ${who}${ref?' · '+ref:''}</div></td>`}
+ return `<td class="gc g1 s-${esc(s)}" title="${esc(originTxt(r,x,s))}"><div class="l1"><span class="k"><i>Vc m/min</i><b>${vcF(x.vc)}</b></span><span class="k"><i>${fl} ${perRev?'mm/rev':'mm/t'}</i><b>${fzv}</b></span>${eng}</div><div class="l2">${feedV} · ${nf(x.rpm)} rpm${cap}${pw}${x.engTxt&&!perRev?` · <span class="mu">${esc(x.engTxt)}</span>`:''}</div><div class="l3">${srcB(s,s==='DB'?x:s==='CAL'?{n:x.calN,tier:x.calTier,mats:x.calMats}:s==='GEM'?{note:x.note}:null)}${gw} ${who}${ref?' · '+ref:''} ${xb}</div></td>`}
 function gTable(fixed,tail,rows,fixedCells,tailCells,perRev){
  const top=fixed.map(h=>`<th class="fx">${h}</th>`).join('')+`<th class="gh" title="First available: your verified tagged cuts (DB-SUB, DB-SUB-FAM) › your verified cuts (DB) › manufacturer (MFR, MFR≈) › Gemini baseline (GEM) › calibrated (CAL) › baseline (BASE). Hover a value for its full origin.">Recommended</th>`+tail.map(h=>`<th>${h}</th>`).join('');
  const body=rows.map(r=>`<tr>${fixedCells(r)}${oneCell(r,perRev)}${tailCells(r)}</tr>`).join('');
@@ -3410,12 +3473,12 @@ function calcOut(){const v=CALCV,fam=v.tag.cycleFamily,t=tool(v.tool);
  const so=+v.so,ld=so>0&&d>0?so/d:NaN,ldTxt=isFinite(ld)?`L/D ${f(ld,1)}${ld>5?' — high chatter risk: reduce ap and fz':ld>3?' — reduce feed and DOC ~20 %':''}`:'';
  const rows=[];subs.forEach(x=>(v.tag.operation?[v.tag.operation]:(x.usableAs||[])).forEach(op=>{if(!(x.usableAs||[]).includes(op))return;
   let r=null;try{r=SF.resolve(ctx,{tool:v.tool,op,subcycleKey:x.key})}catch(e){console.error(e)}
-  const od=SF.opDefaultsFor(x,op)||{},eng=r&&r.engTxt?String(r.engTxt).split(' · ').filter(t=>t!==x.name&&!/^fz from the|^printed fz/.test(t)).join(' · '):'',note=[od.note,od.coolant?'coolant: '+od.coolant:'',eng,ldTxt].filter(Boolean).join(' · ');
+  const od=SF.opDefaultsFor(x,op,CTREE())||{},eng=r&&r.engTxt?String(r.engTxt).split(' · ').filter(t=>t!==x.name&&!/^fz from the|^printed fz/.test(t)).join(' · '):'',note=[od.note,od.coolant?'coolant: '+od.coolant:'',eng,ldTxt].filter(Boolean).join(' · ');
   rows.push({x,op,r,note})}));
  if(!rows.length)return warn+'<p class="mu">No sub-cycle in this family is usable for the chosen operation.</p>';
  const mm=v=>v==null||!isFinite(v)?'–':(v<1?(+v).toFixed(2):v<10?(+v).toFixed(1):(+v).toFixed(0));
  return warn+`<div class="tw"><table><thead><tr><th>Op</th><th>Sub-cycle</th><th>Band</th><th class="n">ap mm</th><th class="n">ae mm</th><th class="n">Vc</th><th class="n">RPM</th><th class="n">fz</th><th class="n">Feed</th><th>Based on</th><th>Strategy note</th><th></th></tr></thead><tbody>${rows.map(({x,op,r,note},i)=>!r||r.warn?`<tr><td>${OPL[op]||op}</td><td>${esc(x.name)}</td><td colspan="10" class="mu">${esc(r&&r.warn||'No speeds and feeds for this tool in this operation')}</td></tr>`:
-  `<tr><td>${OPL[op]||op}</td><td>${esc(x.name)}</td><td>Ø${esc(r.band||'–')}${v.band?' <span class="tag">preview</span>':''}</td><td class="n">${mm(r.ap)}</td><td class="n">${mm(r.ae)}</td><td class="n">${vcF(r.vcT)}</td><td class="n">${f(r.rpm)}${r.capped?' <span class="cap" title="Limited by the machine spindle">⚠</span>':''}</td><td class="n">${fzF(r.fz)}</td><td class="n">${isFinite(r.feed)?nf(r.feed):'–'}</td><td class="tx" style="min-width:170px" title="${esc((r.basedOn||'')+(r.engTxt?'\n'+r.engTxt:''))}">${srcB(r.src,/^DB/.test(r.src)?{n:r.n,res:r.res}:r.src==='GEM'?{note:r.note}:null)} ${esc(shortBased(r))}${r.ids&&r.ids.length?` <button class="seecuts" data-seecuts="${esc(r.ids.join(','))}">see them</button>`:''}</td><td class="tx" style="min-width:180px">${esc(note)}</td><td><button class="b s sm" data-calclog="${i}">Open in Log cut</button></td></tr>`).join('')}</tbody></table></div>`+(CALCROWS=rows,'')}
+  `<tr><td>${OPL[op]||op}</td><td>${esc(x.name)}</td><td>Ø${esc(r.band||'–')}${v.band?' <span class="tag">preview</span>':''}</td><td class="n">${mm(r.ap)}</td><td class="n">${mm(r.ae)}</td><td class="n">${vcF(r.vcT)}</td><td class="n">${f(r.rpm)}${r.capped?' <span class="cap" title="Limited by the machine spindle">⚠</span>':''}</td><td class="n">${fzF(r.fz)}</td><td class="n">${isFinite(r.feed)?nf(r.feed):'–'}</td><td class="tx" style="min-width:170px" title="${esc((r.basedOn||'')+(r.engTxt?'\n'+r.engTxt:''))}">${srcB(r.src,/^DB/.test(r.src)?{n:r.n,res:r.res}:r.src==='GEM'?{note:r.note}:null)} ${esc(shortBased(r))}${r.ids&&r.ids.length?` <button class="seecuts" data-seecuts="${esc(r.ids.join(','))}">see them</button>`:''} ${xplBtn({row:r.row||{},best:r.val||(/^DB-SUB/.test(r.src)?{vc:r.vc,fz:r.fz,ap:r.ap,ae:r.ae}:null),src:r.src,sub:true,dbsub:/^DB-SUB/.test(r.src)?{vc:r.vc,fz:r.fz,ap:r.ap,ae:r.ae}:null,atSub:!!(r.val&&r.val.why&&r.val.why.atSub),basedOn:r.basedOn,title:`${v.tool} · ${x.name} · ${OPL[op]||op}`})}</td><td class="tx" style="min-width:180px">${esc(note)}</td><td><button class="b s sm" data-calclog="${i}">Open in Log cut</button></td></tr>`).join('')}</tbody></table></div>`+(CALCROWS=rows,'')}
 let CALCROWS=[];
 /* one-line 'based on' for the table; the full origin goes in the tooltip */
 const shortBased=r=>{const b=String(r.basedOn||'');if(r.src==='MFR'||r.src==='MFR≈')return b.replace(/^[^—]*—\s*/,'').replace(/^Similar tool[^:]*:\s*/,'similar tool: ').replace(/^Derived[\s\S]*?Based on\s*/,'scaled: ').split(':')[0];
@@ -3540,9 +3603,94 @@ function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><
  <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>Gemini (Ask AI and Learn AI)</h2><p class="mu">Paste your Gemini API key (from Google AI Studio → Get API key). It is stored only in this browser (localStorage 'gemini.key'), never in the library, the Sheet or a backup. Model: <code>${esc(GEMINI_MODEL)}</code>.</p>
  <div class="g"><div><label for="set_gkey">Gemini API key</label><input id="set_gkey" type="password" autocomplete="off" spellcheck="false" value="${esc((()=>{try{return localStorage.getItem('gemini.key')||''}catch(e){return ''}})())}" placeholder="paste key"></div></div><p class="mu" id="gkey_msg"></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
  <div class="g"><div><label>Sheet ID (from sheets.json)</label><input id="sh_id" value="${esc(SHEET_CFG.id||'(not set)')}" readonly></div><div><label>Last sync</label><input id="sh_last" value="${esc(sheetLastSync())}" readonly></div></div>
- <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>`;
- $('#lbody').onclick=async e=>{if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}};
+ <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>${n9Card()}`;
+ $('#lbody').onclick=async e=>{if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
  $('#lbody').onchange=e=>{if(e.target.id==='set_gkey'){const v=e.target.value.trim();try{if(v)localStorage.setItem('gemini.key',v);else localStorage.removeItem('gemini.key');const m=$('#gkey_msg');if(m)m.textContent=v?'Key saved in this browser ✓':'Key removed'}catch(x){toast('Could not save the key in this browser')}return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
+/* ---------- Phase 9: normalise the speeds-and-feeds data (one-time migration) ----------
+   lib/baseline: rows with identical values that differ in one key column are merged into one row whose cell lists the
+   values ("roughing.trochoidal, tube.rough"). lib/cycles: a value shared by the sub-cycles of a family (for one operation)
+   moves to the family's opDefaults; sub-cycles keep only what differs. Both are checked to give identical results
+   before anything is written; a backup is taken first and every changed field is logged. */
+const N9KEYS=['material','subcycle','tool','op','band','r_D_band'];
+const n9atoms=v=>String(v==null||v===''?'*':v).split(',').map(x=>x.trim()||'*');
+const n9blank=v=>v===undefined||v===null||v==='';
+function n9Baseline(rows){let cur=rows.filter(r=>r&&typeof r==='object').map(r=>Object.assign({},r));const all=[...new Set(cur.flatMap(r=>Object.keys(r)))];
+ for(let pass=0;pass<8;pass++){let changed=false;
+  for(const c of ['subcycle','material','band','op','tool','r_D_band']){const groups=new Map(),out=[];
+   cur.forEach(r=>{const sig=JSON.stringify(all.filter(k=>k!==c).map(k=>N9KEYS.includes(k)?n9atoms(r[k]).map(x=>x.toLowerCase()).sort().join(','):(n9blank(r[k])?'':r[k])));
+    if(groups.has(sig))groups.get(sig).push(r);else{const g=[r];groups.set(sig,g);out.push(g)}});
+   cur=out.map(g=>{if(g.length<2)return g[0];changed=true;const seen=new Set(),vals=[];g.forEach(r=>n9atoms(r[c]).forEach(a=>{const k=a.toLowerCase();if(!seen.has(k)){seen.add(k);vals.push(a)}}));return Object.assign({},g[0],{[c]:vals.join(', ')})})}
+  if(!changed)break}
+ return cur}
+/* every query that can tell two baseline tables apart: each value used in a key cell, plus one that matches none */
+function n9SameBaseline(a,b){const atoms=c=>[...new Set(a.concat(b).flatMap(r=>n9atoms(r[c])))];
+ const mats=atoms('material'),names=[...mats.filter(x=>!x.startsWith('*')),'zz-other'],isos=[...new Set(mats.filter(x=>x.startsWith('*')&&x.length>1).map(x=>x.slice(1))),'ZZ'];
+ const subs=[...new Set([...atoms('subcycle'),'zz.other'])],tools=[...new Set([...atoms('tool'),'ZZ'])],ops=[...new Set([...atoms('op'),'rough','semi','finish'])].filter(x=>x!=='*'),bands=[...new Set([...atoms('band').filter(x=>x!=='*'),'zz'])].concat([null]),rds=[...new Set(atoms('r_D_band').filter(x=>x!=='*'))].concat([null]);
+ const tree=[{key:'zz-none',name:'zz-none',parent:''}],F=['Vc','fz','apD','aeD','apDmax','coolant','note','r_D_band'];let n=0;
+ for(const m of names)for(const iso of isos)for(const s of subs)for(const t of tools)for(const o of ops)for(const bd of bands)for(const rd of rds){n++;
+  const q={material:m,iso,tool:t,subcycle:s,op:o,band:bd,rdBand:rd,tree},x=SF.resolveBaseline(Object.assign({rows:a},q)),y=SF.resolveBaseline(Object.assign({rows:b},q));
+  for(const f of F)if(JSON.stringify(x[f])!==JSON.stringify(y[f]))return {ok:false,n,why:`${f} differs for material ${m} (${iso}), sub-cycle ${s}, tool ${t}, ${o}, band ${bd}: ${JSON.stringify(x[f])} vs ${JSON.stringify(y[f])}`}}
+ return {ok:true,n}}
+const n9Tree=rows=>rows.filter(r=>r&&r.key).map(r=>Object.assign(Object.create(r),{name:r.Cycle,parent:r.parent||''}));
+const n9Clean=o=>o?JSON.stringify(Object.keys(o).filter(k=>!n9blank(o[k])).sort().map(k=>[k,o[k]])):'null';
+function n9Cycles(rows){const out=rows.map(r=>r&&r.key?JSON.parse(JSON.stringify(r)):r),log=[];
+ const fams=out.filter(r=>r&&r.key&&!r.parent);
+ fams.forEach(fam=>{const subs=out.filter(r=>r&&r.key&&r.parent===fam.Cycle&&r.opDefaults&&typeof r.opDefaults==='object');
+  ['rough','semi','finish','drill','ream','bore','thread'].forEach(op=>{const have=subs.filter(r=>r.opDefaults[op]&&typeof r.opDefaults[op]==='object');if(have.length<2)return;
+   const fo=(fam.opDefaults&&fam.opDefaults[op])||{},fields=[...new Set(have.flatMap(r=>Object.keys(r.opDefaults[op])))];
+   fields.forEach(f=>{if(!n9blank(fo[f]))return;if(!have.every(r=>!n9blank(r.opDefaults[op][f])))return;
+    const cnt=new Map();have.forEach(r=>{const k=JSON.stringify(r.opDefaults[op][f]);cnt.set(k,(cnt.get(k)||0)+1)});const [best,c]=[...cnt].sort((a,b)=>b[1]-a[1])[0];if(c<2)return;
+    const v=JSON.parse(best);fam.opDefaults=fam.opDefaults&&typeof fam.opDefaults==='object'?fam.opDefaults:{};fam.opDefaults[op]=Object.assign({},fam.opDefaults[op]||{},{[f]:v});log.push({row:fam.Cycle,field:op+' '+f,from:'',to:v,note:`shared by ${c} of ${have.length} ${fam.Cycle} sub-cycles`});
+    have.forEach(r=>{if(JSON.stringify(r.opDefaults[op][f])===best){delete r.opDefaults[op][f];log.push({row:r.Cycle,field:op+' '+f,from:v,to:'(family default)',note:'now read from '+fam.Cycle})}})})})});
+ return {rows:out,log}}
+function n9SameCycles(a,b){const ta=n9Tree(a),tb=n9Tree(b);let n=0;
+ for(const s of ta.filter(x=>x.parent)){const s2=tb.find(x=>x.key===s.key);if(!s2)return {ok:false,why:'sub-cycle '+s.key+' missing'};
+  for(const op of [...new Set(['rough','semi','finish','drill','ream','bore','thread',...(s.usableAs||[])])]){n++;const x=n9Clean(SF.opDefaultsFor(s,op,ta)),y=n9Clean(SF.opDefaultsFor(s2,op,tb));if(x!==y)return {ok:false,n,why:`${s.name} ${op}: ${x} vs ${y}`}}}
+ return {ok:true,n}}
+/* the whole Speeds & Feeds table, every material: identical before and after */
+function n9Digest(base,cyc){const keep=[L.baseline,L.cycles];L.baseline=base;L.cycles=cyc;SF.invalidate();Object.keys(SFC).forEach(k=>delete SFC[k]);const parts=[];
+ try{L.materials.forEach(m=>{const ctx=sfctx(m.Material);SF.build(ctx).forEach(sec=>(sec.ops||[]).forEach(o=>(o.rows||[]).forEach(r=>{const x=r.best;parts.push([m.Material,sec.sfx,o.op,r.dia!=null?r.dia:r.d,r.bestSrc,x?[x.vc,x.fz,x.ap,x.ae,x.rpm].map(v=>v==null||!isFinite(v)?null:+(+v).toPrecision(9)):null].join('|'))})))})}
+ finally{L.baseline=keep[0];L.cycles=keep[1];SF.invalidate();Object.keys(SFC).forEach(k=>delete SFC[k])}
+ return parts}
+let N9=null;/* {nb, nc, log, checks} from the last check */
+function n9Stats(){const odN=rows=>rows.filter(r=>r&&r.key&&r.opDefaults&&typeof r.opDefaults==='object').reduce((a,r)=>a+Object.values(r.opDefaults).reduce((b,o)=>b+(o&&typeof o==='object'?Object.values(o).filter(v=>!n9blank(v)).length:0),0),0);
+ return {b:(L.baseline||[]).length,c:odN(L.cycles||[]),odN}}
+async function n9Check(){const msg=$('#n9msg');if(msg)msg.textContent='Checking… (this takes a few seconds)';await new Promise(r=>setTimeout(r,30));
+ try{const nb=n9Baseline(L.baseline||[]),cy=n9Cycles(L.cycles||[]),c1=n9SameBaseline(L.baseline||[],nb),c2=n9SameCycles(L.cycles||[],cy.rows);
+  let c3={ok:false,why:'not run'};if(c1.ok&&c2.ok){const d0=n9Digest(L.baseline,L.cycles),d1=n9Digest(nb,cy.rows),bad=d0.findIndex((x,i)=>x!==d1[i]);c3=d0.length===d1.length&&bad<0?{ok:true,n:d0.length}:{ok:false,why:bad>=0?d0[bad]+' → '+d1[bad]:'row count differs'}}
+  N9={nb,nc:cy.rows,log:cy.log,checks:[c1,c2,c3],ok:c1.ok&&c2.ok&&c3.ok}}
+ catch(e){console.error(e);N9={ok:false,checks:[{ok:false,why:String(e.message||e)}]}}
+ drawSettings()}
+async function n9Run(btn){if(!N9||!N9.ok)return toast('Run the check first');if(OFFLINE||!db)return toast('Offline — not saved');
+ if(btn.dataset.sure!=='1'){btn.dataset.sure='1';btn.textContent='Back up and normalise — click again to confirm';return}
+ const msg=$('#n9msg');if(msg)msg.textContent='Backing up…';
+ await backupLib();const ts=Date.now();
+ try{await db.doc('lib/backup-phase9-'+ts).set({v:1,at:new Date().toISOString(),L:JSON.parse(JSON.stringify(L))})}catch(e){if(msg)msg.textContent='Safety copy failed — nothing changed: '+(e.message||e.code);return}
+ const ob=L.baseline||[],nb=N9.nb,lab=r=>N9KEYS.filter(k=>!n9blank(r[k])).map(k=>r[k]).join(' | ');
+ try{await writeLib('baseline',nb);await writeLib('cycles',N9.nc)}catch(e){if(msg)msg.textContent=`Write failed — your previous tables are in lib/backup-phase9-${ts}: `+(e.message||e.code);return}
+ const via='Phase 9 normalise',note=`safety copy lib/backup-phase9-${ts}`;
+ nb.forEach(r=>{if(ob.some(o=>JSON.stringify(o)===JSON.stringify(r)))return;
+  const covered=ob.filter(o=>Object.keys(o).every(k=>N9KEYS.includes(k)?n9atoms(o[k]).every(a=>n9atoms(r[k]).map(x=>x.toLowerCase()).includes(a.toLowerCase())):(n9blank(o[k])?'':o[k])===(n9blank(r[k])?'':r[k])));
+  const first=covered[0]||{};N9KEYS.forEach(k=>{if(String(first[k]??'')!==String(r[k]??''))logChange('baseline',lab(first),k,first[k]??'',r[k]??'',via,`merged ${covered.length} rows with identical values · ${note}`)});
+  covered.slice(1).forEach(o=>logChange('baseline',lab(o),'(row)',JSON.stringify(o),'merged into '+lab(r),via,note))});
+ N9.log.forEach(x=>logChange('cycles',x.row,x.field,x.from,x.to,via,x.note+' · '+note));
+ logChange('library','(baseline + cycles)','normalised',`${ob.length} baseline rows`,`${nb.length} baseline rows`,via,note);
+ L.baseline=nb;L.cycles=N9.nc;await saveCLOG();SF.invalidate();Object.keys(SFC).forEach(k=>delete SFC[k]);N9=Object.assign(N9,{done:true});
+ toast('Normalised — now download the two CSV files for the Google Sheet');drawSettings()}
+/* CSV for a Sheet tab in the Sheet's own column order (header row first); JSON columns as JSON text */
+function sheetCSV(tab){const rows=(L[tab]||[]).filter(r=>r&&typeof r==='object'),head=(SHEET_HEAD[tab]&&SHEET_HEAD[tab].length?SHEET_HEAD[tab].slice():[]);
+ rows.forEach(r=>Object.keys(r).forEach(k=>{if(!head.includes(k))head.push(k)}));
+ const cell=v=>{if(v==null)return '';const t=typeof v==='object'?JSON.stringify(v):String(v);return /[",\n\r]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t};
+ return [head.map(cell).join(',')].concat(rows.map(r=>head.map(k=>cell(r[k])).join(','))).join('\r\n')}
+async function sheetDownload(tab){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:tab+'-for-sheet-'+today()+'.csv',data:sheetCSV(tab)});toast(tab+' CSV downloaded')}catch(e){toast('Download failed: '+(e.message||e))}}
+function n9Card(){const st=n9Stats(),fromSheet=t=>(SHEET_CFG.tabs||[]).includes(t);
+ const ck=N9&&N9.checks?`<ul style="margin:6px 0">${['Baseline lookups (every combination)','Sub-cycle defaults (every sub-cycle and operation)','Speeds & Feeds table (every material)'].map((l,i)=>{const c=N9.checks[i];return c?`<li>${c.ok?'✓':'✗'} ${l}${c.ok?` — identical (${c.n} checked)`:`: ${esc(c.why||'')}`}</li>`:''}).join('')}</ul>`:'';
+ const after=N9&&N9.nb?` → <b>${N9.nb.length}</b> after`:'',afterC=N9&&N9.nc?` → <b>${st.odN(N9.nc)}</b> after`:'';
+ return `<div class="card"><h2>Speeds &amp; feeds data model (Phase 9)</h2><p class="mu">One row carries the values shared by a whole group; the rows below it only carry what differs. Recommendations do not change. Baseline rows: <b>${st.b}</b>${N9&&!N9.done?after:''} · sub-cycle default values: <b>${st.c}</b>${N9&&!N9.done?afterC:''}.</p>
+  ${N9&&N9.done?`<div class="note o">✓ Normalised and saved in the app (a backup file was downloaded and a safety copy kept). <b>Last step:</b> download both CSV files below and import each into its tab of the Google Sheet — File → Import → Upload → <b>Replace current sheet</b>, and untick <i>Convert text to numbers, dates and formulas</i>. Until you do, the Sheet's old rows are loaded at start-up (they give the same results).</div>`:''}
+  ${ck}${N9&&!N9.ok&&!N9.done?'<div class="note e">Not identical — nothing will be changed.</div>':''}
+  <p class="row"><button class="b s" id="n9chk">Check what would change</button><button class="b" id="n9run"${N9&&N9.ok&&!N9.done?'':' disabled'}>Back up and normalise</button><span class="mu" id="n9msg"></span></p>
+  <p class="row"><button class="b s sm" id="n9csvb">Download baseline CSV for the Sheet</button><button class="b s sm" id="n9csvc">Download cycles CSV for the Sheet</button><span class="mu">${fromSheet('baseline')||fromSheet('cycles')?'The baseline and cycles tabs are loaded from the Google Sheet.':''}</span></p></div>`}
 function sheetLastSync(){try{const t=localStorage.getItem('sheets.lastSync');return t?new Date(t).toLocaleString():'—'}catch(e){return '—'}}
 async function reloadSheets(btn){const msg=document.getElementById('sh_msg');if(msg)msg.textContent='Reloading…';
  try{const r=await fetch('./sheets.json',{cache:'no-store'});if(!r.ok)throw new Error('sheets.json not found');
@@ -3709,21 +3857,28 @@ function drawTreeEd(){const fams=famRows(),fnames=fams.map(([r])=>r.Cycle),rows=
   if(d.tdel!=null){const b=e.target;if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Delete?';return}const r=L.cycles[+d.tdel];L.cycles.splice(+d.tdel,1);await saveCyc(r.Cycle,'deleted',JSON.stringify(r),'');drawTreeEd()}}}
 function uniqName(n){const ns=new Set(L.cycles.map(r=>r&&r.Cycle));let x=n,i=2;while(ns.has(x))x=n+' '+(i++);return x}
 let SBF='';
-function drawSubEd(){const fams=famRows();if(!SBF||!fams.some(([f])=>f.Cycle===SBF))SBF=fams.length?fams[0][0].Cycle:'';const fam=(fams.find(([f])=>f.Cycle===SBF)||[])[0],fixed=fam&&fam.fixedOp;
+function drawSubEd(){const fams=famRows();if(!SBF||!fams.some(([f])=>f.Cycle===SBF))SBF=fams.length?fams[0][0].Cycle:'';const famE=fams.find(([f])=>f.Cycle===SBF)||[],fam=famE[0],famI=famE[1],fixed=fam&&fam.fixedOp;
  const subs=TR().filter(([r])=>r.parent===SBF).sort((a,b)=>(a[0].order||0)-(b[0].order||0));
- const num=(i,op,f,v)=>`<input data-sb="${i}" data-sop="${op}" data-sf="${f}" type="number" step="any" inputmode="decimal" value="${v==null?'':esc(v)}" style="width:72px">`,txt=(i,op,f,v,w)=>`<input data-sb="${i}" data-sop="${op}" data-sf="${f}" value="${esc(v||'')}" style="min-width:${w||110}px">`;
+ const num=(i,op,f,v,ph)=>`<input data-sb="${i}" data-sop="${op}" data-sf="${f}" type="number" step="any" inputmode="decimal" value="${v==null?'':esc(v)}"${ph!=null&&ph!==''?` placeholder="${esc(ph)}" title="Empty — uses the family default ${esc(ph)}"`:''} style="width:72px">`,txt=(i,op,f,v,w,ph)=>`<input data-sb="${i}" data-sop="${op}" data-sf="${f}" value="${esc(v||'')}"${ph?` placeholder="${esc(ph)}" title="Empty — uses the family default"`:''} style="min-width:${w||110}px">`;
+ /* Phase 9: the family's own opDefaults row (shared values); a sub-cycle that has values for an op inherits the fields it leaves empty */
+ const fod=op=>(fam&&fam.opDefaults&&fam.opDefaults[op])||null,inh=(r,op,f)=>{const fo=fod(op);return r.opDefaults&&r.opDefaults[op]&&fo&&fo[f]!=null?fo[f]:null};
+ const fops=[...new Set(subs.flatMap(([r])=>r.usableAs||[]))];
+ const famRowsHtml=!fixed&&fam&&fops.length?fops.map((op,k)=>{const o=fod(op)||{};return `<tr style="background:var(--sub)${k?'':';border-top:2px solid var(--bd2)'}"><td>${k?'':'<b>Family defaults</b><br><small class="mu">shared by its sub-cycles</small>'}</td><td></td><td>${esc(OPL[op]||op)}</td><td class="n">${num(famI,op,'apD',o.apD)}</td><td class="n">${num(famI,op,'aeD',o.aeD)}</td><td class="n">${num(famI,op,'vcMult',o.vcMult)}</td><td>${txt(famI,op,'coolant',o.coolant,90)}</td><td>${txt(famI,op,'note',o.note,200)}</td></tr>`}).join(''):'';
  const head=fixed?'<th>Sub-cycle</th><th>kind</th><th>usableAs</th><th class="n">ap×D</th><th class="n">ae×D</th><th>fzMode</th><th class="n">vcMult</th><th>coolant</th><th>entry</th><th>note</th>'
   :'<th>Sub-cycle</th><th>kind</th><th>op</th><th class="n">ap×D</th><th class="n">ae×D</th><th class="n">vcMult</th><th>coolant</th><th>note</th>';
  const body=subs.map(([r,i])=>fixed?`<tr><td><b>${esc(r.Cycle)}</b></td><td>${esc(r.kind||'')}</td><td>${esc((r.usableAs||[]).join(', '))}</td><td class="n">${num(i,'','ap.mult',r.ap&&r.ap.mult)}</td><td class="n">${num(i,'','ae.mult',r.ae&&r.ae.mult)}</td>
   <td><select data-sb="${i}" data-sop="" data-sf="fzMode">${opt(['','chip-thin','linear','high-feed'],r.fzMode||'')}</select></td><td class="n">${num(i,'','vcMult',r.vcMult)}</td><td>${txt(i,'','coolant',r.coolant,90)}</td><td><select data-sb="${i}" data-sop="" data-sf="entry">${opt(['','ramp','helix','plunge','outside','predrilled'],r.entry||'')}</select></td><td>${txt(i,'','note',r.note,200)}</td></tr>`
-  :(r.usableAs||[]).map((op,k)=>{const o=(r.opDefaults&&r.opDefaults[op])||{};return `<tr${k?'':' style="border-top:2px solid var(--bd2)"'}><td>${k?'':'<b>'+esc(r.Cycle)+'</b>'}</td><td>${k?'':esc(r.kind||'')}</td><td>${esc(OPL[op]||op)}</td><td class="n">${num(i,op,'apD',o.apD)}</td><td class="n">${num(i,op,'aeD',o.aeD)}</td><td class="n">${num(i,op,'vcMult',o.vcMult)}</td><td>${txt(i,op,'coolant',o.coolant,90)}</td><td>${txt(i,op,'note',o.note,200)}</td></tr>`}).join('')).join('');
- $('#pbody').innerHTML=`<div class="card"><h2>Sub-cycles</h2><div class="row"><label style="margin:0">Family</label><select id="sbf" style="max-width:260px">${opt(fams.map(([f])=>f.Cycle),SBF)}</select><span class="mu">${fixed?`Fixed operation (${esc(fixed)}): one strategy per sub-cycle — ap / ae as multiples of Ø, fz mode, Vc multiplier, coolant, entry.`:'Filtered family: values per operation (opDefaults). Empty = no seeded value — the baseline rules or the code default decide, never another operation.'}</span></div>
- <div class="tw" style="margin-top:8px"><table><thead><tr>${head}</tr></thead><tbody>${body||'<tr><td colspan="10" class="empty">No sub-cycles in this family.</td></tr>'}</tbody></table></div><p id="sbmsg" class="mu"></p></div>`;
+  :(r.usableAs||[]).map((op,k)=>{const o=(r.opDefaults&&r.opDefaults[op])||{};return `<tr${k?'':' style="border-top:2px solid var(--bd2)"'}><td>${k?'':'<b>'+esc(r.Cycle)+'</b>'}</td><td>${k?'':esc(r.kind||'')}</td><td>${esc(OPL[op]||op)}</td><td class="n">${num(i,op,'apD',o.apD,inh(r,op,'apD'))}</td><td class="n">${num(i,op,'aeD',o.aeD,inh(r,op,'aeD'))}</td><td class="n">${num(i,op,'vcMult',o.vcMult,inh(r,op,'vcMult'))}</td><td>${txt(i,op,'coolant',o.coolant,90,inh(r,op,'coolant'))}</td><td>${txt(i,op,'note',o.note,200,inh(r,op,'note'))}</td></tr>`}).join('')).join('');
+ $('#pbody').innerHTML=`<div class="card"><h2>Sub-cycles</h2><div class="row"><label style="margin:0">Family</label><select id="sbf" style="max-width:260px">${opt(fams.map(([f])=>f.Cycle),SBF)}</select><span class="mu">${fixed?`Fixed operation (${esc(fixed)}): one strategy per sub-cycle — ap / ae as multiples of Ø, fz mode, Vc multiplier, coolant, entry.`:'Filtered family: values per operation (opDefaults). Family defaults (shaded) apply to every sub-cycle that has values for that operation; a grey placeholder shows a value inherited from the family. A sub-cycle with no values for an operation has no seeded value — the baseline rules or the code default decide, never another operation.'}</span></div>
+ <div class="tw" style="margin-top:8px"><table><thead><tr>${head}</tr></thead><tbody>${famRowsHtml}${body||'<tr><td colspan="10" class="empty">No sub-cycles in this family.</td></tr>'}</tbody></table></div><p id="sbmsg" class="mu"></p></div>`;
  $('#sbf').onchange=e=>{SBF=e.target.value;drawSubEd()};
  $('#pbody').onchange=async e=>{const d=e.target.dataset;if(d.sb==null)return;const r=L.cycles[+d.sb],f=d.sf,isNum=['apD','aeD','vcMult','ap.mult','ae.mult'].includes(f);let v=e.target.value.trim();
   if(isNum){if(v==='')v=null;else{v=+v;if(!isFinite(v)||v<0){e.target.value='';$('#sbmsg').textContent='Numbers only (0 or more).';return}}}else if(v==='')v=null;
   let from;
-  if(d.sop){const od=r.opDefaults=r.opDefaults||{},o=od[d.sop]=od[d.sop]||{};from=o[f];if(v==null)delete o[f];else o[f]=v;if(!Object.keys(o).length)delete od[d.sop];if(!Object.keys(od).length)r.opDefaults=null}
+  if(d.sop){const od=r.opDefaults=r.opDefaults||{},o=od[d.sop]=od[d.sop]||{};from=o[f];if(v==null)delete o[f];else o[f]=v;
+   /* a sub-cycle whose family has defaults for this op keeps an empty entry, so it goes on inheriting them */
+   const fm=r.parent?L.cycles.find(x=>x&&x.key&&!x.parent&&x.Cycle===r.parent):null,keepEmpty=!!(fm&&fm.opDefaults&&fm.opDefaults[d.sop]);
+   if(!Object.keys(o).length&&!keepEmpty)delete od[d.sop];if(!Object.keys(od).length)r.opDefaults=null}
   else if(f==='ap.mult'||f==='ae.mult'){const k=f.split('.')[0];from=r[k]&&r[k].mult;r[k]=Object.assign({},r[k]||{},{mult:v});if(k==='ap'&&!r.ap.cap)r.ap.cap='cutLen'}
   else{from=r[f];if(v==null)delete r[f];else r[f]=v}
   await saveCyc(r.Cycle,(d.sop?d.sop+' ':'')+f,from,v);$('#sbmsg').textContent=`Saved ${r.Cycle} ${d.sop||''} ${f}.`}}
@@ -3982,7 +4137,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.7';
+const APP_V='2026-10-13.8';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
