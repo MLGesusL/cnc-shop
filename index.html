@@ -2739,6 +2739,64 @@ async function openAsk(messages, opts = {}){
   return { text };
 }
 
+/* ---------- AI via Ollama on this PC (decision 2026-10-14: free, open-source, nothing leaves the computer) ----------
+   Native /api/chat, streamed (one JSON object per line). Address and model from localStorage 'ollama.url' / 'ollama.model'
+   (Library → Setup). num_ctx is raised so the app's instructions and tool list fit. The app's TOOLS are sent as functions;
+   tool calls are run here and answered until the model replies in text. Ollama must allow this site's address
+   (OLLAMA_ORIGINS) — Library → Setup → Test connection explains how. */
+const OLLAMA_DEF = { url: 'http://localhost:11434', model: 'qwen3:8b', ctx: 16384 };
+const olCfg = () => { let u = '', m = ''; try { u = localStorage.getItem('ollama.url') || ''; m = localStorage.getItem('ollama.model') || ''; } catch(e){} return { url: (u || OLLAMA_DEF.url).replace(/\/+$/, ''), model: m || OLLAMA_DEF.model }; };
+const OL_HELP = 'Ollama could not be reached from this page. Check: (1) Ollama is running (its icon is in the taskbar tray); (2) Ollama allows this site — Windows: Start → type "environment variables" → Edit environment variables for your account → New: name OLLAMA_ORIGINS, value ' + (typeof location !== 'undefined' ? location.origin : 'https://mlgesusl.github.io') + ' → OK, then right-click the Ollama tray icon → Quit and start Ollama again; (3) if the browser asks to allow access to devices on your local network, click Allow.';
+async function ollamaAsk(messages, opts = {}){
+  const { tools, onText, signal } = opts || {}, cfg = olCfg();
+  const msgs = []; messages.forEach(m => { const t = gText(m.content); if (t.trim()) msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: t }); });
+  const fns = (tools || []).map(t => { const p = geminiSchema(t.inputSchema) || {}; return { type: 'function', function: { name: t.name, description: t.description || '', parameters: p.properties && Object.keys(p.properties).length ? p : { type: 'object', properties: {} } } }; });
+  const byName = {}; (tools || []).forEach(t => byName[t.name] = t);
+  let text = '';
+  for (let round = 0; round < 6; round++){
+    let res;
+    try { res = await fetch(cfg.url + '/api/chat', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ model: cfg.model, messages: msgs, stream: true, options: { num_ctx: OLLAMA_DEF.ctx } }, fns.length ? { tools: fns } : {})) }); }
+    catch(e){ if (e && e.name === 'AbortError') throw e; throw new Error(OL_HELP); }
+    if (!res.ok){
+      let msg = ''; try { const j = await res.json(); msg = j.error || ''; } catch(e){}
+      throw new Error('Ollama error ' + res.status + (msg ? ': ' + String(msg).slice(0, 200) : '') + (/not found|pull/i.test(msg) ? ' — pick an installed model in Library → Setup → AI (Ollama).' : /does not support tools/i.test(msg) ? ' — this model cannot use the app\'s tools; pick another (e.g. qwen3:8b or llama3.1:8b) in Library → Setup.' : ''));
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder(), calls = [];
+    let buf = '', said = '', think = false;
+    const take = line => {
+      line = line.trim(); if (!line) return; let j; try { j = JSON.parse(line); } catch(e){ return; }
+      if (j.error) throw new Error('Ollama error: ' + j.error);
+      const m = j.message || {};
+      if (typeof m.content === 'string' && m.content){ said += m.content;
+        /* hide a model's <think>…</think> reasoning from the answer */
+        const shown = said.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').replace(/^\s+/, ''); if (onText) onText({ text: text + shown }); }
+      (m.tool_calls || []).forEach(tc => { if (tc && tc.function && tc.function.name) calls.push(tc.function); });
+    };
+    while (true){
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl; while ((nl = buf.indexOf('\n')) >= 0){ take(buf.slice(0, nl)); buf = buf.slice(nl + 1); }
+    }
+    if (buf) take(buf);
+    const clean = said.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim();
+    text += clean;
+    if (!calls.length) break;
+    msgs.push({ role: 'assistant', content: said, tool_calls: calls.map(c => ({ function: { name: c.name, arguments: c.arguments || {} } })) });
+    for (const c of calls){
+      const t = byName[c.name]; let out;
+      try { const args = typeof c.arguments === 'string' ? JSON.parse(c.arguments || '{}') : (c.arguments || {}); out = t ? await t.execute(args) : { error: 'unknown tool ' + c.name }; } catch(e){ out = { error: String(e.message || e) }; }
+      let s = ''; try { s = JSON.stringify(out === undefined ? null : out); } catch(e){ s = String(out); }
+      msgs.push({ role: 'tool', tool_name: c.name, content: s.length > 30000 ? s.slice(0, 30000) + '…(cut)' : s });
+    }
+    if (text) text += '\n\n';
+  }
+  return { text };
+}
+/* Library → Setup: which models are installed, and is Ollama reachable from this page */
+async function ollamaTags(url){const r=await fetch(url.replace(/\/+$/,'')+'/api/tags',{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();return (j.models||[]).map(m=>m.name||m.model).filter(Boolean)}
+
 /* ---------- 3. Downloads (replaces claude.use('downloads')) ---------- */
 const dlShim = {
   async save({ filename, data }){
@@ -2815,7 +2873,7 @@ async function load(){
   await loadGEM();
   await _idbInit();
    db = (typeof DB !== 'undefined') ? DB : null;
-  sample = (m,o)=>openAsk(m,o);
+  sample = (m,o)=>ollamaAsk(m,o);
   dl = dlShim;
   /* Phase 1: if ./sheets.json exists with a real Sheet ID, load the library tables from that Google Sheet.
      On any failure, the IndexedDB values loaded below are kept for the tables that did not come from the Sheet. */
@@ -3930,12 +3988,14 @@ function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><
  <div class="g"><div><label for="set_ra">Ra (µm) — finishing target for ball-nose / lollipop stepover</label><input id="set_ra" type="number" step="any" min="0.05" inputmode="decimal" value="${esc(SET.ra)}"></div><div><label for="set_rak">Cusp / Ra multiplier k (ra_cusp_k)</label><input id="set_rak" type="number" step="any" min="0.1" inputmode="decimal" value="${esc(SET.raK)}"></div></div>
  <p class="mu">Cusp height h [mm] = Ra [µm] × k ÷ 1000. <b>k = 1</b> means cusp height equals the Ra target (conservative); <b>k = 4</b> means the scallop Ra is cusp ÷ 4 (Ra ≈ h/4 handbook convention). Used by the ball-nose stepover in Speeds &amp; Feeds, the Log cut suggestion and Formulas → Ball nose: stepover for target Ra.</p>
  <fieldset><legend>Speed preference</legend><div class="row">${[['balanced','Balanced'],['life','Prefer tool life'],['cycle','Prefer cycle time']].map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="set_pref" value="${k}"${SET.pref===k?' checked':''}> ${l}</label>`).join('')}</div>
- <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>AI (OpenRouter — free open-source model)</h2><p class="mu">Ask AI and Learn AI use <code>${esc(AI_MODEL)}</code> through OpenRouter. Get a free key at openrouter.ai → Keys (no card needed). Free models allow 50 requests a day; a question that searches your data uses 2–3. The key is stored only in this browser (localStorage 'openrouter.key'), never in the library, the Sheet or a backup.</p>
- <div class="g"><div><label for="set_okey">OpenRouter API key</label><input id="set_okey" type="password" autocomplete="off" spellcheck="false" value="${esc((()=>{try{return localStorage.getItem('openrouter.key')||''}catch(e){return ''}})())}" placeholder="sk-or-…"></div></div><p class="mu" id="okey_msg"></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
+ <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>AI (Ollama on this PC)</h2><p class="mu">Ask AI and Learn AI run on Ollama on this computer — free, no limits, and nothing leaves the PC. Pick a model you have pulled; it must support tools (for example <code>qwen3:8b</code> or <code>llama3.1:8b</code>). Settings are kept in this browser only.</p>
+ <div class="g"><div><label for="set_olurl">Ollama address</label><input id="set_olurl" value="${esc(olCfg().url)}" spellcheck="false"></div><div><label for="set_olmodel">Model</label><select id="set_olmodel"><option>${esc(olCfg().model)}</option></select></div></div>
+ <p class="row"><button class="b s" id="ol_test">Test connection</button><span class="mu" id="ol_msg"></span></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
  <div class="g"><div><label>Sheet ID (from sheets.json)</label><input id="sh_id" value="${esc(SHEET_CFG.id||'(not set)')}" readonly></div><div><label>Last sync</label><input id="sh_last" value="${esc(sheetLastSync())}" readonly></div></div>
  <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>${n9Card()}`;
- $('#lbody').onclick=async e=>{if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
- $('#lbody').onchange=e=>{if(e.target.id==='set_okey'){const v=e.target.value.trim();try{if(v)localStorage.setItem('openrouter.key',v);else localStorage.removeItem('openrouter.key');const m=$('#okey_msg');if(m)m.textContent=v?'Key saved in this browser ✓':'Key removed'}catch(x){toast('Could not save the key in this browser')}return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
+ olTest(true);
+ $('#lbody').onclick=async e=>{if(e.target.id==='ol_test'){await olTest();return}if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
+ $('#lbody').onchange=e=>{if(e.target.id==='set_olurl'||e.target.id==='set_olmodel'){const k=e.target.id==='set_olurl'?'ollama.url':'ollama.model',v=e.target.value.trim();try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch(x){}const m=$('#ol_msg');if(m)m.textContent='Saved ✓';if(k==='ollama.url')olTest();return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
 /* ---------- Phase 9: normalise the speeds-and-feeds data (one-time migration) ----------
    lib/baseline: rows with identical values that differ in one key column are merged into one row whose cell lists the
    values ("roughing.trochoidal, tube.rough"). lib/cycles: a value shared by the sub-cycles of a family (for one operation)
@@ -4021,6 +4081,12 @@ function n9Card(){const st=n9Stats(),fromSheet=t=>(SHEET_CFG.tabs||[]).includes(
   ${ck}${N9&&!N9.ok&&!N9.done?'<div class="note e">Not identical — nothing will be changed.</div>':''}
   <p class="row"><button class="b s" id="n9chk">Check what would change</button><button class="b" id="n9run"${N9&&N9.ok&&!N9.done?'':' disabled'}>Back up and normalise</button><span class="mu" id="n9msg"></span></p>
   <p class="row"><button class="b s sm" id="n9csvb">Download baseline CSV for the Sheet</button><button class="b s sm" id="n9csvc">Download cycles CSV for the Sheet</button><span class="mu">${fromSheet('baseline')||fromSheet('cycles')?'The baseline and cycles tabs are loaded from the Google Sheet.':''}</span></p></div>`}
+/* fill the model list from Ollama and say whether it can be reached from this page */
+async function olTest(quiet){const m=$('#ol_msg'),sel=$('#set_olmodel');if(!m||!sel)return;const cfg=olCfg();if(!quiet)m.textContent='Checking…';
+ try{const names=await ollamaTags(cfg.url);const cur=names.includes(cfg.model)?cfg.model:(names.find(n=>/^qwen3/.test(n))||names.find(n=>/llama3\.[1-3]/.test(n))||names[0]||cfg.model);
+  sel.innerHTML=(names.length?names:[cfg.model]).map(n=>`<option${n===cur?' selected':''}>${esc(n)}</option>`).join('');if(cur!==cfg.model)try{localStorage.setItem('ollama.model',cur)}catch(x){}
+  m.textContent=names.length?`✓ Connected — ${names.length} model${names.length>1?'s':''} installed`+(names.includes(cfg.model)?'':` · using ${cur}`):'Connected, but no models are installed — open a terminal and run: ollama pull qwen3:8b'}
+ catch(x){m.textContent=quiet?'Not connected — click Test connection for help':OL_HELP}}
 function sheetLastSync(){try{const t=localStorage.getItem('sheets.lastSync');return t?new Date(t).toLocaleString():'—'}catch(e){return '—'}}
 async function reloadSheets(btn){const msg=document.getElementById('sh_msg');if(msg)msg.textContent='Reloading…';
  try{const r=await fetch('./sheets.json',{cache:'no-store'});if(!r.ok)throw new Error('sheets.json not found');
@@ -4468,7 +4534,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-14.2';
+const APP_V='2026-10-14.3';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
