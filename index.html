@@ -2541,6 +2541,84 @@ const AI = {
   }
 };
 
+/* ---------- Phase 5: Gemini (replaces Ollama for Ask AI and Learn AI) ----------
+   Key from localStorage 'gemini.key' (Library → Setup). Streams over SSE; the app's TOOLS become Gemini
+   functionDeclarations (inputSchema → parameters). Tool calls are run here and their results sent back until the
+   model answers in text. onText receives the whole answer so far, as the old client did. */
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_URL = m => 'https://generativelanguage.googleapis.com/v1beta/models/' + m + ':streamGenerateContent?alt=sse';
+const GEM_SCHEMA_KEYS = ['type', 'description', 'enum', 'properties', 'required', 'items', 'format', 'nullable', 'minimum', 'maximum', 'minItems', 'maxItems'];
+function geminiSchema(s){
+  if (!s || typeof s !== 'object') return s;
+  const o = {};
+  GEM_SCHEMA_KEYS.forEach(k => { if (s[k] !== undefined) o[k] = s[k]; });
+  if (o.properties) { const p = {}; Object.entries(o.properties).forEach(([k, v]) => p[k] = geminiSchema(v)); o.properties = p; }
+  if (o.items) o.items = geminiSchema(o.items);
+  if (Array.isArray(o.required) && o.properties) o.required = o.required.filter(k => k in o.properties);
+  return o;
+}
+function geminiTools(tools){
+  if (!tools || !tools.length) return null;
+  return [{ functionDeclarations: tools.map(t => {
+    const d = { name: t.name, description: t.description || '' }, p = geminiSchema(t.inputSchema);   /* app: inputSchema · Gemini: parameters */
+    if (p && p.properties && Object.keys(p.properties).length) d.parameters = p;
+    return d;
+  }) }];
+}
+const gText = c => typeof c === 'string' ? c : Array.isArray(c) ? c.map(b => (b && b.text) || '').join('\n') : String(c ?? '');
+async function geminiAsk(messages, opts = {}){
+  const { tools, onText, signal } = opts || {};
+  let key = ''; try { key = localStorage.getItem('gemini.key') || ''; } catch(e){}
+  if (!key) throw new Error('No Gemini API key yet — paste it in Library → Setup → Gemini API key.');
+  const contents = [];
+  messages.forEach(m => { const t = gText(m.content); if (!t.trim()) return; const role = m.role === 'assistant' ? 'model' : 'user';
+    const last = contents[contents.length - 1]; if (last && last.role === role) last.parts.push({ text: t }); else contents.push({ role, parts: [{ text: t }] }); });
+  const gt = geminiTools(tools), byName = {}; (tools || []).forEach(t => byName[t.name] = t);
+  let text = '';
+  for (let round = 0; round < 6; round++){
+    const res = await fetch(GEMINI_URL(GEMINI_MODEL), { method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(Object.assign({ contents }, gt ? { tools: gt } : {})) });
+    if (!res.ok){
+      let msg = ''; try { const j = await res.json(); msg = (j.error && j.error.message) || ''; } catch(e){}
+      throw new Error('Gemini error ' + res.status + (msg ? ': ' + msg.slice(0, 200) : '') + (res.status === 400 || res.status === 403 ? ' — check the API key in Library → Setup.' : res.status === 404 ? ' — the model name (' + GEMINI_MODEL + ') may no longer be available.' : ''));
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder(), parts = [], calls = [];
+    let buf = '';
+    const take = line => {
+      line = line.trim(); if (!line.startsWith('data:')) return;
+      const d = line.slice(5).trim(); if (!d || d === '[DONE]') return;
+      let j; try { j = JSON.parse(d); } catch(e){ return; }
+      const ps = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+      ps.forEach(p => {
+        if (p.functionCall){ calls.push(p.functionCall); parts.push(p); }
+        else if (typeof p.text === 'string' && !p.thought){ text += p.text; parts.push(p); if (onText) onText({ text }); }
+        else parts.push(p);
+      });
+    };
+    while (true){
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl; while ((nl = buf.indexOf('\n')) >= 0){ take(buf.slice(0, nl)); buf = buf.slice(nl + 1); }
+    }
+    if (buf) take(buf);
+    if (!calls.length) break;
+    /* run the tools Gemini asked for, then ask again with their results */
+    contents.push({ role: 'model', parts });
+    const answers = [];
+    for (const fc of calls){
+      const t = byName[fc.name]; let out;
+      try { out = t ? await t.execute(fc.args || {}) : { error: 'unknown tool ' + fc.name }; } catch(e){ out = { error: String(e.message || e) }; }
+      if (out === undefined) out = null;
+      answers.push({ functionResponse: { name: fc.name, response: (out && typeof out === 'object' && !Array.isArray(out)) ? out : { result: out } } });
+    }
+    contents.push({ role: 'user', parts: answers });
+    if (text) text += '\n\n';
+  }
+  return { text };
+}
+
 /* ---------- 3. Downloads (replaces claude.use('downloads')) ---------- */
 const dlShim = {
   async save({ filename, data }){
@@ -2617,7 +2695,7 @@ async function load(){
   await loadGEM();
   await _idbInit();
    db = (typeof DB !== 'undefined') ? DB : null;
-  sample = (typeof AI !== 'undefined') ? ((m,o)=>AI.ask(m,o)) : null;
+  sample = (m,o)=>geminiAsk(m,o);
   dl = dlShim;
   /* Phase 1: if ./sheets.json exists with a real Sheet ID, load the library tables from that Google Sheet.
      On any failure, the IndexedDB values loaded below are kept for the tables that did not come from the Sheet. */
@@ -3459,11 +3537,12 @@ function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><
  <div class="g"><div><label for="set_ra">Ra (µm) — finishing target for ball-nose / lollipop stepover</label><input id="set_ra" type="number" step="any" min="0.05" inputmode="decimal" value="${esc(SET.ra)}"></div><div><label for="set_rak">Cusp / Ra multiplier k (ra_cusp_k)</label><input id="set_rak" type="number" step="any" min="0.1" inputmode="decimal" value="${esc(SET.raK)}"></div></div>
  <p class="mu">Cusp height h [mm] = Ra [µm] × k ÷ 1000. <b>k = 1</b> means cusp height equals the Ra target (conservative); <b>k = 4</b> means the scallop Ra is cusp ÷ 4 (Ra ≈ h/4 handbook convention). Used by the ball-nose stepover in Speeds &amp; Feeds, the Log cut suggestion and Formulas → Ball nose: stepover for target Ra.</p>
  <fieldset><legend>Speed preference</legend><div class="row">${[['balanced','Balanced'],['life','Prefer tool life'],['cycle','Prefer cycle time']].map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="set_pref" value="${k}"${SET.pref===k?' checked':''}> ${l}</label>`).join('')}</div>
- <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
+ <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>Gemini (Ask AI and Learn AI)</h2><p class="mu">Paste your Gemini API key (from Google AI Studio → Get API key). It is stored only in this browser (localStorage 'gemini.key'), never in the library, the Sheet or a backup. Model: <code>${esc(GEMINI_MODEL)}</code>.</p>
+ <div class="g"><div><label for="set_gkey">Gemini API key</label><input id="set_gkey" type="password" autocomplete="off" spellcheck="false" value="${esc((()=>{try{return localStorage.getItem('gemini.key')||''}catch(e){return ''}})())}" placeholder="paste key"></div></div><p class="mu" id="gkey_msg"></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
  <div class="g"><div><label>Sheet ID (from sheets.json)</label><input id="sh_id" value="${esc(SHEET_CFG.id||'(not set)')}" readonly></div><div><label>Last sync</label><input id="sh_last" value="${esc(sheetLastSync())}" readonly></div></div>
  <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>`;
  $('#lbody').onclick=async e=>{if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}};
- $('#lbody').onchange=e=>{if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
+ $('#lbody').onchange=e=>{if(e.target.id==='set_gkey'){const v=e.target.value.trim();try{if(v)localStorage.setItem('gemini.key',v);else localStorage.removeItem('gemini.key');const m=$('#gkey_msg');if(m)m.textContent=v?'Key saved in this browser ✓':'Key removed'}catch(x){toast('Could not save the key in this browser')}return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
 function sheetLastSync(){try{const t=localStorage.getItem('sheets.lastSync');return t?new Date(t).toLocaleString():'—'}catch(e){return '—'}}
 async function reloadSheets(btn){const msg=document.getElementById('sh_msg');if(msg)msg.textContent='Reloading…';
  try{const r=await fetch('./sheets.json',{cache:'no-store'});if(!r.ok)throw new Error('sheets.json not found');
@@ -3903,7 +3982,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.6';
+const APP_V='2026-10-13.7';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
