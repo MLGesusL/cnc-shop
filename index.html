@@ -2664,7 +2664,7 @@ async function ask(){const q=$('#q').value.trim();if(!q)return;if(!sample){chat.
   ac.signal.addEventListener('abort',()=>{stopped=true;reply.content=(reply.content==='…'?'':reply.content)+'\n\n_(stopped)_';finish()});
   let done=false;function finish(){if(done)return;done=true;ABORT=null;$('#stop').hidden=true;$('#go').hidden=false;drawChat();saveAsk()}
   const msgs=chat.slice(0,-1).map((m,i,arr)=>({role:m.role,content:m.role==='user'&&m.ctx?`${m.content}\n\n--- APP CONTEXT (resolved by the app, not typed by the user) ---\n${m.ctx}`:m.content}));
-  const sys=(KNOW_ON?SYS_CORE+'\n'+KNOWLEDGE:SYS_CORE)+'\n\nConversation follows.';
+  const sys=(KNOW_ON?promptFor('ask.core')+'\n'+promptFor('ask.knowledge'):promptFor('ask.core'))+'\n\nConversation follows.';
   const opts={tools:TOOLS,cache:false,modelTier:'default',signal:ac.signal,onText:u=>{if(!stopped){reply.content=u.text;drawChat()}}};
   /* the system text is sent as a cache_control block when the AI bridge accepts content blocks; otherwise as plain text */
   const run=blocks=>sample([{role:'user',content:blocks?[{type:'text',text:sys,cache_control:{type:'ephemeral'}}]:sys},{role:'assistant',content:'Understood.'},...msgs],opts);
