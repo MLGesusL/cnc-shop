@@ -2433,6 +2433,65 @@ const dlShim = {
     return true;
   }
 };
+/* ---------- Phase 1: Google Sheet as master data store ----------
+   loadSheets(id, tabs) fetches each tab as CSV via Google's gviz endpoint and returns {tabName: rows[]}.
+   Numeric cells become numbers; these columns are JSON-parsed when non-empty:
+   usableAs, opDefaults, ap, ae, hyperMILL, inputs, out, options. The cycleparams tab is rebuilt from
+   one-row-per-parameter back into one group per 'group' column value. */
+function parseCSV(text){
+  const rows=[];let row=[],field='',inQ=false,i=0;
+  while(i<text.length){
+    const c=text[i];
+    if(inQ){
+      if(c==='"'){if(text[i+1]==='"'){field+='"';i+=2;continue}inQ=false;i++;continue}
+      field+=c;i++;continue;
+    }
+    if(c==='"'){inQ=true;i++;continue}
+    if(c===','){row.push(field);field='';i++;continue}
+    if(c==='\r'){i++;continue}
+    if(c==='\n'){row.push(field);rows.push(row);row=[];field='';i++;continue}
+    field+=c;i++;
+  }
+  if(field!==''||row.length){row.push(field);rows.push(row)}
+  return rows;
+}
+async function loadSheets(id,tabs){
+  const out={},JSONC=['usableAs','opDefaults','ap','ae','hyperMILL','inputs','out','options'];
+  for(const tab of (tabs||[])){
+    let csv='';
+    try{
+      const url=`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+      const r=await fetch(url,{cache:'no-store'});
+      if(!r.ok)continue;
+      csv=await r.text();
+    }catch(e){continue}
+    if(!csv||csv.trim().startsWith('<'))continue;
+    const rows=parseCSV(csv);
+    if(rows.length<1){out[tab]=[];continue}
+    const head=rows[0],body=rows.slice(1);
+    const objs=body.map(r=>{const o={};head.forEach((h,i)=>{let v=r[i];if(v==null)v='';v=String(v).trim();
+      if(v==='')o[h]='';else if(!isNaN(+v))o[h]=+v;else o[h]=v});
+      return o}).filter(o=>Object.values(o).some(v=>v!==''&&v!=null));
+    objs.forEach(o=>{JSONC.forEach(c=>{if(o[c]!==''&&o[c]!=null){try{o[c]=JSON.parse(o[c])}catch(e){}}})});
+    if(tab==='cycleparams'){
+      const groups=[],byG=new Map();
+      objs.forEach(o=>{
+        const gk=o.group;if(!gk)return;
+        let g=byG.get(gk);
+        if(!g){g={Group:gk,Match:o.match||'',Note:o.group_note||'',Params:[]};byG.set(gk,g);groups.push(g)}
+        const p={};
+        ['key','label','type','unit','hint','status'].forEach(k=>{if(o[k]!==''&&o[k]!=null)p[k]=o[k]});
+        if(o.section!==''&&o.section!=null)p.sec=o.section;
+        if(Array.isArray(o.options))p.options=o.options;
+        if(p.key)g.Params.push(p);
+      });
+      out[tab]=groups;
+    }else{
+      out[tab]=objs;
+    }
+  }
+  return out;
+}
 async function load(){
   await loadMFR();
   await loadGEM();
