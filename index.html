@@ -2286,12 +2286,70 @@ async function seedTree(){if(OFFLINE||!db||!L.cycles.length||L.cycles.some(c=>c&
    and your own Ollama server. Paste-and-forget.
    ============================================================ */
 
-/* ---------- 1. Storage (replaces the online database) ---------- */
+/* ---------- 1. Storage (IndexedDB-backed — Phase 1b) ----------
+   Same API the rest of the app already uses; data now lives in IndexedDB (hundreds of MB, sometimes GB of quota)
+   instead of localStorage (5 MB). A synchronous in-memory Map mirrors everything so the existing .data() calls keep
+   working unchanged. On the first load after this change, every cnc:* key in localStorage is copied into IndexedDB
+   and then removed from localStorage to free the old 5 MB budget. */
 const LS_PREFIX = 'cnc:';
+const IDB_NAME = 'cnc-shop';
+const IDB_STORE = 'kv';
+let _idb = null, _idbReady = null, _idbWarned = false;
+const _mem = new Map();
+function _idbOpen(){
+  if (_idbReady) return _idbReady;
+  _idbReady = new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) return reject(new Error('IndexedDB not available'));
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => { const d = req.result; if (!d.objectStoreNames.contains(IDB_STORE)) d.createObjectStore(IDB_STORE); };
+    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
+    req.onerror = () => reject(req.error || new Error('IndexedDB open failed'));
+  });
+  return _idbReady;
+}
+async function _idbAll(){
+  const d = await _idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(IDB_STORE, 'readonly'), st = tx.objectStore(IDB_STORE), out = [], cur = st.openCursor();
+    cur.onsuccess = () => { const c = cur.result; if (c) { out.push([c.key, c.value]); c.continue(); } else resolve(out); };
+    cur.onerror = () => reject(cur.error);
+  });
+}
+async function _idbPut(key, value){
+  const d = await _idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(IDB_STORE, 'readwrite'), r = tx.objectStore(IDB_STORE).put(value, key);
+    r.onsuccess = () => resolve(true); r.onerror = () => reject(r.error);
+  });
+}
+async function _idbDel(key){
+  const d = await _idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(IDB_STORE, 'readwrite'), r = tx.objectStore(IDB_STORE).delete(key);
+    r.onsuccess = () => resolve(true); r.onerror = () => reject(r.error);
+  });
+}
+async function _idbInit(){
+  try { (await _idbAll()).forEach(([k, v]) => _mem.set(k, v)); }
+  catch (e) { console.warn('IndexedDB read failed — staying on localStorage for this session:', e); return; }
+  const toMove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(LS_PREFIX) && k.indexOf('/', LS_PREFIX.length) >= 0 && !_mem.has(k)) toMove.push(k);
+  }
+  for (const k of toMove) {
+    try { const v = JSON.parse(localStorage.getItem(k)); _mem.set(k, v); await _idbPut(k, v); localStorage.removeItem(k); }
+    catch (e) { /* leave it in localStorage if it was not valid JSON */ }
+  }
+  if (toMove.length) console.info('Storage: migrated ' + toMove.length + ' keys from localStorage to IndexedDB');
+}
 const _ls = {
-  get(p){ try { const s = localStorage.getItem(LS_PREFIX+p); return s ? JSON.parse(s) : undefined; } catch(e){ return undefined; } },
-  set(p,v){ try { localStorage.setItem(LS_PREFIX+p, JSON.stringify(v)); return true; } catch(e){ alert('Browser storage is full. Export a backup and clear old data.'); return false; } },
-  del(p){ try { localStorage.removeItem(LS_PREFIX+p); } catch(e){} }
+  get(p){ return _mem.get(LS_PREFIX + p); },
+  set(p, v){ const k = LS_PREFIX + p; _mem.set(k, v); _idbPut(k, v).catch(e => {
+    console.warn('IndexedDB write failed:', e);
+    if (!_idbWarned) { _idbWarned = true; setTimeout(() => alert('Storage write failed. Your data is safe in this session but may not survive a refresh. Reload and try again.'), 100); }
+  }); return true; },
+  del(p){ const k = LS_PREFIX + p; _mem.delete(k); _idbDel(k).catch(() => {}); }
 };
 function _snap(id, data){
   return { id, exists: data !== undefined, data: () => data === undefined ? undefined : JSON.parse(JSON.stringify(data)) };
@@ -2310,12 +2368,12 @@ function _coll(store){
   return {
     doc: id => _doc(store, id),
     async get(){
-      const docs = [];
-      for (let i=0;i<localStorage.length;i++){
-        const k = localStorage.key(i);
-        if (k && k.startsWith(LS_PREFIX + store + '/')){
-          const id = k.slice((LS_PREFIX + store + '/').length);
-          docs.push(_snap(id, _ls.get(store + '/' + id)));
+      /* Phase 1b: iterate the in-memory map (which mirrors IndexedDB) instead of localStorage. */
+      const docs = [], prefix = LS_PREFIX + store + '/';
+      for (const [k, v] of _mem) {
+        if (k.startsWith(prefix)) {
+          const id = k.slice(prefix.length);
+          docs.push(_snap(id, v));
         }
       }
       return { docs };
@@ -2495,6 +2553,7 @@ async function loadSheets(id,tabs){
 async function load(){
   await loadMFR();
   await loadGEM();
+  await _idbInit();
    db = (typeof DB !== 'undefined') ? DB : null;
   sample = (typeof AI !== 'undefined') ? ((m,o)=>AI.ask(m,o)) : null;
   dl = dlShim;
