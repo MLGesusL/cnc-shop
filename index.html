@@ -2518,7 +2518,7 @@ async function load(){
     TD={items:TDSEED.map((x,i)=>({id:'s'+i,cat:x[0],text:x[1],pri:x[2],done:false,note:''}))};
     $('#offc').hidden=false;SF.invalidate();setStatus(`Offline — starter library (${L.tools.length} tools)`,false);renderAll();return}
   try{
-    const RAW={};for(const k of Object.keys(L)){try{RAW[k]=await readLib(k);L[k]=RAW[k].rows}catch(e){L[k]=[]}}
+    const RAW={};for(const k of Object.keys(L)){try{RAW[k]=await readLib(k);if(sheetData&&Object.prototype.hasOwnProperty.call(sheetData,k)){RAW[k]={rows:L[k],v:LIB_V,exists:true}}else{L[k]=RAW[k].rows}}catch(e){RAW[k]={rows:L[k]||[],v:LIB_V,exists:false}}}
     try{const s=await db.doc('lib/settings').get();if(s.exists){const d=dat(s);SET={ra:+d.ra>0?+d.ra:1.6,pref:['balanced','life','cycle'].includes(d.pref)?d.pref:'balanced',raK:+d.ra_cusp_k>0?+d.ra_cusp_k:1}}}catch(e){}
     try{const s=await db.doc('lib/auditmeta').get();AM=s.exists?{dismissed:[],resolved:{},...dat(s)}:{dismissed:[],resolved:{}}}catch(e){}
     try{const q=await db.collection('changelog').get();CLOGDOCS={};q.docs.forEach(d=>CLOGDOCS[d.id]=(dat(d).entries||[]));CLOG={entries:Object.values(CLOGDOCS).flat().sort((a,b)=>String(a.at).localeCompare(String(b.at)))}}catch(e){}
