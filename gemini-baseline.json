@@ -1,0 +1,4928 @@
+{
+  "version": 1,
+  "generated_by": "gemini-baseline",
+  "units": {
+    "vc": "m/min",
+    "fz": "mm/tooth or %D (see fz_mode)",
+    "ap": "mm or ×D (see ap_mode)",
+    "ae": "mm or ×D (see ae_mode)",
+    "f": "mm/rev"
+  },
+  "baselines": [
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        140,
+        180
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1,
+        1.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.5
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "Iscar published P-steel ranges",
+        "typical European mould-shop practice"
+      ],
+      "notes": "raise ae and lower ap when the tool has variable helix; dynamic paths prefer 0.1D ae and 1.5-2.5D ap"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        160,
+        200
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.2
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "leave stock for finishing"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        180,
+        240
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.08
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "high speed light cut for fine surface finish"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        130,
+        170
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.4
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "constant scallop roughing"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        150,
+        190
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.6,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.2
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "semi-finish contouring"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        170,
+        220
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.08
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "tight stepover for low scallop height"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        90,
+        130
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.15,
+        0.3
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.1,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "solid carbide through-coolant drill"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "drill_hss",
+      "operation": "drill",
+      "vc": [
+        25,
+        45
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.1,
+        0.25
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.08,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "standard jobber drill"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        20,
+        40
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.05,
+        0.15
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "leave 0.2-0.4mm on diameter for reaming"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        80,
+        120
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.012,
+        0.03
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "helical interpolation multi-flute thread mill"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        180,
+        250
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.075,
+        0.15
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        1.5,
+        4
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.7,
+        0.9
+      ],
+      "hex_mm_typ": 0.08,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "indexable face mill, positive inserts"
+    },
+    {
+      "iso": "P1",
+      "name": "carbon steel < 28 HRC",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        100,
+        150
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.08,
+        0.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.5,
+        1
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "anti-vibration boring bar recommended for deep bores"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        100,
+        150
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.4
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "suitable for P20 tool steel and EN24T"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        120,
+        170
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.6,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.2
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        140,
+        190
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.15
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.05
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        90,
+        140
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.7,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.3
+      ],
+      "hex_mm_typ": 0.035,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        110,
+        160
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        0.9
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.2
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        130,
+        180
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.7
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.08
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.06
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        70,
+        110
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.12,
+        0.25
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.08,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        15,
+        35
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.04,
+        0.12
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        60,
+        100
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.009,
+        0.024
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        130,
+        190
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.06,
+        0.125
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        1,
+        3
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.6,
+        0.8
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        80,
+        120
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.06,
+        0.15
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.4,
+        1.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.4,
+        0.8
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        40,
+        80
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.3,
+        0.8
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "rigid setup required"
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        50,
+        95
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.15
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        60,
+        110
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.01,
+        0.05
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        35,
+        70
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.2
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        45,
+        85
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.1
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        55,
+        100
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.2,
+        0.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.01,
+        0.05
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.01,
+        0.04
+      ],
+      "hex_mm_typ": 0.01,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        30,
+        55
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.08,
+        0.18
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        10,
+        25
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.03,
+        0.08
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        30,
+        60
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.006,
+        0.018
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        50,
+        90
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.04,
+        0.09
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        0.5,
+        1.5
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.4,
+        0.7
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H1",
+      "name": "hardened steel 45-55 HRC",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        35,
+        65
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.04,
+        0.1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.8
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.5
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        25,
+        50
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.2
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "use high-speed machining with light radial engagement"
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        30,
+        60
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.03,
+        0.1
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        35,
+        75
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.2,
+        0.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.01,
+        0.08
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.01,
+        0.03
+      ],
+      "hex_mm_typ": 0.01,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        20,
+        45
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.15
+      ],
+      "hex_mm_typ": 0.018,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        25,
+        55
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.2,
+        0.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.03,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.03,
+        0.08
+      ],
+      "hex_mm_typ": 0.012,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        30,
+        70
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.15,
+        0.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.01,
+        0.04
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.01,
+        0.03
+      ],
+      "hex_mm_typ": 0.008,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        20,
+        40
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.06,
+        0.14
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.8,
+        2.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        8,
+        20
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.02,
+        0.06
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        20,
+        45
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.0048,
+        0.015
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.01,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        30,
+        65
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.03,
+        0.07
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        0.3,
+        1
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.3,
+        0.6
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "H2",
+      "name": "hardened steel > 55 HRC",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        25,
+        50
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.03,
+        0.08
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.4
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "air_or_mql",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        60,
+        110
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.4
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "applies to 316, 17-4PH, and 13-8PH stainless steels"
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        80,
+        130
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.6,
+        1.1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.2
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        90,
+        150
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.9
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.08
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        55,
+        100
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.7,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.4
+      ],
+      "hex_mm_typ": 0.035,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        70,
+        120
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.2
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        85,
+        140
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.08
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        40,
+        80
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.1,
+        0.22
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.07,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "drill_hss",
+      "operation": "drill",
+      "vc": [
+        15,
+        30
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.08,
+        0.18
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        12,
+        28
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.04,
+        0.1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.035,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        30,
+        45
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.009,
+        0.021
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "max Vc 45 recommended for stainless steel threading"
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        70,
+        120
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.05,
+        0.11
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        1,
+        2.5
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.5,
+        0.7
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "M",
+      "name": "stainless steel",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        50,
+        90
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.05,
+        0.12
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.3,
+        1.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.7
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        120,
+        200
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1,
+        1.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.6
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "good thermal stability"
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        150,
+        230
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.6
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        180,
+        260
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1.1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.1
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        110,
+        180
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.9,
+        1.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.6
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.5
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        130,
+        210
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.7,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.035,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        160,
+        240
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.9
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.15
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.1
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        90,
+        150
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.15,
+        0.35
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.1,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        30,
+        70
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.06,
+        0.18
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        100,
+        160
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.012,
+        0.036
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        150,
+        220
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.09,
+        0.175
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        1.5,
+        4.5
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.7,
+        0.9
+      ],
+      "hex_mm_typ": 0.09,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "K",
+      "name": "cast iron",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        110,
+        170
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.1,
+        0.25
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        2.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.5,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "dry_or_air",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        30,
+        65
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.6,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "applies to Ti-6Al-4V titanium"
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        40,
+        75
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        0.9
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.15
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        50,
+        80
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.7
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.15
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.05
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        25,
+        55
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        0.9
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        35,
+        70
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.15
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        45,
+        80
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.25,
+        0.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.06
+      ],
+      "hex_mm_typ": 0.012,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        25,
+        50
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.08,
+        0.16
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        10,
+        25
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.03,
+        0.08
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        20,
+        40
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.006,
+        0.015
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.015,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "keep Vc strictly between 20-40 for titanium thread milling"
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        35,
+        70
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.04,
+        0.09
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        0.5,
+        2
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.4,
+        0.7
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S1",
+      "name": "heat-resistant super alloys / titanium",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        25,
+        50
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.04,
+        0.1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.6
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        20,
+        45
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        0.9
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.4,
+        0.8
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.25
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "low cutting speeds required to manage thermal load"
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        25,
+        55
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.15,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.15
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        30,
+        60
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.25,
+        0.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.04,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.05
+      ],
+      "hex_mm_typ": 0.012,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        18,
+        40
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.15,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.25
+      ],
+      "hex_mm_typ": 0.022,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        25,
+        50
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.3,
+        0.7
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.08,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.12
+      ],
+      "hex_mm_typ": 0.016,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        30,
+        60
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.2,
+        0.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.08
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.05
+      ],
+      "hex_mm_typ": 0.01,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        15,
+        35
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.06,
+        0.14
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        8,
+        20
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.02,
+        0.06
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        15,
+        35
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.0048,
+        0.012
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.012,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "strict Vc cap for nickel superalloys"
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        25,
+        55
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.03,
+        0.075
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        0.4,
+        1.5
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.4,
+        0.6
+      ],
+      "hex_mm_typ": 0.035,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "S2",
+      "name": "nickel-based alloys",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        18,
+        40
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.03,
+        0.08
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.8
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.5
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "end_mill_aluminium",
+      "operation": "rough",
+      "vc": [
+        300,
+        800
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1.2,
+        2.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.7
+      ],
+      "hex_mm_typ": 0.08,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "high chip clearance required"
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "end_mill_aluminium",
+      "operation": "semi",
+      "vc": [
+        400,
+        1000
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1,
+        2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.6
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.4
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "end_mill_aluminium",
+      "operation": "finish",
+      "vc": [
+        500,
+        1200
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.6,
+        1.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.15
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        250,
+        700
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1,
+        2.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.3,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.6
+      ],
+      "hex_mm_typ": 0.07,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        350,
+        900
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        450,
+        1100
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.1
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        120,
+        250
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.2,
+        0.45
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        6
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.15,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "drill_hss",
+      "operation": "drill",
+      "vc": [
+        60,
+        120
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.15,
+        0.35
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.12,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        50,
+        100
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.08,
+        0.25
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.08,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        150,
+        350
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.018,
+        0.048
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        400,
+        900
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.1,
+        0.225
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        2,
+        6
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.7,
+        0.95
+      ],
+      "hex_mm_typ": 0.12,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N1",
+      "name": "aluminium alloys, wrought",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        200,
+        500
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.12,
+        0.3
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.5,
+        1
+      ],
+      "hex_mm_typ": 0.08,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "end_mill_aluminium",
+      "operation": "rough",
+      "vc": [
+        200,
+        500
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1,
+        2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.5
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "watch out for silicon content"
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "end_mill_aluminium",
+      "operation": "semi",
+      "vc": [
+        250,
+        650
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "end_mill_aluminium",
+      "operation": "finish",
+      "vc": [
+        300,
+        800
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.1
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        180,
+        450
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.8
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.5
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        230,
+        580
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.6,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.25
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        280,
+        700
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.15
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.08
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        100,
+        200
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.15,
+        0.35
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.12,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        40,
+        80
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.06,
+        0.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        120,
+        280
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.015,
+        0.036
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        250,
+        600
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.075,
+        0.175
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        1.5,
+        5
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.6,
+        0.9
+      ],
+      "hex_mm_typ": 0.1,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "N2",
+      "name": "aluminium alloys, cast / non-ferrous",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        150,
+        350
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.1,
+        0.25
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.4,
+        2.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.4,
+        0.9
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "flood",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        150,
+        400
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1,
+        2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.4,
+        1
+      ],
+      "hex_mm_typ": 0.06,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "suitable for carbon-filled and glass-filled PEEK"
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        200,
+        500
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.5
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        250,
+        600
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.2
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        130,
+        350
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.9,
+        1.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.3,
+        1.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.8
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        180,
+        450
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.7,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.6
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.4
+      ],
+      "hex_mm_typ": 0.035,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        220,
+        550
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.2
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        100,
+        250
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.15,
+        0.35
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.1,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "sharp positive rake required to prevent melting"
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        50,
+        120
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.08,
+        0.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        120,
+        300
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.018,
+        0.042
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        180,
+        450
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.075,
+        0.175
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        1,
+        4
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.6,
+        0.9
+      ],
+      "hex_mm_typ": 0.08,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "PL",
+      "name": "plastics / polymers",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        120,
+        300
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.1,
+        0.25
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.5,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "end_mill_square",
+      "operation": "rough",
+      "vc": [
+        100,
+        300
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1.5
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.5,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "aggressive dust extraction necessary"
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "end_mill_square",
+      "operation": "semi",
+      "vc": [
+        150,
+        400
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        1.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.15
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "end_mill_square",
+      "operation": "finish",
+      "vc": [
+        200,
+        500
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.2,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.05,
+        0.2
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.01,
+        0.05
+      ],
+      "hex_mm_typ": 0.012,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "diamond-coated tooling standard for longevity"
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "end_mill_ball",
+      "operation": "rough",
+      "vc": [
+        90,
+        250
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.2,
+        0.6
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.3
+      ],
+      "hex_mm_typ": 0.025,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "end_mill_ball",
+      "operation": "semi",
+      "vc": [
+        130,
+        350
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.15
+      ],
+      "hex_mm_typ": 0.018,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "end_mill_ball",
+      "operation": "finish",
+      "vc": [
+        180,
+        450
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.2,
+        0.7
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.01,
+        0.05
+      ],
+      "hex_mm_typ": 0.01,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "drill_carbide",
+      "operation": "drill",
+      "vc": [
+        80,
+        200
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.08,
+        0.2
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        4
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "prevent delamination in composites with backing plate or brad-point geometry"
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "reamer",
+      "operation": "ream",
+      "vc": [
+        40,
+        100
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.04,
+        0.12
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "thread_mill",
+      "operation": "thread",
+      "vc": [
+        90,
+        220
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.012,
+        0.03
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        1,
+        1
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "face_mill",
+      "operation": "rough",
+      "vc": [
+        120,
+        300
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.05,
+        0.125
+      ],
+      "ap_mode": "mm",
+      "ap": [
+        0.5,
+        2
+      ],
+      "ae_mode": "mm",
+      "ae": [
+        0.5,
+        0.8
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "C",
+      "name": "graphite / composites",
+      "tool": "boring_bar",
+      "operation": "rough",
+      "vc": [
+        90,
+        220
+      ],
+      "fz_mode": "mm",
+      "fz": [
+        0.06,
+        0.15
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.3,
+        1.5
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.8
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "dry_or_air",
+      "confidence": "medium",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": null
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_bull",
+      "r_D_band": "small",
+      "operation": "rough",
+      "vc": [
+        110,
+        150
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        1,
+        1.6
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        1.5,
+        3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.12
+      ],
+      "hex_mm_typ": 0.05,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop HPC practice"
+      ],
+      "notes": "constant-engagement trochoidal; radial chip thinning is significant at this ae"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_bull",
+      "r_D_band": "medium",
+      "operation": "rough",
+      "vc": [
+        105,
+        145
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.9,
+        1.4
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.3,
+        1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.3,
+        0.5
+      ],
+      "hex_mm_typ": 0.045,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "balanced depth and width for general pocketing"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_bull",
+      "r_D_band": "large",
+      "operation": "rough",
+      "vc": [
+        115,
+        160
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.8,
+        1.3
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.5,
+        0.7
+      ],
+      "hex_mm_typ": 0.04,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "high-feed shallow roughing; wide engagement and thin chip spread over large arc"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_bull",
+      "r_D_band": "small",
+      "operation": "semi",
+      "vc": [
+        120,
+        165
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.6,
+        1.1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.1,
+        0.25
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "semi-finishing with small corner radius"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_bull",
+      "r_D_band": "large",
+      "operation": "semi",
+      "vc": [
+        130,
+        175
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.5,
+        1
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.1,
+        0.3
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.2,
+        0.4
+      ],
+      "hex_mm_typ": 0.03,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "semi-finishing with large corner radius"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_bull",
+      "r_D_band": "small",
+      "operation": "finish",
+      "vc": [
+        140,
+        190
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.02,
+        0.08
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "finishing; target Ra 1.6 um set by corner radius and stepover"
+    },
+    {
+      "iso": "P2",
+      "name": "alloy steel / pre-hardened steel 28-42 HRC",
+      "tool": "end_mill_bull",
+      "r_D_band": "large",
+      "operation": "finish",
+      "vc": [
+        150,
+        200
+      ],
+      "fz_mode": "%D",
+      "fz": [
+        0.4,
+        0.8
+      ],
+      "ap_mode": "nD",
+      "ap": [
+        0.02,
+        0.1
+      ],
+      "ae_mode": "nD",
+      "ae": [
+        0.05,
+        0.2
+      ],
+      "hex_mm_typ": 0.02,
+      "coolant": "flood",
+      "confidence": "high",
+      "sources": [
+        "typical European mould-shop practice"
+      ],
+      "notes": "finishing; large radius allows wider stepover for target Ra 1.6 um"
+    }
+  ],
+  "adjustments": [
+    {
+      "applies_to": {
+        "iso": [
+          "S1",
+          "S2"
+        ],
+        "operation": [
+          "rough",
+          "semi",
+          "finish"
+        ]
+      },
+      "field": "vc",
+      "factor": 0.75,
+      "condition": "coolant == 'dry' or coolant == 'mql'",
+      "reason": "titanium and nickel alloys run hot; without flood or HPC, cut Vc and expect shorter tool life"
+    }
+  ],
+  "red_flags": [
+    {
+      "pattern": "iso==N1 and vc>1500",
+      "reason": "aluminium above Vc 1500 m/min on a 12k spindle is unreachable on a small VMC"
+    }
+  ],
+  "cycles": [
+    {
+      "family": "Roughing (3D)",
+      "subcycle_key": "roughing.trochoidal",
+      "iso": "P2",
+      "vc_multiplier": 1.15,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          1.5,
+          3
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.05,
+          0.1
+        ]
+      },
+      "entry": "helix",
+      "ramp_angle_max_deg": 3,
+      "corner_feed_reduction_pct": 30,
+      "coolant": "flood",
+      "notes": "small-r bull nose trochoidal; keep ae <= 0.10*D even at depth",
+      "confidence": "high",
+      "sources": [
+        "typical HPC practice"
+      ]
+    },
+    {
+      "family": "Roughing (3D)",
+      "subcycle_key": "roughing.hf-shallow",
+      "iso": "P2",
+      "vc_multiplier": 1.35,
+      "hex_multiplier": 0.75,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          0.05,
+          0.15
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.55,
+          0.75
+        ]
+      },
+      "entry": "ramp",
+      "ramp_angle_max_deg": 2,
+      "corner_feed_reduction_pct": 20,
+      "coolant": "flood",
+      "notes": "large-r bull nose high-feed shallow roughing; wide ae and shallow ap",
+      "confidence": "high",
+      "sources": [
+        "typical HPC practice"
+      ]
+    },
+    {
+      "family": "Finishing (3D)",
+      "subcycle_key": "finishing.equidistant",
+      "iso": "P2",
+      "vc_multiplier": 1.05,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          0.02,
+          0.08
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.02,
+          0.15
+        ]
+      },
+      "entry": "helix",
+      "ramp_angle_max_deg": 5,
+      "corner_feed_reduction_pct": 10,
+      "coolant": "flood",
+      "notes": "bull nose equidistant 3D finishing; stepover is set by the corner radius and target scallop height",
+      "confidence": "high",
+      "sources": [
+        "mould-shop finishing practice"
+      ]
+    },
+    {
+      "family": "Roughing (3D)",
+      "subcycle_key": "roughing.trochoidal",
+      "iso": "P1",
+      "vc_multiplier": 1.15,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          1.5,
+          3
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.05,
+          0.1
+        ]
+      },
+      "entry": "helix",
+      "ramp_angle_max_deg": 3,
+      "corner_feed_reduction_pct": 30,
+      "coolant": "flood",
+      "notes": "constant-engagement trochoidal for carbon steel",
+      "confidence": "high",
+      "sources": [
+        "typical HPC practice"
+      ]
+    },
+    {
+      "family": "Roughing (3D)",
+      "subcycle_key": "roughing.trochoidal",
+      "iso": "M",
+      "vc_multiplier": 1.1,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          1.5,
+          2.5
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.05,
+          0.1
+        ]
+      },
+      "entry": "helix",
+      "ramp_angle_max_deg": 2,
+      "corner_feed_reduction_pct": 35,
+      "coolant": "flood",
+      "notes": "constant-engagement trochoidal for stainless steel",
+      "confidence": "high",
+      "sources": [
+        "typical HPC practice"
+      ]
+    },
+    {
+      "family": "Roughing (3D)",
+      "subcycle_key": "roughing.trochoidal",
+      "iso": "N1",
+      "vc_multiplier": 1.2,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          2,
+          4
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.05,
+          0.12
+        ]
+      },
+      "entry": "helix",
+      "ramp_angle_max_deg": 5,
+      "corner_feed_reduction_pct": 20,
+      "coolant": "flood",
+      "notes": "high-speed trochoidal for aluminium",
+      "confidence": "high",
+      "sources": [
+        "typical HPC practice"
+      ]
+    },
+    {
+      "family": "Drilling",
+      "subcycle_key": "drilling.simple",
+      "iso": "P1",
+      "vc_multiplier": 1,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          1,
+          5
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          1,
+          1
+        ]
+      },
+      "entry": "direct",
+      "ramp_angle_max_deg": null,
+      "corner_feed_reduction_pct": null,
+      "coolant": "flood",
+      "notes": "standard straight drilling strategy",
+      "confidence": "high",
+      "sources": [
+        "standard drilling practice"
+      ]
+    },
+    {
+      "family": "Drilling",
+      "subcycle_key": "drilling.deep",
+      "iso": "P2",
+      "vc_multiplier": 0.9,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          3,
+          10
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          1,
+          1
+        ]
+      },
+      "entry": "direct",
+      "ramp_angle_max_deg": null,
+      "corner_feed_reduction_pct": null,
+      "coolant": "flood",
+      "notes": "optimized deep hole drilling with peck cycle for chip breaking",
+      "confidence": "high",
+      "sources": [
+        "optimized deep hole practice"
+      ]
+    },
+    {
+      "family": "Finishing (3D)",
+      "subcycle_key": "finishing.z-level",
+      "iso": "P1",
+      "vc_multiplier": 1.05,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          0.02,
+          0.1
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.02,
+          0.1
+        ]
+      },
+      "entry": "helix",
+      "ramp_angle_max_deg": 5,
+      "corner_feed_reduction_pct": 10,
+      "coolant": "flood",
+      "notes": "Z-level finishing for steep walls",
+      "confidence": "high",
+      "sources": [
+        "mould-shop finishing practice"
+      ]
+    },
+    {
+      "family": "Contouring",
+      "subcycle_key": "contouring.2d",
+      "iso": "P1",
+      "vc_multiplier": 1,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          0.5,
+          1
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.5,
+          1
+        ]
+      },
+      "entry": "arc",
+      "ramp_angle_max_deg": null,
+      "corner_feed_reduction_pct": 15,
+      "coolant": "flood",
+      "notes": "standard 2D profile contouring",
+      "confidence": "high",
+      "sources": [
+        "standard workshop practice"
+      ]
+    },
+    {
+      "family": "5-Axis (general)",
+      "subcycle_key": "ax5.swarf-1",
+      "iso": "P1",
+      "vc_multiplier": 1,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          0.5,
+          1.5
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.1,
+          0.3
+        ]
+      },
+      "entry": "smooth",
+      "ramp_angle_max_deg": 3,
+      "corner_feed_reduction_pct": 20,
+      "coolant": "flood",
+      "notes": "simultaneous 5-axis single curve swarf machining",
+      "confidence": "high",
+      "sources": [
+        "5-axis programming practice"
+      ]
+    },
+    {
+      "family": "5-Axis (general)",
+      "subcycle_key": "ax5.blade-flank",
+      "iso": "S1",
+      "vc_multiplier": 1,
+      "hex_multiplier": 1,
+      "engagement": {
+        "ap_mode": "nD",
+        "ap": [
+          0.5,
+          1
+        ],
+        "ae_mode": "nD",
+        "ae": [
+          0.05,
+          0.2
+        ]
+      },
+      "entry": "smooth",
+      "ramp_angle_max_deg": 2,
+      "corner_feed_reduction_pct": 25,
+      "coolant": "flood",
+      "notes": "5-axis flank milling for aerospace components and blades",
+      "confidence": "high",
+      "sources": [
+        "aerospace 5-axis practice"
+      ]
+    }
+  ]
+}
