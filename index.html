@@ -3142,7 +3142,7 @@ function renderLearn(){$('#learn').innerHTML=`<div class="card"><h2>Tutor</h2><s
 const drawLearn=()=>{const h=$('#lchat');if(h)h.innerHTML=LC.map((m,i)=>msgHtml(m,'learn',i)).join('')};
 async function teach(){const q=$('#lq').value.trim();if(!q)return;if(!sample){LC.push({role:'assistant',content:'AI is unavailable in this view.'});return drawLearn()}
   LC.push({role:'user',content:q});$('#lq').value='';const r={role:'assistant',content:'…'};LC.push(r);drawLearn();$('#lgo').disabled=true;
-  try{const x=await sample([{role:'user',content:TSYS+'\n\nConversation follows.'},{role:'assistant',content:'Understood.'},...LC.slice(0,-1)],{tools:TOOLS,cache:false,modelTier:'default',onText:u=>{r.content=u.text;drawLearn()}});r.content=x.text}catch(e){r.content='Error: '+(e.message||e.code)}
+  try{const x=await sample([{role:'user',content:promptFor('learn.tutor')+'\n\nConversation follows.'},{role:'assistant',content:'Understood.'},...LC.slice(0,-1)],{tools:TOOLS,cache:false,modelTier:'default',onText:u=>{r.content=u.text;drawLearn()}});r.content=x.text}catch(e){r.content='Error: '+(e.message||e.code)}
   $('#lgo').disabled=false;drawLearn()}
 async function saveKB(i){if(OFFLINE||!db)return toast('Offline — not saved');const a=LC[i],q=LC[i-1]?.content||'Lesson',[sum,...res]=a.content.split(/Learning Resources\s*&\s*Sources/i),T=(a.content+q).toLowerCase(),tags=[/5-?axis|5x|lead|lag/.test(T)&&'#5axis',/hypermill|maxx/.test(T)&&'#hypermill',/steel|titanium|harden|alloy|metallurg|stainless/.test(T)&&'#metallurgy',/drill/.test(T)&&'#drilling'].filter(Boolean);
   const e={title:q.slice(0,80),summary:sum.trim(),resources:res.join('').replace(/^[\s:*#-]+/,'').trim(),tags,date:new Date().toISOString().slice(0,10)};
