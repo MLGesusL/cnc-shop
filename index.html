@@ -3229,7 +3229,24 @@ function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><
  <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div>`;
  $('#lbody').onchange=e=>{if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
 async function saveSettings(){SF.invalidate();renderCheat();if($('#sg'))drawSG();if(OFFLINE||!db){if($('#set_msg'))$('#set_msg').textContent='Applied for this session — offline, not saved';return toast('Offline — not saved')}
- try{await db.doc('lib/settings').set({v:LIB_V,ra:SET.ra,pref:SET.pref,ra_cusp_k:SET.raK});if($('#set_msg'))$('#set_msg').textContent='Saved ✓';toast('Setup saved')}catch(e){if($('#set_msg'))$('#set_msg').textContent='Save failed: '+(e.message||e.code)}}
+try{await db.doc('lib/settings').set({v:LIB_V,ra:SET.ra,pref:SET.pref,ra_cusp_k:SET.raK});if($('#set_msg'))$('#set_msg').textContent='Saved ✓';toast('Setup saved')}catch(e){if($('#set_msg'))$('#set_msg').textContent='Save failed: '+(e.message||e.code)}}
+function drawPrompts(){
+ const keys=[['ask.core','Ask AI — core instructions'],['ask.knowledge','Ask AI — machining knowledge'],['learn.tutor','Learn AI — tutor instructions']];
+ const cur=k=>{const p=(L.prompts||[]).find(x=>x&&x.key===k);return (p&&p.text)||promptFor(k)};
+ const edited=k=>{const p=(L.prompts||[]).find(x=>x&&x.key===k);return !!(p&&p.text)};
+ $('#lbody').innerHTML=`<div class="card"><h2>Prompts</h2><p class="mu">The instructions sent to the AI before each conversation. Edit any text and click <b>Save</b> — the change is stored in lib/prompts and used on the next question. <b>Reset to default</b> removes your edit and falls back to the built-in text.</p>${keys.map(([k,l])=>`<div style="margin-top:14px"><label for="pr_${esc(k)}"><b>${esc(l)}</b> <code class="mu">${esc(k)}</code>${edited(k)?' <span class="tag" title="Edited — Reset to default restores the built-in text">edited</span>':''}</label><textarea id="pr_${esc(k)}" data-prompt-key="${esc(k)}" rows="16" spellcheck="false" style="font-family:ui-monospace,monospace;font-size:13px">${esc(cur(k))}</textarea><div class="row" style="margin-top:4px"><button class="b s sm" data-prsave="${esc(k)}">Save</button><button class="b s sm" data-prres="${esc(k)}"${edited(k)?'':' disabled'}>Reset to default</button><span class="mu" data-prmsg="${esc(k)}"></span></div></div>`).join('')}</div>`;
+ $('#lbody').onclick=async e=>{const d=e.target.dataset;
+  if(d.prsave){const k=d.prsave,el=document.getElementById('pr_'+k),msg=document.querySelector('[data-prmsg="'+k+'"]');if(!el)return;
+   if(OFFLINE||!db){if(msg)msg.textContent='Offline — not saved';return}
+   const old=(L.prompts||[]).find(x=>x&&x.key===k);const oldTxt=old?old.text:'';const nv=el.value;
+   L.prompts=(L.prompts||[]).filter(x=>x&&x.key!==k).concat([{key:k,text:nv}]);
+   try{await writeLib('prompts',L.prompts);logChange('prompts',k,'text',oldTxt,nv,'Prompts');await saveCLOG();if(msg)msg.textContent='Saved ✓';toast('Prompt saved');drawPrompts()}catch(x){if(msg)msg.textContent='Save failed: '+(x.message||x.code)}}
+  if(d.prres){const k=d.prres;if(e.target.dataset.sure!=='1'){e.target.dataset.sure='1';e.target.textContent='Sure? Click again';setTimeout(()=>{if(e.target.isConnected){e.target.dataset.sure='';e.target.textContent='Reset to default'}},3000);return}
+   if(OFFLINE||!db)return toast('Offline — not saved');
+   const old=(L.prompts||[]).find(x=>x&&x.key===k);const oldTxt=old?old.text:'';
+   L.prompts=(L.prompts||[]).filter(x=>x&&x.key!==k);
+   try{await writeLib('prompts',L.prompts);logChange('prompts',k,'text',oldTxt,'(default)','Prompts');await saveCLOG();toast('Prompt reset to default');drawPrompts()}catch(x){toast('Reset failed: '+(x.message||x.code))}}};
+}
 function sz(){$$('#lib textarea').forEach(t=>{t.style.height='auto';t.style.height=Math.max(34,t.scrollHeight)+'px'})}
 $('#lib').oninput=e=>{if(e.target.tagName==='TEXTAREA'){e.target.style.height='auto';e.target.style.height=e.target.scrollHeight+'px'}};
 
