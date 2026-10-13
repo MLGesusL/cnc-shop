@@ -3174,7 +3174,7 @@ async function undoLast(){const u=UNDO.pop();if(!u)return toast('Nothing to undo
  if(u.from===''||u.from==null)delete u.row[u.field];else u.row[u.field]=u.from;
  logChange(u.table,u.id,u.field,u.to,u.from,'Undo');saveLib(u.table);await flushLib();saveCLOG();drawLibData();renderLog();renderCheat();fillQB();toast(`Undid ${u.field} on ${u.id}`)}
 function renderLib(){
-  const seg=`<div class="seg noprint" id="lseg">${[['data','Data'],['audit','Tooling audit'],['cat','Catalogue audit'],['log','Change log'],['params','Cycle parameters'],['setup','Setup']].map(([k,l])=>`<button data-ls="${k}" class="${k===LS?'on':''}">${l}</button>`).join('')}</div>`;
+  const seg=`<div class="seg noprint" id="lseg">${[['data','Data'],['audit','Tooling audit'],['cat','Catalogue audit'],['log','Change log'],['params','Cycle parameters'],['setup','Setup'],['prompts','Prompts']].map(([k,l])=>`<button data-ls="${k}" class="${k===LS?'on':''}">${l}</button>`).join('')}</div>`;
   $('#lib').innerHTML=`<div class="row" style="margin-bottom:12px">${seg}</div><div id="lbody"></div>`;
   $('#lseg').onclick=e=>{const k=e.target.dataset.ls;if(k){LS=k;renderLib()}};
   if(LS==='data')drawLibData();else if(LS==='audit')drawAudit();else if(LS==='cat')drawCatAudit();else if(LS==='log')drawCLOG();else if(LS==='setup')drawSettings();else drawParams();setTimeout(sz,0)}
