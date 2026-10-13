@@ -289,6 +289,7 @@ table.gt .l2,table.gt td.tl{font-size:calc(13px * var(--zoom, 1))}table.gt .l3,t
 details.cpsec{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;margin:6px 0}details.cpsec>summary{cursor:pointer;padding:2px 0}details.cpsec[open]>summary{margin-bottom:6px}
 .fxh{cursor:grab;user-select:none;padding:0 6px 0 0;color:var(--mu,#888);font-size:18px}.fxh:active{cursor:grabbing}
 .fxgw{display:flex;align-items:flex-start;gap:2px}.fxgw>.fxh{padding-top:10px}
+#cutModal[hidden]{display:none}#cbody tbody tr[data-cid]{cursor:pointer}
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
@@ -2972,6 +2973,12 @@ document.addEventListener('change',async e=>{const id=e.target.dataset&&e.target
  catch(x){e.target.checked=!v;toast('Save failed: '+(x.message||x.code))}});
 /* ---------- tool geometry card ---------- */
 const flOf=t=>{const v=+(t['Cutting Length (mm)']||t['Flute Length (mm)']);if(isFinite(v)&&v>0)return{v,from:'Library'};const a=AUD.fluteLen(t);return isFinite(a)&&a>0?{v:a,from:'description'}:null};
+/* Phase 4: one-line tool geometry for the Cut database, e.g. "Ø12 · 4 fl · R0 · AlTiN · 26 mm CL" (reach / neck only when present).
+   toolGeomKey adds a compact form ("Ø12 4fl R0") so the free-text filter also finds "Ø12 4fl". */
+const gnum=x=>x===''||x==null?NaN:+x;
+function toolGeomStr(code){const t=tool(code);if(!t)return '';const v=k=>{const x=t[k];return x===''||x==null?null:x};const n=k=>{const x=gnum(v(k));return isFinite(x)&&x>0?x:null};
+ return [n('Diameter (mm)')!=null?'Ø'+n('Diameter (mm)'):'',n('Flutes')!=null?n('Flutes')+' fl':'','R'+(n('Corner Radius (mm)')||0),v('Coating')||'',n('Cutting Length (mm)')!=null?n('Cutting Length (mm)')+' mm CL':'',n('Reach (mm)')!=null?'reach '+n('Reach (mm)')+' mm':'',n('Neck Length (mm)')!=null?'neck '+n('Neck Length (mm)')+' mm':''].filter(Boolean).join(' · ')}
+function toolGeomKey(code){const t=tool(code);if(!t)return '';const d=gnum(t['Diameter (mm)']),z=gnum(t.Flutes),r=gnum(t['Corner Radius (mm)'])||0;return [isFinite(d)?'Ø'+d:'',isFinite(z)?z+'fl':'','R'+r].filter(Boolean).join(' ')}
 const badge=c=>{const t=tool(c);return esc(t&&t['Diameter (mm)']?`${c} (Ø${t['Diameter (mm)']}mm, R${t['Corner Radius (mm)']||0}, ${t.Flutes}-flute${t.Coating?', '+t.Coating:''})`:c)};
 function drawTG(){const h=$('#tg');if(!h)return;const code=$('#f_tool').value,t=tool(code);if(!t){h.innerHTML=code?'<div class="note w">Unknown tool code — add it in the Library tab.</div>':'';return}
  const D=t['Diameter (mm)'],r=t['Corner Radius (mm)']||0,mx=t['Max DOC (mm)'],fl=flOf(t),so=num($('#f_stickout').value),ld=so/D,doc=num($('#f_doc').value),woc=num($('#f_woc').value),fz=num($('#f_fz').value),mc=$('#f_machine').value,cap=capOf(mc),rpm=num($('#f_vc').value)*1000/(Math.PI*D),W=[];
@@ -2993,9 +3000,9 @@ function trend(c){const k=c.tool+'|'+c.material+'|'+CUTS.length;if(TRC.has(k))re
  const h=`<span title="${esc(last.map(x=>(x.date||'?')+' '+(x.result||'–')).join(' → '))}">${last.map(x=>`<span class="${resCls(x.result)}">●</span>`).join('')}</span>${dull?' <span class="sev High" title="The last two cuts with this tool in this material were Heavy or Bad">dull</span>':''}`;
  TRC.set(k,h);return h}
 /* 5.4 sortable columns: key, label, kind (n = numeric, d = date, s = text) */
-const CCOLS=[['date','Date','d'],['material','Material','s'],['tool','Tool (geometry)','s'],['cycle','Cycle','s'],['subcycle','Sub-cycle','s'],['vc','Vc m/min','n'],['fz','Fz mm/tooth','n'],['doc','DOC/ap mm','n'],['woc','WOC/ae mm','n'],['rpm','RPM','n'],['feed','Feed mm/min','n'],['mrr','MRR cm³/min','n'],['result','Result','s'],['verified','Verified','s'],['trend','Trend','s'],['settings','Cycle settings','s'],['notes','Notes','s']];
+const CCOLS=[['date','Date','d'],['material','Material','s'],['tool','Tool (geometry)','s'],['cycle','Cycle','s'],['subcycle','Sub-cycle','s'],['vc','Vc m/min','n'],['fz','Fz mm/tooth','n'],['doc','DOC/ap mm','n'],['woc','WOC/ae mm','n'],['rpm','RPM','n'],['feed','Feed mm/min','n'],['mrr','MRR cm³/min','n'],['result','Result','s'],['verified','Verified','s'],['trend','Trend','s'],['geom','Tool geometry','s'],['settings','Cycle settings','s'],['notes','Notes','s']];
 let CSORT={k:'date',dir:-1},CPAGE=0;const CPER=100;
-const sortVal=(c,k)=>k==='subcycle'?(TAGS.isTagged(c)?tagLabel(c):'~'):k==='verified'?(c.verified?'1':'0'):k==='settings'?extra(c):k==='trend'?(CUTS.filter(x=>x.tool===c.tool&&x.material===c.material).length):c[k];
+const sortVal=(c,k)=>k==='subcycle'?(TAGS.isTagged(c)?tagLabel(c):'~'):k==='verified'?(c.verified?'1':'0'):k==='settings'?extra(c):k==='geom'?toolGeomStr(c.tool):k==='trend'?(CUTS.filter(x=>x.tool===c.tool&&x.material===c.material).length):c[k];
 function sortCuts(rows){const col=CCOLS.find(x=>x[0]===CSORT.k);if(!col)return rows;const ty=col[2],d=CSORT.dir;
  return rows.slice().sort((a,b)=>{let x=sortVal(a,col[0]),y=sortVal(b,col[0]);
   if(ty==='n'){x=x===''||x==null||isNaN(+x)?NaN:+x;y=y===''||y==null||isNaN(+y)?NaN:+y;if(isNaN(x)&&isNaN(y))return 0;if(isNaN(x))return 1;if(isNaN(y))return -1;return (x-y)*d}
@@ -3003,7 +3010,7 @@ function sortCuts(rows){const col=CCOLS.find(x=>x[0]===CSORT.k);if(!col)return r
   return String(x??'').localeCompare(String(y??''),undefined,{numeric:true,sensitivity:'base'})*d})}
 const HEADF={date:'date',material:'mat',tool:'tool',cycle:'fam',subcycle:'sub',result:'res'};
 function tbl(rows,sortable){const th=([k,l,ty])=>{const n=ty==='n'?' class="n"':'',on=sortable&&CSORT.k===k;if(sortable&&HEADF[k]){const fk=HEADF[k],act=fk==='date'?!!(FS.from||FS.to||FS.days):!!(FS[fk]||[]).length;return `<th${n} aria-sort="${on?(CSORT.dir>0?'ascending':'descending'):'none'}"><button type="button" data-fhead="${fk}" data-col="${k}" title="Filter or sort by ${esc(l)}" style="border:0;background:none;cursor:pointer;padding:0;font:inherit;color:${act?'var(--hi)':'inherit'}">${l} ${act?'●':'▾'}${on?(CSORT.dir>0?' ▲':' ▼'):''}</button></th>`}return sortable?`<th${n} aria-sort="${on?(CSORT.dir>0?'ascending':'descending'):'none'}"><button type="button" data-csort="${k}" style="border:0;background:none;cursor:pointer;padding:0;font:inherit;color:inherit">${l}${on?(CSORT.dir>0?' ▲':' ▼'):''}</button></th>`:`<th${n}>${l}</th>`};
- return `<div class="tw"><table><thead><tr>${CCOLS.map(th).join('')}<th></th></tr></thead><tbody>${rows.map(c=>`<tr><td>${esc(c.date)}</td><td>${esc(c.material)}</td><td class="tx">${badge(c.tool)}</td><td>${esc(c.cycle)}</td><td data-tagc="${esc(c.id||'')}" style="cursor:pointer;white-space:normal;min-width:150px" title="Click to set or change the sub-cycle">${tagCell(c)}</td><td class="n">${esc(c.vc)}</td><td class="n">${esc(c.fz)}</td><td class="n">${esc(c.doc)}</td><td class="n">${esc(c.woc)}</td><td class="n">${esc(c.rpm)}</td><td class="n">${esc(c.feed)}</td><td class="n">${esc(c.mrr)}</td><td class="${GOOD.test(c.result)?'good':/bad|heavy/i.test(c.result)?'bad':''}">${esc(c.result)}</td><td><label style="display:flex;gap:4px;align-items:center;margin:0" title="Verified cuts may feed recommendations (DB / CAL). Unticked cuts are reference only."><input type="checkbox" data-cver="${esc(c.id||'')}"${c.verified?' checked':''}${c.id?'':' disabled'}>${c.verified?'<span class="good">✓</span>':''}</label></td><td>${trend(c)}</td><td class="tx">${esc(extra(c))}</td><td class="tx">${esc(c.notes)}</td><td><button class="b s sm" data-copy="${esc(c.id||'')}">Copy</button></td></tr>`).join('')}</tbody></table></div>`}
+ return `<div class="tw"><table><thead><tr>${CCOLS.map(th).join('')}<th></th></tr></thead><tbody>${rows.map(c=>`<tr data-cid="${esc(c.id||'')}"><td>${esc(c.date)}</td><td>${esc(c.material)}</td><td class="tx">${badge(c.tool)}</td><td>${esc(c.cycle)}</td><td data-tagc="${esc(c.id||'')}" style="cursor:pointer;white-space:normal;min-width:150px" title="Click to set or change the sub-cycle">${tagCell(c)}</td><td class="n">${esc(c.vc)}</td><td class="n">${esc(c.fz)}</td><td class="n">${esc(c.doc)}</td><td class="n">${esc(c.woc)}</td><td class="n">${esc(c.rpm)}</td><td class="n">${esc(c.feed)}</td><td class="n">${esc(c.mrr)}</td><td class="${GOOD.test(c.result)?'good':/bad|heavy/i.test(c.result)?'bad':''}">${esc(c.result)}</td><td><label style="display:flex;gap:4px;align-items:center;margin:0" title="Verified cuts may feed recommendations (DB / CAL). Unticked cuts are reference only."><input type="checkbox" data-cver="${esc(c.id||'')}"${c.verified?' checked':''}${c.id?'':' disabled'}>${c.verified?'<span class="good">✓</span>':''}</label></td><td>${trend(c)}</td><td class="tx">${esc(toolGeomStr(c.tool))}</td><td class="tx">${esc(extra(c))}</td><td class="tx">${esc(c.notes)}</td><td><button class="b s sm" data-copy="${esc(c.id||'')}">Copy</button></td></tr>`).join('')}</tbody></table></div>`}
 /* ---------- Phase 10 — POF upload (reader in POF / pof.js). Decision 2026-10-12: decode the 14 cycle codes we have samples for.
    Only the parameter section (header, parameters, tool) is stored — in pofs/<cut id> — never the toolpath. ---------- */
 let POFS=[],LOGPOF=null,POFOPEN=false;
@@ -3039,7 +3046,7 @@ function pofWire(){const inp=$('#pof_f');if(!inp)return;$('#pofcard').ontoggle=e
     notes:`From POF ${x.name} (${x.P.jobname||x.P.cycleCode}): RPM ${v.rpm}, feed ${v.feed} mm/min${v.allowance!=null?', allowance '+v.allowance+' mm':''}${!known&&v.toolCode?' — tool '+v.toolCode+' is not in the library':''}${x.dec.reasons.length?' · '+x.dec.reasons.join('; '):''}`});
    toast('Log cut filled from the POF — add material and result, check, then Save (the POF is attached on save)',5000)}}}
 /* ---------- Phase 9 — faceted filter (logic in CF / cutfilter.js). State in localStorage 'cuts.filter' and the URL hash, never in the database ---------- */
-const CFX=()=>({sfxOf:AUD.sfxOf,tree:CTREE(),extra});
+const CFX=()=>({sfxOf:AUD.sfxOf,tree:CTREE(),extra:c=>extra(c)+' '+toolGeomStr(c.tool)+' '+toolGeomKey(c.tool)});
 let FS=(()=>{const h=location.hash||'';if(/^#cuts\?/.test(h))return CF.fromHash(h);try{return CF.norm(JSON.parse(localStorage.getItem('cuts.filter')||'{}'))}catch(e){return CF.norm({})}})();
 function fsSave(){FS=CF.norm(FS);try{localStorage.setItem('cuts.filter',JSON.stringify(FS))}catch(e){}if(CUR==='cuts'){const h=CF.toHash(FS);try{history.replaceState(null,'','#cuts'+(h?'?'+h:''))}catch(e){}}}
 let POP=null,FQT=null;
@@ -3060,6 +3067,22 @@ function renderCuts(){
     const rows=sortCuts(cutRows());const csv=['# filter: '+JSON.stringify(CF.norm(FS)),ks.concat(['cycle_settings']).join(',')].concat(rows.map(c=>ks.map(k=>'"'+String(c[k]??'').replace(/"/g,'""')+'"').join(',')+',"'+extra(c).replace(/"/g,'""')+'"')).join('\n');try{await dl.save({filename:'cutting_data.csv',data:csv})}catch(e){}};
   $('#cfviews').onclick=e=>{e.stopPropagation();const m=$('#cfvm');m.hidden=!m.hidden;if(!m.hidden)drawViews()};
   drawCutRows()}
+/* Phase 4: click a cut row in the Cut database → read-only modal with the logged hyperMILL settings.
+   Not opened from the Verified tick, the Copy button, the Sub-cycle cell or a column header; Esc or a click outside closes it. */
+function cutParamsOf(c){const defs=allParamDefs(),o=cpCanon(c.params);Object.keys(defs).forEach(k=>{if(o[k]==null&&c[k]!=null&&c[k]!=='')o[k]=c[k]});return o}
+function openCutModal(id){const c=CUTS.find(x=>x.id===id);if(!c)return;let m=$('#cutModal');
+ if(!m){m=document.createElement('div');m.id='cutModal';m.className='modal';m.hidden=true;m.setAttribute('role','dialog');m.setAttribute('aria-modal','true');m.setAttribute('aria-label','Cut details');document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m||e.target.closest('[data-cmx]'))closeCutModal()})}
+ const g=toolGeomStr(c.tool),res=c.result?`<span class="${GOOD.test(c.result)?'good':/bad|heavy/i.test(c.result)?'bad':''}">${esc(c.result)}</span>`:'';
+ m.innerHTML=`<div class="modal-in card" style="width:min(900px,100%)"><div class="row" style="align-items:baseline"><h2 style="margin:0;flex:1">${esc(c.tool||'—')} · ${esc(c.material||'—')}</h2><button class="b s sm" data-cmx="1" aria-label="Close">✕</button></div>
+  <p class="mu" style="margin:4px 0 10px">${esc(c.date||'')}${res?' · '+res:''}${g?' · '+esc(g):''}${c.cycle?' · '+esc(c.cycle):''}${TAGS.isTagged(c)?' · '+esc(tagLabel(c)):''}</p>
+  <p style="margin:0 0 10px">Vc <b>${esc(c.vc??'–')}</b> · Fz <b>${esc(c.fz??'–')}</b> · ap <b>${esc(c.doc??'–')}</b> · ae <b>${esc(c.woc??'–')}</b> · RPM <b>${esc(c.rpm??'–')}</b> · Feed <b>${esc(c.feed??'–')}</b></p>
+  <h3>Cycle settings</h3>${renderParams(cutParamsOf(c),true)}${c.notes?`<h3>Notes</h3><p>${esc(c.notes)}</p>`:''}</div>`;
+ m.hidden=false;const b=m.querySelector('[data-cmx]');if(b)b.focus()}
+function closeCutModal(){const m=$('#cutModal');if(m)m.hidden=true}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){const m=$('#cutModal');if(m&&!m.hidden)closeCutModal()}});
+document.addEventListener('click',e=>{const tr=e.target.closest&&e.target.closest('#cbody tbody tr[data-cid]');if(!tr||!tr.dataset.cid)return;
+ if(e.target.closest('[data-cver],label,[data-copy],button,a,input,select,textarea,td[data-tagc],.tp'))return;if(window.getSelection&&String(window.getSelection()).length)return;openCutModal(tr.dataset.cid)});
 function drawFilterBar(){const pills=$('#cfpills'),chips=$('#cfchips');if(!pills)return;
  const dTxt=FS.days?`last ${FS.days} days`:FS.from||FS.to?`${FS.from||'…'} → ${FS.to||'…'}`:'';
  pills.innerHTML=CF.DIMS.map(([k,l])=>{const n=(FS[k]||[]).length;return `<button class="cfpill${n?' on':''}" data-fdim="${k}" aria-haspopup="true">${l}${n?` (${n})`:''}</button>`}).join('')+`<button class="cfpill${dTxt?' on':''}" data-fdim="date" aria-haspopup="true">Date${dTxt?' '+esc(dTxt):''}</button>`;
@@ -3880,7 +3903,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.5';
+const APP_V='2026-10-13.6';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
