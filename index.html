@@ -3301,8 +3301,21 @@ function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><
  <div class="g"><div><label for="set_ra">Ra (µm) — finishing target for ball-nose / lollipop stepover</label><input id="set_ra" type="number" step="any" min="0.05" inputmode="decimal" value="${esc(SET.ra)}"></div><div><label for="set_rak">Cusp / Ra multiplier k (ra_cusp_k)</label><input id="set_rak" type="number" step="any" min="0.1" inputmode="decimal" value="${esc(SET.raK)}"></div></div>
  <p class="mu">Cusp height h [mm] = Ra [µm] × k ÷ 1000. <b>k = 1</b> means cusp height equals the Ra target (conservative); <b>k = 4</b> means the scallop Ra is cusp ÷ 4 (Ra ≈ h/4 handbook convention). Used by the ball-nose stepover in Speeds &amp; Feeds, the Log cut suggestion and Formulas → Ball nose: stepover for target Ra.</p>
  <fieldset><legend>Speed preference</legend><div class="row">${[['balanced','Balanced'],['life','Prefer tool life'],['cycle','Prefer cycle time']].map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="set_pref" value="${k}"${SET.pref===k?' checked':''}> ${l}</label>`).join('')}</div>
- <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div>`;
+ <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
+ <div class="g"><div><label>Sheet ID (from sheets.json)</label><input id="sh_id" value="${esc(SHEET_CFG.id||'(not set)')}" readonly></div><div><label>Last sync</label><input id="sh_last" value="${esc(sheetLastSync())}" readonly></div></div>
+ <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>`;
+ $('#lbody').onclick=async e=>{if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}};
  $('#lbody').onchange=e=>{if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
+function sheetLastSync(){try{const t=localStorage.getItem('sheets.lastSync');return t?new Date(t).toLocaleString():'—'}catch(e){return '—'}}
+async function reloadSheets(btn){const msg=document.getElementById('sh_msg');if(msg)msg.textContent='Reloading…';
+ try{const r=await fetch('./sheets.json',{cache:'no-store'});if(!r.ok)throw new Error('sheets.json not found');
+  const cfg=await r.json();if(!cfg.id||cfg.id==='PASTE_ID_HERE')throw new Error('Sheet ID missing in sheets.json');
+  SHEET_CFG={id:cfg.id,tabs:Array.isArray(cfg.tabs)?cfg.tabs:[]};
+  const data=await loadSheets(cfg.id,SHEET_CFG.tabs);let n=0;
+  Object.entries(data).forEach(([k,rows])=>{if(Object.prototype.hasOwnProperty.call(L,k)){L[k]=rows;n++}});
+  try{localStorage.setItem('sheets.lastSync',new Date().toISOString())}catch(e){}
+  SF.invalidate();renderAll();toast(`Reloaded ${n} tables from the Sheet ✓`);
+ }catch(e){if(msg)msg.textContent='Failed: '+(e.message||e);toast('Reload failed: '+(e.message||e))}}
 async function saveSettings(){SF.invalidate();renderCheat();if($('#sg'))drawSG();if(OFFLINE||!db){if($('#set_msg'))$('#set_msg').textContent='Applied for this session — offline, not saved';return toast('Offline — not saved')}
 try{await db.doc('lib/settings').set({v:LIB_V,ra:SET.ra,pref:SET.pref,ra_cusp_k:SET.raK});if($('#set_msg'))$('#set_msg').textContent='Saved ✓';toast('Setup saved')}catch(e){if($('#set_msg'))$('#set_msg').textContent='Save failed: '+(e.message||e.code)}}
 function drawPrompts(){
