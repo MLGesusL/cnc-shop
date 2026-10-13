@@ -2654,6 +2654,62 @@ async function geminiAsk(messages, opts = {}){
   return { text };
 }
 
+/* ---------- AI via OpenRouter: a free open-source model (decision 2026-10-14, after the Gemini free quota ran out) ----------
+   OpenAI-compatible chat completions, streamed (SSE). Key from localStorage 'openrouter.key' (Library → Setup).
+   The app's TOOLS become OpenAI-style functions (inputSchema → parameters); tool calls run here and are answered until the
+   model replies in text. Free models are limited to 50 requests a day (1,000 once 10 credits have ever been bought). */
+const AI_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const AI_MODEL = 'openai/gpt-oss-120b:free';
+async function openAsk(messages, opts = {}){
+  const { tools, onText, signal } = opts || {};
+  let key = ''; try { key = localStorage.getItem('openrouter.key') || ''; } catch(e){}
+  if (!key) throw new Error('No OpenRouter API key yet — paste it in Library → Setup → AI (OpenRouter).');
+  const msgs = []; messages.forEach(m => { const t = gText(m.content); if (t.trim()) msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: t }); });
+  const fns = (tools || []).map(t => { const p = geminiSchema(t.inputSchema) || {}; return { type: 'function', function: { name: t.name, description: t.description || '', parameters: p.properties && Object.keys(p.properties).length ? p : { type: 'object', properties: {} } } }; });
+  const byName = {}; (tools || []).forEach(t => byName[t.name] = t);
+  let text = '';
+  for (let round = 0; round < 6; round++){
+    const res = await fetch(AI_URL, { method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'HTTP-Referer': location.origin, 'X-Title': 'CNC Shop Assistant' },
+      body: JSON.stringify(Object.assign({ model: AI_MODEL, messages: msgs, stream: true }, fns.length ? { tools: fns } : {})) });
+    if (!res.ok){
+      let msg = ''; try { const j = await res.json(); msg = (j.error && (j.error.message || j.error.code)) || ''; } catch(e){}
+      throw new Error('AI error ' + res.status + (msg ? ': ' + String(msg).slice(0, 200) : '') + (res.status === 401 ? ' — check the OpenRouter key in Library → Setup.' : res.status === 429 ? ' — the free daily limit (50 requests) is used up; it resets tomorrow.' : res.status === 404 ? ' — the model (' + AI_MODEL + ') may no longer be free.' : ''));
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder(), calls = [];
+    let buf = '', said = '';
+    const take = line => {
+      line = line.trim(); if (!line.startsWith('data:')) return;
+      const d = line.slice(5).trim(); if (!d || d === '[DONE]') return;
+      let j; try { j = JSON.parse(d); } catch(e){ return; }
+      if (j.error) throw new Error('AI error: ' + (j.error.message || j.error.code || 'stream failed'));
+      const delta = ((j.choices || [])[0] || {}).delta || {};
+      if (typeof delta.content === 'string' && delta.content){ said += delta.content; text += delta.content; if (onText) onText({ text }); }
+      (delta.tool_calls || []).forEach(tc => { const i = tc.index != null ? tc.index : calls.length; const c = calls[i] = calls[i] || { id: '', name: '', args: '' };
+        if (tc.id) c.id = tc.id; if (tc.function){ if (tc.function.name) c.name += tc.function.name; if (tc.function.arguments) c.args += tc.function.arguments; } });
+    };
+    while (true){
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl; while ((nl = buf.indexOf('\n')) >= 0){ take(buf.slice(0, nl)); buf = buf.slice(nl + 1); }
+    }
+    if (buf) take(buf);
+    const cs = calls.filter(c => c && c.name);
+    if (!cs.length) break;
+    cs.forEach((c, i) => { if (!c.id) c.id = 'call_' + round + '_' + i; });
+    msgs.push({ role: 'assistant', content: said || null, tool_calls: cs.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.args || '{}' } })) });
+    for (const c of cs){
+      const t = byName[c.name]; let out;
+      try { const args = c.args ? JSON.parse(c.args) : {}; out = t ? await t.execute(args) : { error: 'unknown tool ' + c.name }; } catch(e){ out = { error: String(e.message || e) }; }
+      let s = ''; try { s = JSON.stringify(out === undefined ? null : out); } catch(e){ s = String(out); }
+      msgs.push({ role: 'tool', tool_call_id: c.id, content: s.length > 30000 ? s.slice(0, 30000) + '…(cut)' : s });
+    }
+    if (text) text += '\n\n';
+  }
+  return { text };
+}
+
 /* ---------- 3. Downloads (replaces claude.use('downloads')) ---------- */
 const dlShim = {
   async save({ filename, data }){
@@ -2730,7 +2786,7 @@ async function load(){
   await loadGEM();
   await _idbInit();
    db = (typeof DB !== 'undefined') ? DB : null;
-  sample = (m,o)=>geminiAsk(m,o);
+  sample = (m,o)=>openAsk(m,o);
   dl = dlShim;
   /* Phase 1: if ./sheets.json exists with a real Sheet ID, load the library tables from that Google Sheet.
      On any failure, the IndexedDB values loaded below are kept for the tables that did not come from the Sheet. */
@@ -3789,12 +3845,12 @@ function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><
  <div class="g"><div><label for="set_ra">Ra (µm) — finishing target for ball-nose / lollipop stepover</label><input id="set_ra" type="number" step="any" min="0.05" inputmode="decimal" value="${esc(SET.ra)}"></div><div><label for="set_rak">Cusp / Ra multiplier k (ra_cusp_k)</label><input id="set_rak" type="number" step="any" min="0.1" inputmode="decimal" value="${esc(SET.raK)}"></div></div>
  <p class="mu">Cusp height h [mm] = Ra [µm] × k ÷ 1000. <b>k = 1</b> means cusp height equals the Ra target (conservative); <b>k = 4</b> means the scallop Ra is cusp ÷ 4 (Ra ≈ h/4 handbook convention). Used by the ball-nose stepover in Speeds &amp; Feeds, the Log cut suggestion and Formulas → Ball nose: stepover for target Ra.</p>
  <fieldset><legend>Speed preference</legend><div class="row">${[['balanced','Balanced'],['life','Prefer tool life'],['cycle','Prefer cycle time']].map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="set_pref" value="${k}"${SET.pref===k?' checked':''}> ${l}</label>`).join('')}</div>
- <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>Gemini (Ask AI and Learn AI)</h2><p class="mu">Paste your Gemini API key (from Google AI Studio → Get API key). It is stored only in this browser (localStorage 'gemini.key'), never in the library, the Sheet or a backup. Model: <code>${esc(GEMINI_MODEL)}</code>.</p>
- <div class="g"><div><label for="set_gkey">Gemini API key</label><input id="set_gkey" type="password" autocomplete="off" spellcheck="false" value="${esc((()=>{try{return localStorage.getItem('gemini.key')||''}catch(e){return ''}})())}" placeholder="paste key"></div></div><p class="mu" id="gkey_msg"></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
+ <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>AI (OpenRouter — free open-source model)</h2><p class="mu">Ask AI and Learn AI use <code>${esc(AI_MODEL)}</code> through OpenRouter. Get a free key at openrouter.ai → Keys (no card needed). Free models allow 50 requests a day; a question that searches your data uses 2–3. The key is stored only in this browser (localStorage 'openrouter.key'), never in the library, the Sheet or a backup.</p>
+ <div class="g"><div><label for="set_okey">OpenRouter API key</label><input id="set_okey" type="password" autocomplete="off" spellcheck="false" value="${esc((()=>{try{return localStorage.getItem('openrouter.key')||''}catch(e){return ''}})())}" placeholder="sk-or-…"></div></div><p class="mu" id="okey_msg"></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
  <div class="g"><div><label>Sheet ID (from sheets.json)</label><input id="sh_id" value="${esc(SHEET_CFG.id||'(not set)')}" readonly></div><div><label>Last sync</label><input id="sh_last" value="${esc(sheetLastSync())}" readonly></div></div>
  <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>${n9Card()}`;
  $('#lbody').onclick=async e=>{if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
- $('#lbody').onchange=e=>{if(e.target.id==='set_gkey'){const v=e.target.value.trim();try{if(v)localStorage.setItem('gemini.key',v);else localStorage.removeItem('gemini.key');const m=$('#gkey_msg');if(m)m.textContent=v?'Key saved in this browser ✓':'Key removed'}catch(x){toast('Could not save the key in this browser')}return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
+ $('#lbody').onchange=e=>{if(e.target.id==='set_okey'){const v=e.target.value.trim();try{if(v)localStorage.setItem('openrouter.key',v);else localStorage.removeItem('openrouter.key');const m=$('#okey_msg');if(m)m.textContent=v?'Key saved in this browser ✓':'Key removed'}catch(x){toast('Could not save the key in this browser')}return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
 /* ---------- Phase 9: normalise the speeds-and-feeds data (one-time migration) ----------
    lib/baseline: rows with identical values that differ in one key column are merged into one row whose cell lists the
    values ("roughing.trochoidal, tube.rough"). lib/cycles: a value shared by the sub-cycles of a family (for one operation)
@@ -4327,7 +4383,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.14';
+const APP_V='2026-10-14.1';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
