@@ -286,6 +286,7 @@ details.card>summary,.gs{font-size:calc(19px * var(--zoom, 1))}main .pl button,m
 table.gt .l1 .k b{font-size:calc(20px * var(--zoom, 1))}table.gt td.id .big{font-size:calc(18px * var(--zoom, 1))}
 table.gt .l2,table.gt td.tl{font-size:calc(13px * var(--zoom, 1))}table.gt .l3,table.gt .l1 .k i{font-size:calc(12px * var(--zoom, 1))}
 @media(max-width:860px){.out b{font-size:calc(24px * var(--zoom, 1))}.top h1{font-size:calc(22px * var(--zoom, 1))}}
+details.cpsec{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;margin:6px 0}details.cpsec>summary{cursor:pointer;padding:2px 0}details.cpsec[open]>summary{margin-bottom:6px}
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
@@ -2902,8 +2903,20 @@ function cpValues(){const o={};$$('#cp [data-pk]').forEach(e=>{if(e.value!=='')o
 function cpRestore(o){Object.entries(cpCanon(o)).forEach(([k,v])=>{const e=$(`#cp [data-pk="${k}"]`);if(!e)return;if(e.tagName==='SELECT'&&v!==''&&v!=null&&![...e.options].some(x=>x.value===String(v))){const op=document.createElement('option');op.textContent=String(v);op.title='Logged before this option list changed';e.appendChild(op)}e.value=v})}
 function drawCP(){const h=$('#cp');if(!h)return;const cyc=$('#f_cycle').value,lt=logTag(),sub=lt.subcycleKey?CTREE().find(x=>x.key===lt.subcycleKey):null,sp=sub&&Array.isArray(sub.params)?sub.params.filter(p=>p&&p.key):[],sk=cyc+'|'+(sub?sub.key+':'+sp.length:'');if(h.dataset.k===sk&&h.dataset.n===String(CP().length))return;const keep=cpValues();h.dataset.k=sk;h.dataset.n=String(CP().length);
   const gs=paramsFor(cyc);if(sp.length)gs.unshift({Group:'Sub-cycle — '+sub.name,Params:sp});if(!cyc&&!sp.length){h.innerHTML='<p class="mu">Pick a hyperMILL cycle to log its cycle-specific settings (MAXX engagement, 5-axis tilt, peck depths…).</p>';return}
-  const hn=hmbFor(cyc).map(t=>`<div class="note">${esc(t)}</div>`).join('');h.innerHTML=gs.length?`<h3>Cycle settings${cyc?' — '+esc(cyc):''}</h3>${hn}`+gs.map(g=>`<fieldset><legend>${esc(g.Group)}</legend><div class="g">${g.Params.map(p=>`<div title="${esc(p.hint||'')}"><label>${p.sec?`<small class="mu">${esc(p.sec)} › </small>`:''}${esc(p.label)}${p.unit&&!String(p.label).includes('('+p.unit)?` <small class="mu">(${esc(p.unit)})</small>`:''}</label>${p.type==='select'?`<select data-pk="${esc(p.key)}">${opt(p.options||[''])}</select>`:`<input data-pk="${esc(p.key)}" data-t="${p.type==='text'?'text':'number'}" ${p.type==='text'?'':'type="number" step="any" inputmode="decimal"'}>`}</div>`).join('')}</div></fieldset>`).join(''):'<p class="mu">No extra settings defined for this cycle — add them in Library → Cycle parameters.</p>';
+  const hn=hmbFor(cyc).map(t=>`<div class="note">${esc(t)}</div>`).join('');h.innerHTML=gs.length?`<h3>Cycle settings${cyc?' — '+esc(cyc):''}</h3>${hn}`+renderParams(gs,false):'<p class="mu">No extra settings defined for this cycle — add them in Library → Cycle parameters.</p>';
   cpRestore(keep)}
+/* Phase 3: cycle settings as hyperMILL-style tab groups — grouped by the parameter's section (p.sec) if it has one, else by its
+   group; each group is a <details>, collapsed except the first. readonly=false → inputs (Log cut, data-pk kept exactly);
+   readonly=true → params is a logged cut's {key: value} object, shown as plain text (Cut database modal). */
+function renderParams(params,readonly){const sections=new Map(),add=(name,item)=>{if(!sections.has(name))sections.set(name,[]);sections.get(name).push(item)};
+ if(readonly){const defs=allParamDefs(),grp={};[...CPD,...CP()].forEach(g=>(g.Params||[]).forEach(p=>{if(p&&p.key&&!grp[p.key])grp[p.key]=g.Group}));
+  Object.entries(cpCanon(params||{})).forEach(([k,v])=>{if(v===''||v==null)return;const p=defs[k]||{key:k,label:k};add(p.sec||grp[k]||'Other settings',{p,v})})}
+ else (params||[]).forEach(g=>(g.Params||[]).forEach(p=>{if(p&&p.key)add(p.sec||g.Group,{p})}));
+ if(!sections.size)return readonly?'<p class="mu">No cycle settings were logged with this cut.</p>':'';
+ const lab=p=>`${esc(p.label||p.key)}${p.unit&&!String(p.label||'').includes('('+p.unit)?` <small class="mu">(${esc(p.unit)})</small>`:''}`;
+ const field=({p,v})=>readonly?`<div title="${esc(p.hint||'')}"><label>${lab(p)}</label><div><b>${esc(String(v))}</b></div></div>`
+  :`<div title="${esc(p.hint||'')}"><label>${lab(p)}</label>${p.type==='select'?`<select data-pk="${esc(p.key)}">${opt(p.options||[''])}</select>`:`<input data-pk="${esc(p.key)}" data-t="${p.type==='text'?'text':'number'}" ${p.type==='text'?'':'type="number" step="any" inputmode="decimal"'}>`}</div>`;
+ return [...sections].map(([name,items],i)=>`<details class="cpsec"${i===0?' open':''}><summary><h5 style="display:inline;margin:0">${esc(name)}</h5> <small class="mu">${items.length}</small></summary><div class="g">${items.map(field).join('')}</div></details>`).join('')}
 function currentCut(forCopy){const c={};F.forEach(([k,,t])=>{const v=$('#f_'+k).value;if(v!=='')c[k]=t==='number'?+v:v});const n=$('#f_notes').value;if(n)c.notes=n;
   const p={};$$('#cp [data-pk]').forEach(e=>{if(e.value!=='')p[e.dataset.pk]=e.dataset.t==='text'||e.tagName==='SELECT'||isNaN(e.value)?e.value:+e.value});if(Object.keys(p).length)c.params=p;
   const lt=logTag();if(lt.subcycleKey&&!forCopy){c._tag=lt}
@@ -3832,7 +3845,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.3';
+const APP_V='2026-10-13.4';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
