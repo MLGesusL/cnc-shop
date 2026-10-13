@@ -2345,11 +2345,12 @@ async function _idbInit(){
 }
 const _ls = {
   get(p){ return _mem.get(LS_PREFIX + p); },
-  set(p, v){ const k = LS_PREFIX + p; _mem.set(k, v); _idbPut(k, v).catch(e => {
+  set(p, v){ const k = LS_PREFIX + p; _mem.set(k, v); return _idbPut(k, v).then(() => true, e => {
     console.warn('IndexedDB write failed:', e);
     if (!_idbWarned) { _idbWarned = true; setTimeout(() => alert('Storage write failed. Your data is safe in this session but may not survive a refresh. Reload and try again.'), 100); }
-  }); return true; },
-  del(p){ const k = LS_PREFIX + p; _mem.delete(k); _idbDel(k).catch(() => {}); }
+    return false;
+  }); },
+  del(p){ const k = LS_PREFIX + p; _mem.delete(k); return _idbDel(k).catch(() => {}); }
 };
 function _snap(id, data){
   return { id, exists: data !== undefined, data: () => data === undefined ? undefined : JSON.parse(JSON.stringify(data)) };
@@ -2359,9 +2360,9 @@ function _doc(store, id){
   return {
     id,
     async get(){ return _snap(id, _ls.get(key)); },
-    async set(v){ _ls.set(key, v); return true; },
-    async update(patch){ _ls.set(key, Object.assign({}, _ls.get(key)||{}, patch)); return true; },
-    async delete(){ _ls.del(key); return true; }
+    async set(v){ await _ls.set(key, v); return true; },
+    async update(patch){ await _ls.set(key, Object.assign({}, _ls.get(key)||{}, patch)); return true; },
+    async delete(){ await _ls.del(key); return true; }
   };
 }
 function _coll(store){
@@ -2380,7 +2381,7 @@ function _coll(store){
     },
     async add(v){
       const id = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-      _ls.set(store + '/' + id, v);
+      await _ls.set(store + '/' + id, v);
       return { id };
     }
   };
@@ -2518,7 +2519,7 @@ async function loadSheets(id,tabs){
   for(const tab of (tabs||[])){
     let csv='';
     try{
-      const url=`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+      const url=`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:csv&headers=1&sheet=${encodeURIComponent(tab)}`;
       const r=await fetch(url,{cache:'no-store'});
       if(!r.ok)continue;
       csv=await r.text();
