@@ -296,10 +296,11 @@ details.cpsec{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;marg
 .c6fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.c6f label{margin:0 0 2px}.c6f.lk input{border-color:var(--hi,#8a5a2b);border-width:2px}.c6s{display:block;min-height:16px;font-size:11px}
 .c6t{display:inline-block;font-size:11px;padding:0 6px;border-radius:8px;border:1px solid var(--bd2);color:var(--mu,#777)}.c6t-manual{border-color:var(--hi,#8a5a2b);color:var(--hi,#8a5a2b)}
 .c6louds>div{flex:1;min-width:120px}.c6louds label{margin:0;font-size:13px;color:var(--mu)}.c6louds input.c6big{display:block;width:100%;font-family:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;font-size:30px;font-weight:600;color:var(--tx);line-height:1.1;height:auto;padding:2px 0;border:0;border-bottom:1px dashed var(--bd2);border-radius:0;background:transparent}.c6louds input.c6big::-webkit-inner-spin-button,.c6louds input.c6big::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.c6louds input.c6big{-moz-appearance:textfield;appearance:textfield}.c6louds .lk input.c6big{border-bottom:2px solid var(--hi,#8a5a2b)}
+.chip.warn::before{content:"";width:8px;height:8px;border-radius:50%;background:#d79a1e}
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
-<div><header class="top"><h1 id="pt">Ask AI</h1><span class="chip" id="st">Loading…</span><span class="chip err" id="offc" hidden>Offline mode — changes will not be saved</span><button class="b s sm" id="newv" hidden title="A newer version of the app is available">New version — reload</button><span class="sp"></span></header>
+<div><header class="top"><h1 id="pt">Ask AI</h1><span class="chip" id="st">Loading…</span><span class="chip" id="sync" hidden></span><span class="chip err" id="offc" hidden>Offline mode — changes will not be saved</span><button class="b s sm" id="newv" hidden title="A newer version of the app is available">New version — reload</button><span class="sp"></span></header>
 <main>
 <section class="sec" id="ask"></section><section class="sec" id="log"></section><section class="sec" id="cuts"></section><section class="sec" id="cheat"></section><section class="sec" id="form"></section><section class="sec" id="learn"></section><section class="sec" id="lib"></section><section class="sec" id="setup"></section><section class="sec" id="todo"></section><section class="sec" id="guide"></section>
 </main></div></div>
@@ -2035,7 +2036,7 @@ const DEFAULT_LIB = {
 };
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)],esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],formulas:[],prompts:[],rules:[],calc_fields:[]};
-let SHEET_CFG={id:'',tabs:[]};let SHEET_HEAD={};/* Phase 9: each Sheet tab's header row, so exports keep the Sheet's column order */let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
+let SHEET_CFG={id:'',tabs:[]};let SHEET_HEAD={};let SHEET_SYNC={tried:false,got:[],missing:[]};/* Phase 9: each Sheet tab's header row, so exports keep the Sheet's column order */let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
 const TABS=[['ask','Ask AI','A'],['log','Log cut','+'],['cuts','Cut database','D'],['cheat','Speeds & Feeds','C'],['form','Formulas','ƒ'],['learn','Learn AI','K'],['lib','Library','L'],['setup','Setup sheet','S'],['todo','To-do','✓'],['guide','User Guide','?']];
 $('#nav').innerHTML=TABS.map(t=>`<button data-t="${t[0]}"><i>${t[2]}</i>${t[1]}</button>`).join('');
 let CUR='ask';
@@ -2742,7 +2743,9 @@ async function load(){
         SHEET_CFG={id:cfg.id,tabs:Array.isArray(cfg.tabs)?cfg.tabs:[]};
         sheetData=await loadSheets(cfg.id,SHEET_CFG.tabs);
         Object.entries(sheetData).forEach(([k,rows])=>{if(Object.prototype.hasOwnProperty.call(L,k))L[k]=rows});
-        try{localStorage.setItem('sheets.lastSync',new Date().toISOString())}catch(e){}
+        /* Phase 8: only a load that actually brought tabs back counts as a sync */
+        SHEET_SYNC={tried:true,got:Object.keys(sheetData),missing:SHEET_CFG.tabs.filter(t=>!(t in sheetData))};
+        if(SHEET_SYNC.got.length)try{localStorage.setItem('sheets.lastSync',new Date().toISOString())}catch(e){}
       }
     }
   }catch(e){console.warn('sheets.json:',e);sheetData=null}
@@ -2768,8 +2771,15 @@ async function load(){
     const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
     await tdLoad();await caLoad();try{const qa=await db.collection('asks').get();ASKS=qa.docs.map(d=>({id:d.id,...dat(d)}));drawAH()}catch(e){}DBOK=true;setStatus(`${L.tools.length} tools · ${CUTS.length} cuts`,true);
   }catch(e){setStatus('Load error: '+(e.message||e.code),false)}
-  SF.invalidate();renderAll();
+  SF.invalidate();renderAll();drawSync();
 }
+/* Phase 8: header indicator — "Synced · 10:32" from localStorage 'sheets.lastSync'; amber when some tabs did not load, red when none did */
+function drawSync(){const el=$('#sync');if(!el)return;if(!SHEET_CFG.id){el.hidden=true;return}
+ let t=null;try{t=localStorage.getItem('sheets.lastSync')}catch(e){}const d=t?new Date(t):null,hm=d&&!isNaN(d)?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'',S=SHEET_SYNC;
+ const none=S.tried&&!S.got.length,part=S.tried&&S.got.length&&S.missing.length;
+ el.hidden=false;el.className='chip '+(none?'err':part?'warn':'ok');
+ el.textContent=none?'Sheet not reached — using saved copy':`Synced${hm?' · '+hm:''}`+(part?` (${S.missing.length} tab${S.missing.length>1?'s':''} missing)`:'');
+ el.title=(d&&!isNaN(d)?'Last loaded from the Google Sheet: '+d.toLocaleString():'Never loaded from the Google Sheet')+(S.missing.length?'\nNot loaded this time: '+S.missing.join(', '):'')+'\nLibrary → Setup → Reload from Sheet now'}
 /* Ask / Learn buttons are only usable when the AI is available */
 function aiState(){const on=!!sample;[['#go','#q','e.g. Roughing 316 with a 10mm BX, part sticking out 200mm from the vice'],['#lgo','#lq','Ask the tutor anything…']].forEach(([b,i,ph])=>{const B=$(b),I=$(i);if(B)B.disabled=!on;if(I)I.placeholder=on?ph:'AI unavailable in this view'})}
 function setStatus(t,ok){const s=$('#st');s.textContent=t;s.className='chip '+(ok?'ok':'err')}
@@ -3724,7 +3734,7 @@ function renderLib(){
   if(LS==='data')drawLibData();else if(LS==='audit')drawAudit();else if(LS==='cat')drawCatAudit();else if(LS==='log')drawCLOG();else if(LS==='setup')drawSettings();else if(LS==='prompts')drawPrompts();else if(LS==='rules')drawRules();else drawParams();setTimeout(sz,0)}
 function drawLibData(){const q=LF.toLowerCase(),cols=LD[LK],rows=L[LK].map((r,i)=>[r,i]).filter(([r])=>!q||JSON.stringify(r).toLowerCase().includes(q));
   $('#lbody').innerHTML=`<div class="card lib"><h2>Library editor</h2><p class="mu">Edits sync to the database (lib/${LK}); drop-downs, Speeds &amp; Feeds and AI use them straight away. Add exact hyperMILL cycle names under “cycles”. ${LK==='tools'?'<b>Flute Length (mm)</b> is an optional new column: when filled it replaces Max DOC in the geometry card and audit.':''}${LK==='baseline'?' <b>Baseline</b>: one row per override. material = exact name, <code>*P2</code> (ISO family) or <code>*</code>; tool = suffix or <code>*</code>; subcycle = key (e.g. roughing.trochoidal) or <code>*</code>; op = rough / semi / finish / drill / ream / bore / thread / probe or <code>*</code>; band = band label or <code>*</code>. Vc m/min, fz mm/tooth, apD / aeD ×Ø, <b>apDmax</b> = stepdown limit ×Ø. Most specific row wins, field by field. Leave a cell blank to fall through.':''}${LK==='bands'?' <b>Bands</b> (mm): each hi + 0.01 must equal the next lo. apDmax = roughing stepdown limit ×Ø for that band. The table is only saved when it is contiguous.':''}</p><div class="row"><select id="lk" style="max-width:160px">${opt(Object.keys(LD),LK)}</select><input id="lf" placeholder="Filter… (e.g. a tool code)" value="${esc(LF)}"><button class="b" id="ladd">Add row</button><button class="b s" id="lundo"${UNDO.length?'':' disabled'} title="${UNDO.length?esc('Undo '+UNDO[UNDO.length-1].field+' on '+UNDO[UNDO.length-1].id):'Nothing to undo'}">Undo last change</button></div>
-  <div class="row" style="margin-top:8px"><button class="b s" id="lbak">Backup library</button><button class="b s" id="lres">Restore from backup…</button><input type="file" id="lresf" accept=".json,application/json" hidden></div><div id="lresc"></div><p id="ls" class="mu"></p><div class="tw"><table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows.slice(0,LLIM).map(([r,i])=>`<tr>${cols.map(c=>`<td><textarea rows="1" data-li="${i}" data-lc="${esc(c)}">${esc(r[c])}</textarea></td>`).join('')}<td><button class="b s sm" data-ld="${i}" title="Delete row">✕</button></td></tr>`).join('')}</tbody></table></div><p class="mu">${rows.length>LLIM?`Showing ${LLIM} of ${rows.length} — filter to narrow. <button class="b s sm" id="lmore">Show 100 more</button>`:rows.length+' rows'}</p></div>`;
+  <div class="row" style="margin-top:8px"><button class="b s" id="lbak">Download backup</button><button class="b s" id="lres">Restore from backup…</button><input type="file" id="lresf" accept=".json,application/json" hidden></div><div id="lresc"></div><p id="ls" class="mu"></p><div class="tw"><table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows.slice(0,LLIM).map(([r,i])=>`<tr>${cols.map(c=>`<td><textarea rows="1" data-li="${i}" data-lc="${esc(c)}">${esc(r[c])}</textarea></td>`).join('')}<td><button class="b s sm" data-ld="${i}" title="Delete row">✕</button></td></tr>`).join('')}</tbody></table></div><p class="mu">${rows.length>LLIM?`Showing ${LLIM} of ${rows.length} — filter to narrow. <button class="b s sm" id="lmore">Show 100 more</button>`:rows.length+' rows'}</p></div>`;
   sz();$('#lk').onchange=e=>{LK=e.target.value;LLIM=60;LF='';drawLibData()};$('#ladd').onclick=()=>{L[LK].unshift({});LF='';saveLib();drawLibData()};$('#lundo').onclick=undoLast;
   $('#lbak').onclick=backupLib;$('#lres').onclick=()=>$('#lresf').click();$('#lresf').onchange=restorePick;
   if($('#lmore'))$('#lmore').onclick=()=>{LLIM+=100;drawLibData()};
@@ -3868,7 +3878,8 @@ async function reloadSheets(btn){const msg=document.getElementById('sh_msg');if(
   SHEET_CFG={id:cfg.id,tabs:Array.isArray(cfg.tabs)?cfg.tabs:[]};
   const data=await loadSheets(cfg.id,SHEET_CFG.tabs);let n=0;
   Object.entries(data).forEach(([k,rows])=>{if(Object.prototype.hasOwnProperty.call(L,k)){L[k]=rows;n++}});
-  try{localStorage.setItem('sheets.lastSync',new Date().toISOString())}catch(e){}
+  SHEET_SYNC={tried:true,got:Object.keys(data),missing:SHEET_CFG.tabs.filter(t=>!(t in data))};
+  if(SHEET_SYNC.got.length)try{localStorage.setItem('sheets.lastSync',new Date().toISOString())}catch(e){}drawSync();
   SF.invalidate();renderAll();toast(`Reloaded ${n} tables from the Sheet ✓`);
  }catch(e){if(msg)msg.textContent='Failed: '+(e.message||e);toast('Reload failed: '+(e.message||e))}}
 async function saveSettings(){SF.invalidate();renderCheat();if($('#sg'))drawSG();if(OFFLINE||!db){if($('#set_msg'))$('#set_msg').textContent='Applied for this session — offline, not saved';return toast('Offline — not saved')}
@@ -4307,7 +4318,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.11';
+const APP_V='2026-10-13.12';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
