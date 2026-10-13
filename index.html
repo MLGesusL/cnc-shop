@@ -3517,14 +3517,15 @@ function c6Defaults(){const v=CALCV,t=tool(v.tool),out={vals:{},src:{},t,warn:''
   let r=null;try{r=SF.resolve(ctx,{tool:v.tool,op,subcycleKey:v.tag.subcycleKey||null})}catch(e){console.error(e)}out.r=r;
   if(r&&r.warn)out.warn=r.warn;
   else if(r){const e=r.val&&r.val.why&&r.val.why.eng,from=e&&e.from||{},tag=x=>x==='sub-cycle'||x==='baseline'||x==='rule'||x==='default'?x:r.src;
-   if(isFinite(r.vcT))out.vals.Vc=+r.vcT,out.src.Vc=r.src;if(isFinite(r.fz))out.vals.fz=+r.fz,out.src.fz=r.src;
+   /* Vc at the RPM the machine can reach (spindle-capped), as Speeds & Feeds shows it */
+   if(isFinite(r.vc)||isFinite(r.vcT))out.vals.Vc=+(isFinite(r.vc)?r.vc:r.vcT),out.src.Vc=r.src;if(r.capped)out.capped={vcT:r.vcT,rpm:r.rpm};if(isFinite(r.fz))out.vals.fz=+r.fz,out.src.fz=r.src;
    if(r.ap!=null&&isFinite(r.ap))out.vals.ap=+r.ap,out.src.ap=/^DB/.test(r.src)||!e?r.src:tag(from.ap);if(r.ae!=null&&isFinite(r.ae))out.vals.ae=+r.ae,out.src.ae=/^DB/.test(r.src)||!e?r.src:tag(from.ae)}
   /* Ra for ball / lollipop tools: a matching rule (Phase 2), else 1.6 µm finish / 3.2 µm semi */
   if(ball){const rr=SF.applyRules({src:{}},L.rules,{material:v.mat,iso:out.info&&out.info.iso,tool:sfx,op,band:SF.bandOf(D,L.bands)&&SF.bandOf(D,L.bands).label,diameter:D});
    out.vals.ra=rr.ra>0?rr.ra:op==='semi'?3.2:1.6;out.src.ra=rr.ra>0?'rule':'default';out.raK=rr.raK>0?rr.raK:(+SET.raK||1)}}
  out.raK=out.raK||(+SET.raK||1);return out}
 function c6Scope(){const d=C6.def||{},t=d.t||{},v=CALCV,mc=L.machines.find(x=>x.Machine===v.mach)||{};
- return Object.assign({},C6.st,{kc:(SF.KC11||{})[d.info&&d.info.iso]||2000,k:d.raK||1,is_ball:d.ball?1:0,stickout:gn(v.so),reach:gn(t['Reach (mm)']),cut_len:gn(t['Cutting Length (mm)']),
+ return Object.assign({},C6.st,{rpm_max:capOf(v.mach),kc:(SF.KC11||{})[d.info&&d.info.iso]||2000,k:d.raK||1,is_ball:d.ball?1:0,stickout:gn(v.so),reach:gn(t['Reach (mm)']),cut_len:gn(t['Cutting Length (mm)']),
   power_limit:gn(C6.adv.plimit)>0?gn(C6.adv.plimit):gn(mc['Spindle Power (kW)']),defl_limit:gn(C6.adv.dlimit),reground:C6.adv.cond==='reground'?1:0,dynamic:C6.adv.strategy==='dynamic'?1:0})}
 const c6Row=k=>calcFields().find(r=>r.key.toLowerCase()===String(k).toLowerCase());
 /* fresh state for a new selection: defaults from the engine, the Sheet's default column, then every formula */
@@ -3556,12 +3557,20 @@ function c6Settle(hold){for(let pass=0;pass<3;pass++){let moved=false;
 function c6Reset2(k){const d=C6.def||{vals:{},src:{}},dv=Object.keys(d.vals).find(x=>x.toLowerCase()===k.toLowerCase()),r=c6Row(k);
  if(dv!=null){C6.st[k]=d.vals[dv];C6.src[k]=d.src[dv]}else if(r&&r.default!==undefined){C6.st[k]=+r.default;C6.src[k]='default'}else delete C6.st[k];c6Forward()}
 /* necked tool + the brief's refusals: ap beyond the reach or the cutting length, or reach over 3×Ø */
+/* necked tool: the neck length (else the reach) is its stickout from the collet */
+function neckStick(t){const n=gn(t&&t['Neck Length (mm)']),r=gn(t&&t['Reach (mm)']);return n>0?{mm:n,from:'neck length'}:r>0?{mm:r,from:'reach (no neck length in the library)'}:{mm:NaN,from:''}}
+const isNecked=t=>{const r=gn(t&&t['Reach (mm)']),o=gn(t&&t['Overall Length (mm)']),s=gn(t&&t['Shank Dia (mm)']);return isFinite(r)&&isFinite(o)&&isFinite(s)&&r<o-s-5};
 function c6Checks(){const d=C6.def||{},t=d.t;if(!t)return {necked:false,warn:[]};const D=gn(t['Diameter (mm)']),reach=gn(t['Reach (mm)']),oal=gn(t['Overall Length (mm)']),sh=gn(t['Shank Dia (mm)']),cl=gn(t['Cutting Length (mm)']);
- const ap=C6.st[(c6Row('ap')||{}).key],necked=isFinite(reach)&&isFinite(oal)&&isFinite(sh)&&reach<oal-sh-5,ld=isFinite(reach)&&D>0?reach/D:NaN,w=[];
+ const ap=C6.st[(c6Row('ap')||{}).key],necked=isFinite(reach)&&isFinite(oal)&&isFinite(sh)&&reach<oal-sh-5,ns=neckStick(t),ld=necked&&ns.mm>0&&D>0?ns.mm/D:isFinite(reach)&&D>0?reach/D:NaN,w=[];
  if(isFinite(ap)&&isFinite(reach)&&reach>0&&ap>reach+1e-9)w.push(`ap ${f(ap,2)} mm is more than the reach ${reach} mm`);
  if(isFinite(ap)&&isFinite(cl)&&cl>0&&ap>cl+1e-9)w.push(`ap ${f(ap,2)} mm is more than the cutting length ${cl} mm`);
- if(isFinite(ld)&&ld>3)w.push(`reach ÷ Ø = ${f(ld,1)} — over 3`);
- const P=C6.st[(c6Row('P')||{}).key],pl=c6Scope().power_limit;const soft=[];if(isFinite(P)&&pl>0&&P>pl)soft.push(`~${f(P,1)} kW is over the ${f(pl,1)} kW power limit`);
+ const P=C6.st[(c6Row('P')||{}).key],pl=c6Scope().power_limit;const soft=[];
+ /* reach over 3×Ø: warn only (decision 2026-10-13) — values are still computed */
+ const rp=C6.st[(c6Row('rpm')||{}).key],cap=capOf(CALCV.mach);if(isFinite(rp)&&rp>cap+.5)soft.push(`RPM ${f(rp)} is over the ${f(cap)} rpm spindle limit${CALCV.mach?' of the '+CALCV.mach:' (default machine)'}`);
+ else if(d.capped&&!C6.locked.size)soft.push(`Vc limited by the spindle: ideal ${f(d.capped.vcT)} m/min needs more than ${f(cap)} rpm`);
+ /* long-neck cutters (decision 2026-10-13): the neck length is the stickout from the collet — warn, still compute */
+ if(necked&&ns.mm>0)soft.push(`Long-neck cutter: the ${ns.from} (${f(ns.mm,1)} mm, L/D ${f(ld,1)}) is taken as the stickout from the collet — the programmer must compensate for the additional stickout`);
+ else if(isFinite(ld)&&ld>3)soft.push(`Long reach: reach ÷ Ø = ${f(ld,1)} (over 3) — the programmer must compensate for the additional stickout`);if(isFinite(P)&&pl>0&&P>pl)soft.push(`~${f(P,1)} kW is over the ${f(pl,1)} kW power limit`);
  const df=C6.st[(c6Row('defl')||{}).key],dl=gn(C6.adv.dlimit);if(isFinite(df)&&dl>0&&df>dl)soft.push(`deflection ${f(df,3)} mm is over the ${dl} mm limit`);
  return {necked,ld,warn:w,soft}}
 const c6Fmt=(k,v)=>!isFinite(v)?'':Math.abs(v)>=100?(+v).toFixed(0):Math.abs(v)>=10?(+v).toFixed(1):Math.abs(v)>=1?(+v).toFixed(2):(+v).toFixed(Math.abs(v)<.01?4:3);
@@ -3657,7 +3666,7 @@ function drawCalcOut(){const h=$('#calc_out');if(h)h.innerHTML=calcOut();drawCal
 document.addEventListener('toggle',e=>{if(e.target.id==='calc_adv')C6.advOpen=e.target.open;if(e.target.id==='calc_tbl')C6.tblOpen=e.target.open},true);
 document.addEventListener('change',e=>{if(e.target.id==='cc_h'||e.target.id==='cc_k'||e.target.id==='cc_t'){const a=$('#calc_adv');if(a){const tmp=document.createElement('div');tmp.innerHTML=c6AdvHtml();a.replaceWith(tmp.firstChild)}}});
 document.addEventListener('input',e=>{const id=e.target.id;if(!['cc_t','cc_so','cc_h'].includes(id))return;const v=CALCV;
- if(id==='cc_t'){v.tool=e.target.value.trim();const t=tool(v.tool);if(t&&!v.soDirty){const reach=+t['Reach (mm)']||+t['Cutting Length (mm)']||+t['Max DOC (mm)'];v.so=reach>0?String(Math.round(reach+5)):'';const so=$('#cc_so');if(so)so.value=v.so}
+ if(id==='cc_t'){v.tool=e.target.value.trim();const t=tool(v.tool);if(t&&!v.soDirty){const reach=+t['Reach (mm)']||+t['Cutting Length (mm)']||+t['Max DOC (mm)'],ns=isNecked(t)?neckStick(t):null;v.so=ns&&ns.mm>0?String(ns.mm):reach>0?String(Math.round(reach+5)):'';const so=$('#cc_so');if(so)so.value=v.so}
   if(t){const c=$('#calc');if(c){const tmp=document.createElement('div');tmp.innerHTML=calcHtml();c.replaceWith(tmp.firstChild);const ti=$('#cc_t');ti.focus();ti.setSelectionRange(ti.value.length,ti.value.length);return}}}
  if(id==='cc_so'){v.so=e.target.value;v.soDirty=e.target.value!==''}if(id==='cc_h')v.holder=e.target.value;drawCalcOut()});
 document.addEventListener('change',e=>{const id=e.target.id,v=CALCV;
@@ -4318,7 +4327,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.12';
+const APP_V='2026-10-13.13';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
