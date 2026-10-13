@@ -2593,6 +2593,8 @@ const KNOWLEDGE=`MACHINING KNOWLEDGE (use it to reason, check the numbers and ex
 • Reading the cheat-sheet fields: "calibrated" with a calibration note naming "overall cutting style" or "estimated from other materials" is weaker evidence than a calibration on that tool type — say so. "estimated": true / "derived_from_iso_group" = the manufacturer's printed data was for another material group of the same class and was scaled.
 • If the request lacks something that changes the answer a lot (material, tool, operation, stick-out, machine rigidity), give a best answer and ask ONE short follow-up; never refuse to answer.`;
 const SYS=SYS_CORE+"\n"+KNOWLEDGE;/* full prompt, kept for reference */
+function promptDefaults(){return{'ask.core':SYS_CORE,'ask.knowledge':KNOWLEDGE,'learn.tutor':TSYS}}
+function promptFor(key){const p=(L.prompts||[]).find(x=>x&&x.key===key);return (p&&p.text)||promptDefaults()[key]||''}
 /* Knowledge is needed for 'why' questions, cycle questions, or material questions that are not a plain number lookup.
    Once a conversation has used it, it stays on so follow-up turns send the same (cacheable) prefix. */
 const WHY=/\b(why|explain|compared?|comparison|better|safe|safer|should i|reason|how come|vs\.?|versus)\b/i;
