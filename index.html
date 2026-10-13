@@ -1940,7 +1940,7 @@ const DEFAULT_LIB = {
   bands: SF.BANDS.map(b=>({...b}))
 };
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)],esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],formulas:[]};let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
+const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],formulas:[],prompts:[]};let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
 const TABS=[['ask','Ask AI','A'],['log','Log cut','+'],['cuts','Cut database','D'],['cheat','Speeds & Feeds','C'],['form','Formulas','ƒ'],['learn','Learn AI','K'],['lib','Library','L'],['setup','Setup sheet','S'],['todo','To-do','✓'],['guide','User Guide','?']];
 $('#nav').innerHTML=TABS.map(t=>`<button data-t="${t[0]}"><i>${t[2]}</i>${t[1]}</button>`).join('');
 let CUR='ask';
