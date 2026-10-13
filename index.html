@@ -291,6 +291,11 @@ details.cpsec{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;marg
 .fxgw{display:flex;align-items:flex-start;gap:2px}.fxgw>.fxh{padding-top:10px}
 #cutModal[hidden]{display:none}#cbody tbody tr[data-cid]{cursor:pointer}
 .xpl{border:1px solid var(--bd2);background:none;color:var(--mu,#777);font:inherit;font-size:11px;padding:0 6px;border-radius:9px;cursor:pointer;line-height:16px}.xpl:hover{color:var(--tx)}#xplModal[hidden]{display:none}#xplModal ol,#xplModal ul{padding-left:20px;margin:4px 0}#xplModal li{margin:3px 0;font-size:14px}
+.c6geo{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}.c6geo .k i{font-style:normal;color:var(--mu,#777);font-size:12px;margin-right:4px}.c6neck{background:#3b7dd8;color:#fff}.c6pill b{margin-right:4px}
+.c6body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,420px);gap:12px;align-items:start}@media(max-width:760px){.c6body{grid-template-columns:1fr}}
+.c6fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.c6f label{margin:0 0 2px}.c6f.lk input{border-color:var(--hi,#8a5a2b);border-width:2px}.c6s{display:block;min-height:16px;font-size:11px}
+.c6t{display:inline-block;font-size:11px;padding:0 6px;border-radius:8px;border:1px solid var(--bd2);color:var(--mu,#777)}.c6t-manual{border-color:var(--hi,#8a5a2b);color:var(--hi,#8a5a2b)}
+.c6louds>div{flex:1;min-width:120px}.c6louds label{margin:0;font-size:13px;color:var(--mu)}.c6louds input.c6big{display:block;width:100%;font-family:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;font-size:30px;font-weight:600;color:var(--tx);line-height:1.1;height:auto;padding:2px 0;border:0;border-bottom:1px dashed var(--bd2);border-radius:0;background:transparent}.c6louds input.c6big::-webkit-inner-spin-button,.c6louds input.c6big::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}.c6louds input.c6big{-moz-appearance:textfield;appearance:textfield}.c6louds .lk input.c6big{border-bottom:2px solid var(--hi,#8a5a2b)}
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
@@ -3458,17 +3463,165 @@ let CALCV={tag:{},mat:'',tool:'',so:'',soDirty:false,holder:'',mach:'',band:''};
 const KIND_FAM={CD:'Drilling',HSS:'Drilling',SP:'Drilling',RM:'Reaming',TM:'Threading'};
 const cycleNameFor=k=>{const own=HMC().map(c=>c.Cycle);const hit=TAGS.NAME_MAP.filter(([n,ks])=>ks.includes(k)).map(x=>x[0]);return hit.find(n=>own.includes(n))||hit[0]||''};
 const legacyOp=op=>({rough:'Rough',semi:'Semi',finish:'Finish',drill:'Drill',ream:'Drill',thread:'Thread',bore:'Finish'})[op]||'';
-function calcHtml(){const v=CALCV,t=tool(v.tool),d=t?+t['Diameter (mm)']:NaN,tb=t?SF.bandOf(d,L.bands):null,B=(L.bands&&L.bands.length?L.bands:SF.BANDS).slice().sort((a,b)=>a.lo-b.lo),bi=tb?B.findIndex(x=>x.label===tb.label):-1;
- const near=bi<0?[]:B.slice(Math.max(0,bi-2),bi+3);
- return `<div class="card" id="calc"><h2>Sub-cycle calculator</h2><p class="mu" style="margin:0 0 8px">Pick the cycle family, operation and sub-cycle, then the material and tool. Values come from the same resolver as Log cut's Suggested start, so the numbers here, in the log form and in the saved cut agree.</p>
+/* ---------- Phase 6b: calculator (M.A. Ford style, live two-way) ----------
+   Fields come from the Sheet tab calc_fields (key,label,type,unit,default,solve,formula,solve_back,hidden_if), else CALC_FIELDS.
+   solve: input (user-set only) · derived_input (user-set, else the recommendation / default) · formula (recomputed unless typed).
+   Typing a formula-only field back-solves through the first unlocked field whose solve_back mentions it (Vc ↔ RPM, fz ↔ Vf,
+   Vf ↔ RPM, ae ↔ Q, ap ↔ Q); anything else just locks. Formulas and hidden_if run through FX (no eval). Names are matched
+   without regard to case (vc = Vc). Extra names a formula can use: kc (N/mm², by ISO group), k (cusp / Ra multiplier),
+   is_ball (1 for BN / LP), stickout, reach, cut_len, power_limit, defl_limit, reground (1 / 0), dynamic (1 / 0). */
+const CALC_FIELDS=[
+ {key:'D',label:'Tool Ø',unit:'mm',solve:'input'},
+ {key:'Z',label:'Flutes Z',solve:'input',default:4},
+ {key:'Vc',label:'Vc',unit:'m/min',solve:'derived_input',solve_back:'rpm * pi * D / 1000'},
+ {key:'fz',label:'fz',unit:'mm/tooth',solve:'derived_input',solve_back:'vf / (rpm * Z)'},
+ {key:'ae',label:'ae',unit:'mm',solve:'derived_input',solve_back:'Q * 1000 / (vf * ap)',hidden_if:'is_ball'},
+ {key:'ae_ball',label:'ae (ball, for Ra)',unit:'mm',solve:'formula',formula:'2*sqrt(max(0,(D - ra*k/1000) * (ra*k/1000)))',hidden_if:'1 - is_ball'},
+ {key:'ap',label:'ap',unit:'mm',solve:'derived_input',solve_back:'Q * 1000 / (vf * ae)'},
+ {key:'rpm',label:'RPM',unit:'rpm',solve:'formula',formula:'vc * 1000 / (pi * D)',solve_back:'vf / (fz * Z)'},
+ {key:'vf',label:'Vf',unit:'mm/min',solve:'formula',formula:'rpm * fz * Z'},
+ {key:'Q',label:'Q',unit:'cm³/min',solve:'formula',formula:'vf * ae * ap / 1000'},
+ {key:'P',label:'Power',unit:'kW',solve:'formula',formula:'Q * kc / (60000 * 0.8)'},
+ {key:'aeD',label:'ae ×D',solve:'formula',formula:'ae / D'},
+ {key:'apD',label:'ap ×D',solve:'formula',formula:'ap / D'},
+ {key:'ra',label:'Ra target',unit:'µm',solve:'derived_input',default:1.6,hidden_if:'1 - is_ball'}];
+const C6_LOUD=['rpm','vf','Q'];
+function calcFields(){const rows=(L.calc_fields||[]).filter(r=>r&&String(r.key||'').trim());if(!rows.length)return CALC_FIELDS;
+ return rows.map(r=>({key:String(r.key).trim(),label:String(r.label||r.key),type:r.type||'',unit:r.unit||'',default:r.default===''||r.default==null?undefined:+r.default,solve:String(r.solve||'formula').trim().toLowerCase(),formula:String(r.formula||'').trim(),solve_back:String(r.solve_back||'').trim(),hidden_if:String(r.hidden_if||'').trim()}))}
+/* one expression through FX.run: the scope's numbers become the formula's inputs (keys and lower-case aliases) */
+function c6Eval(expr,scope){const ins=[],seen=new Set();Object.entries(scope).forEach(([k,v])=>{if(typeof v!=='number'||!isFinite(v)||!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k))return;[k,k.toLowerCase()].forEach(n=>{if(!seen.has(n)){seen.add(n);ins.push({k:n,dflt:v})}})});
+ const r=FX.run({inputs:ins,out:[{k:'__v',expr}]},{});return r.err?{err:r.err}:{v:r.rows[0].value}}
+const c6Names=expr=>new Set((String(expr||'').match(/[A-Za-z_][A-Za-z0-9_]*/g)||[]).map(x=>x.toLowerCase()));
+let C6={op:'',adv:{coolant:'Flood',strategy:'',cond:'new',plimit:'',dlimit:''},st:{},locked:new Set(),src:{},err:{},sig:'',def:null,presets:null};
+const gn=x=>x===''||x==null?NaN:+x;
+/* what the recommendation engine says for the current selection: D, Z, Vc, fz, ap, ae (+ their sources), and the tool's geometry */
+function c6Defaults(){const v=CALCV,t=tool(v.tool),out={vals:{},src:{},t,warn:''};if(!t)return out;
+ const D=gn(t['Diameter (mm)']),Z=gn(t.Flutes),sfx=AUD.sfxOf(v.tool),ball=sfx==='BN'||sfx==='LP',fam=v.tag.cycleFamily,fx=fam?famFixed(fam):null;
+ const op=fx||v.tag.operation||C6.op||'rough';out.op=op;out.ball=ball;
+ out.vals.D=D;out.src.D='tool';if(isFinite(Z)&&Z>0){out.vals.Z=Z;out.src.Z='tool'}
+ const m=L.materials.find(x=>x.Material===v.mat);out.info=m?SF.matInfo(m):null;
+ if(v.mat&&L.materials.length){let ctx=sfctx(v.mat,v.mach,C6.adv.coolant||'Flood');if(v.band)ctx=Object.assign({},ctx,{bandOverride:v.band,_built:null,_stamp:null,_cal:null,_sc:null});
+  let r=null;try{r=SF.resolve(ctx,{tool:v.tool,op,subcycleKey:v.tag.subcycleKey||null})}catch(e){console.error(e)}out.r=r;
+  if(r&&r.warn)out.warn=r.warn;
+  else if(r){const e=r.val&&r.val.why&&r.val.why.eng,from=e&&e.from||{},tag=x=>x==='sub-cycle'||x==='baseline'||x==='rule'||x==='default'?x:r.src;
+   if(isFinite(r.vcT))out.vals.Vc=+r.vcT,out.src.Vc=r.src;if(isFinite(r.fz))out.vals.fz=+r.fz,out.src.fz=r.src;
+   if(r.ap!=null&&isFinite(r.ap))out.vals.ap=+r.ap,out.src.ap=/^DB/.test(r.src)||!e?r.src:tag(from.ap);if(r.ae!=null&&isFinite(r.ae))out.vals.ae=+r.ae,out.src.ae=/^DB/.test(r.src)||!e?r.src:tag(from.ae)}
+  /* Ra for ball / lollipop tools: a matching rule (Phase 2), else 1.6 µm finish / 3.2 µm semi */
+  if(ball){const rr=SF.applyRules({src:{}},L.rules,{material:v.mat,iso:out.info&&out.info.iso,tool:sfx,op,band:SF.bandOf(D,L.bands)&&SF.bandOf(D,L.bands).label,diameter:D});
+   out.vals.ra=rr.ra>0?rr.ra:op==='semi'?3.2:1.6;out.src.ra=rr.ra>0?'rule':'default';out.raK=rr.raK>0?rr.raK:(+SET.raK||1)}}
+ out.raK=out.raK||(+SET.raK||1);return out}
+function c6Scope(){const d=C6.def||{},t=d.t||{},v=CALCV,mc=L.machines.find(x=>x.Machine===v.mach)||{};
+ return Object.assign({},C6.st,{kc:(SF.KC11||{})[d.info&&d.info.iso]||2000,k:d.raK||1,is_ball:d.ball?1:0,stickout:gn(v.so),reach:gn(t['Reach (mm)']),cut_len:gn(t['Cutting Length (mm)']),
+  power_limit:gn(C6.adv.plimit)>0?gn(C6.adv.plimit):gn(mc['Spindle Power (kW)']),defl_limit:gn(C6.adv.dlimit),reground:C6.adv.cond==='reground'?1:0,dynamic:C6.adv.strategy==='dynamic'?1:0})}
+const c6Row=k=>calcFields().find(r=>r.key.toLowerCase()===String(k).toLowerCase());
+/* fresh state for a new selection: defaults from the engine, the Sheet's default column, then every formula */
+function c6Reset(){C6.def=c6Defaults();C6.st={};C6.src={};C6.locked=new Set();C6.err={};const d=C6.def;
+ calcFields().forEach(r=>{const k=r.key,lk=k.toLowerCase(),dv=Object.keys(d.vals).find(x=>x.toLowerCase()===lk);
+  if(dv!=null&&isFinite(d.vals[dv])){C6.st[k]=d.vals[dv];C6.src[k]=d.src[dv]}else if(r.default!==undefined&&isFinite(+r.default)){C6.st[k]=+r.default;C6.src[k]='default'}});
+ c6Forward()}
+/* forward walk, top to bottom: every unlocked row with a formula is recomputed; for ball tools an unlocked ae follows ae_ball */
+function c6Forward(hold){const rows=calcFields(),ball=C6.def&&C6.def.ball;C6.err={};
+ for(const r of rows){const k=r.key;if(C6.locked.has(k)||(hold&&hold.has(k)))continue;
+  if(r.formula&&(r.solve==='formula'||r.solve==='derived_input')){const x=c6Eval(r.formula,c6Scope());if(x.err){C6.err[k]=x.err;delete C6.st[k]}else{C6.st[k]=x.v;C6.src[k]='formula'}}
+  if(ball&&k.toLowerCase()==='ae_ball'){const ae=c6Row('ae');if(ae&&!C6.locked.has(ae.key)&&isFinite(C6.st[k])){C6.st[ae.key]=C6.st[k];C6.src[ae.key]='Ra'}}}}
+/* the rows whose solve_back mentions key (upstream of it) and the rows key's own solve_back mentions */
+const c6Partners=k=>{const lk=k.toLowerCase(),r0=c6Row(k),out=new Set();calcFields().forEach(r=>{if(r.key!==k&&r.solve_back&&c6Names(r.solve_back).has(lk))out.add(r.key)});if(r0&&r0.solve_back)c6Names(r0.solve_back).forEach(n=>{const r=c6Row(n);if(r&&r.key!==k)out.add(r.key)});return out};
+function c6Back(k,hold,depth){if(depth>4)return;const lk=k.toLowerCase(),r=calcFields().find(x=>x.key!==k&&x.solve_back&&!C6.locked.has(x.key)&&!hold.has(x.key)&&c6Names(x.solve_back).has(lk));if(!r)return;
+ const x=c6Eval(r.solve_back,c6Scope());if(x.err||!isFinite(x.v))return;C6.st[r.key]=x.v;C6.src[r.key]='back-solved';hold.add(r.key);
+ if(r.solve==='formula')c6Back(r.key,hold,depth+1)}
+/* the user typed into field k */
+function c6Set(k,val){const r=c6Row(k);if(!r)return;const v=gn(val);
+ if(!isFinite(v)){C6.locked.delete(r.key);c6Reset2(r.key);return}
+ C6.st[r.key]=v;C6.locked.add(r.key);C6.src[r.key]='manual';c6Partners(r.key).forEach(p=>{if(C6.locked.has(p)&&p!==r.key)C6.locked.delete(p)});
+ const hold=new Set([r.key]);if(r.solve==='formula')c6Back(r.key,hold,0);c6Forward(hold);c6Settle(hold)}
+/* a typed (locked) result such as Vf stays as typed: if its formula no longer gives it, move the first free input upstream of it (fz) */
+function c6Settle(hold){for(let pass=0;pass<3;pass++){let moved=false;
+ calcFields().forEach(r=>{if(!C6.locked.has(r.key)||!r.formula||r.solve!=='formula'||hold.has(r.key)&&pass===0&&false)return;const x=c6Eval(r.formula,c6Scope()),cur=C6.st[r.key];
+  if(x.err||!isFinite(x.v)||!isFinite(cur)||Math.abs(x.v-cur)<=1e-9*Math.max(1,Math.abs(cur)))return;const h=new Set(hold);c6Back(r.key,h,0);if(h.size>hold.size){h.forEach(k=>hold.add(k));moved=true}});
+ if(!moved)break;c6Forward(hold)}}
+/* clearing a field gives it back to the engine / its formula */
+function c6Reset2(k){const d=C6.def||{vals:{},src:{}},dv=Object.keys(d.vals).find(x=>x.toLowerCase()===k.toLowerCase()),r=c6Row(k);
+ if(dv!=null){C6.st[k]=d.vals[dv];C6.src[k]=d.src[dv]}else if(r&&r.default!==undefined){C6.st[k]=+r.default;C6.src[k]='default'}else delete C6.st[k];c6Forward()}
+/* necked tool + the brief's refusals: ap beyond the reach or the cutting length, or reach over 3×Ø */
+function c6Checks(){const d=C6.def||{},t=d.t;if(!t)return {necked:false,warn:[]};const D=gn(t['Diameter (mm)']),reach=gn(t['Reach (mm)']),oal=gn(t['Overall Length (mm)']),sh=gn(t['Shank Dia (mm)']),cl=gn(t['Cutting Length (mm)']);
+ const ap=C6.st[(c6Row('ap')||{}).key],necked=isFinite(reach)&&isFinite(oal)&&isFinite(sh)&&reach<oal-sh-5,ld=isFinite(reach)&&D>0?reach/D:NaN,w=[];
+ if(isFinite(ap)&&isFinite(reach)&&reach>0&&ap>reach+1e-9)w.push(`ap ${f(ap,2)} mm is more than the reach ${reach} mm`);
+ if(isFinite(ap)&&isFinite(cl)&&cl>0&&ap>cl+1e-9)w.push(`ap ${f(ap,2)} mm is more than the cutting length ${cl} mm`);
+ if(isFinite(ld)&&ld>3)w.push(`reach ÷ Ø = ${f(ld,1)} — over 3`);
+ const P=C6.st[(c6Row('P')||{}).key],pl=c6Scope().power_limit;const soft=[];if(isFinite(P)&&pl>0&&P>pl)soft.push(`~${f(P,1)} kW is over the ${f(pl,1)} kW power limit`);
+ const df=C6.st[(c6Row('defl')||{}).key],dl=gn(C6.adv.dlimit);if(isFinite(df)&&dl>0&&df>dl)soft.push(`deflection ${f(df,3)} mm is over the ${dl} mm limit`);
+ return {necked,ld,warn:w,soft}}
+const c6Fmt=(k,v)=>!isFinite(v)?'':Math.abs(v)>=100?(+v).toFixed(0):Math.abs(v)>=10?(+v).toFixed(1):Math.abs(v)>=1?(+v).toFixed(2):(+v).toFixed(Math.abs(v)<.01?4:3);
+const c6Hidden=r=>{if(!r.hidden_if)return false;const x=c6Eval(r.hidden_if,c6Scope());return !x.err&&!!x.v};
+function c6Tag(k){const s=C6.src[k];if(!s)return '';if(SRCT[s])return srcB(s);return `<span class="c6t c6t-${esc(String(s).replace(/[^a-z]/gi,''))}">${esc(s)}</span>`}
+function c6Svg(){const d=C6.def||{},t=d.t;if(!t)return '';const st=C6.st,D=gn(t['Diameter (mm)'])||10,ae=Math.max(0,Math.min(st[(c6Row('ae')||{}).key]??st.ae_ball??0,D)),ap=Math.max(0,st[(c6Row('ap')||{}).key]||0),ck=c6Checks();
+ /* top view (left): workpiece edge, tool circle, green engagement arc. side view (right): workpiece, tool down to ap, shank / neck */
+ const R=46,cx=90,cy=86,a=ae>=D?Math.PI:Math.acos(1-2*ae/D),wx=cx+R-2*R*Math.min(1,ae/D);
+ const arc=`M ${cx+R} ${cy} A ${R} ${R} 0 ${a>Math.PI/2?1:0} 0 ${cx+R*Math.cos(a)} ${cy-R*Math.sin(a)}`;
+ const reach=gn(t['Reach (mm)']),cl=gn(t['Cutting Length (mm)'])||D*2,sc=110/Math.max(D*1.2,(isFinite(reach)?reach:cl)*1.1,ap*1.2,1),tw=D*sc,x0=290,top=20,flute=Math.min(cl*sc,150),dep=Math.min(ap*sc,flute),wTop=top+8+flute-dep;
+ return `<svg viewBox="0 0 420 180" role="img" aria-label="Engagement preview: ae ${f(ae,2)} mm, ap ${f(ap,2)} mm" style="width:100%;max-width:420px;height:auto">
+  <rect x="${wx}" y="20" width="${180-wx+10}" height="140" fill="#9aa0a6" opacity=".55"/><circle cx="${cx}" cy="${cy}" r="${R}" fill="#f2c94c" stroke="#a07d10"/>
+  ${ae>0?`<path d="${arc}" fill="none" stroke="#2e9e4f" stroke-width="6" stroke-linecap="round"/>`:''}<text x="${cx}" y="172" text-anchor="middle" font-size="11" fill="currentColor">top · ae ${f(ae,2)} mm</text>
+  <rect x="${x0-70}" y="${wTop}" width="${tw/2+70}" height="${170-wTop-14}" fill="#9aa0a6" opacity=".55"/>
+  ${ck.necked?`<rect x="${x0-tw*.18}" y="4" width="${tw*.36}" height="${top+4}" fill="#3b7dd8"/>`:`<rect x="${x0-tw/2}" y="4" width="${tw}" height="${top+4}" fill="#c9a227" opacity=".7"/>`}
+  <rect x="${x0-tw/2}" y="${top+8}" width="${tw}" height="${flute}" fill="#f2c94c" stroke="#a07d10"/>
+  ${dep>0?`<line x1="${x0+tw/2+8}" y1="${top+8+flute-dep}" x2="${x0+tw/2+8}" y2="${top+8+flute}" stroke="#2e9e4f" stroke-width="3"/>`:''}<text x="${x0}" y="172" text-anchor="middle" font-size="11" fill="currentColor">side · ap ${f(ap,2)} mm${ck.necked?' · necked':''}</text></svg>`}
+function calc6Html(){const d=C6.def||c6Defaults(),t=d.t,v=CALCV;if(!t||!v.mat)return `<p class="mu">${!v.mat?'Choose a material':'Type a tool code from your library'} to fill the calculator.</p>`;
+ const ck=c6Checks(),info=d.info,fam=v.tag.cycleFamily,fx=fam?famFixed(fam):null,op=d.op||'rough';
+ const geo=[['Ø',t['Diameter (mm)'],'mm'],['flute',t['Flute Length (mm)'],'mm'],['R',t['Corner Radius (mm)']||0,'mm'],['Z',t.Flutes,''],['coating',t.Coating,''],['cut length',t['Cutting Length (mm)'],'mm']].filter(x=>x[1]!==''&&x[1]!=null).map(([l,x,u])=>`<span class="k"><i>${l}</i><b>${esc(String(x))}${u?' '+u:''}</b></span>`).join('');
+ const rows=calcFields().filter(r=>!C6_LOUD.includes(r.key)&&!c6Hidden(r)).map(r=>{const k=r.key,val=C6.st[k];return `<div class="c6f${C6.locked.has(k)?' lk':''}"><label for="c6_${esc(k)}">${esc(r.label||k)}${r.unit?` <small class="mu">${esc(r.unit)}</small>`:''}</label><input id="c6_${esc(k)}" data-c6="${esc(k)}" type="number" step="any" inputmode="decimal" value="${esc(c6Fmt(k,val))}"${C6.err[k]?` title="${esc(C6.err[k])}"`:''}><span class="c6s" data-c6s="${esc(k)}">${c6Tag(k)}</span></div>`}).join('');
+ const loud=C6_LOUD.map(k=>c6Row(k)).filter(Boolean).map(r=>`<div class="c6loud${C6.locked.has(r.key)?' lk':''}"><label for="c6_${esc(r.key)}">${esc(r.label||r.key)} <small class="mu">${esc(r.unit||'')}</small></label><input class="c6big" id="c6_${esc(r.key)}" data-c6="${esc(r.key)}" type="number" step="any" inputmode="decimal" value="${ck.warn.length?'':esc(c6Fmt(r.key,C6.st[r.key]))}"${ck.warn.length?' placeholder="–"':''}></div>`).join('');
+ const opPill=`<div class="seg" id="c6op">${['rough','semi','finish'].map(o=>`<button data-c6op="${o}" class="${o===op?'on':''}"${fx&&fx!==o?' disabled':''}>${OPL[o]}</button>`).join('')}</div>`;
+ const presets=(C6.presets||[]);
+ return `<div class="c6top"><div class="c6geo">${geo}${ck.necked?` <span class="tag c6neck">Necked · L/D ${f(ck.ld,1)}</span>`:''}</div>
+  <div class="row" style="gap:8px;align-items:center;margin:6px 0">${info?`<span class="tag c6pill" title="${esc(info.name||'')}"><b>${esc(info.iso)}</b> ${esc(v.mat)}</span>`:''}${opPill}${d.warn?`<span class="note w" style="margin:0">${esc(d.warn)}</span>`:''}</div></div>
+  ${ck.warn.length?`<div class="note e">Not computed — ${esc(ck.warn.join('; '))}.</div>`:''}${ck.soft&&ck.soft.length?`<div class="note w">${esc(ck.soft.join('; '))}</div>`:''}
+  <div class="c6body"><div class="c6fields">${rows}</div><div class="c6svg">${c6Svg()}</div></div>
+  <div class="out c6louds">${loud}</div>
+  <div class="row" style="margin-top:10px"><button class="b s" id="c6reset">Reset</button><button class="b" id="c6log">Send to Log cut</button><button class="b s" id="c6save">Save as preset</button>${presets.length?`<select id="c6pre" style="max-width:220px"><option value="">Load a preset…</option>${presets.map((p,i)=>`<option value="${i}">${esc(p.name)}</option>`).join('')}</select>`:''}<span class="mu" id="c6msg"></span></div>`}
+function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.tag,v.mach,v.band,C6.op,C6.adv.coolant,(L.calc_fields||[]).length,JSON.stringify(SET.tiers||null)])}
+function drawCalc6(force){const h=$('#calc6');if(!h)return;const sg=c6Sig();if(force||sg!==C6.sig){C6.sig=sg;c6Reset()}h.innerHTML=calc6Html()}
+/* live update without re-rendering the field being typed in */
+function c6Refresh(skip){const ck=c6Checks();calcFields().forEach(r=>{const el=document.getElementById('c6_'+r.key);if(el&&el!==skip){el.value=C6_LOUD.includes(r.key)&&ck.warn.length?'':c6Fmt(r.key,C6.st[r.key])}const s=document.querySelector(`[data-c6s="${r.key}"]`);if(s)s.innerHTML=c6Tag(r.key);
+  const box=el&&el.closest('.c6f,.c6loud');if(box)box.classList.toggle('lk',C6.locked.has(r.key))});
+ const sv=$('.c6svg');if(sv)sv.innerHTML=c6Svg()}
+document.addEventListener('input',e=>{const k=e.target.dataset&&e.target.dataset.c6;if(!k)return;c6Set(k,e.target.value);
+ const ck=c6Checks(),hid=calcFields().some(r=>!!r.hidden_if);if(hid||ck.warn.length||$('#calc6 .note')){const a=document.activeElement,id=a&&a.id,pos=a&&a.selectionStart;$('#calc6').innerHTML=calc6Html();const b=id&&document.getElementById(id);if(b){b.focus();try{b.setSelectionRange(pos,pos)}catch(x){}}}else c6Refresh(e.target)});
+document.addEventListener('change',e=>{const id=e.target.id;
+ if(id&&id.startsWith('c6a_')){const k=id.slice(4);C6.adv[k]=e.target.value;drawCalc6();return}
+ if(id==='c6pre'&&e.target.value!==''){const p=(C6.presets||[])[+e.target.value];if(!p)return;Object.assign(CALCV,{tool:p.tool||'',mat:p.mat||CALCV.mat,tag:p.tag||{},mach:p.mach||''});C6.op=p.op||'';C6.adv=Object.assign({},C6.adv,p.adv||{});
+  const c=$('#calc');if(c){const tmp=document.createElement('div');tmp.innerHTML=calcHtml();c.replaceWith(tmp.firstChild)}C6.sig='';drawCalc6(true);Object.entries(p.locked||{}).forEach(([k,v])=>c6Set(k,v));$('#calc6').innerHTML=calc6Html();toast('Preset loaded')}});
+document.addEventListener('click',async e=>{const t=e.target;if(!t.closest||!t.closest('#calc6'))return;
+ const o=t.dataset&&t.dataset.c6op;if(o){C6.op=o;if(CALCV.tag.cycleFamily&&!famFixed(CALCV.tag.cycleFamily)){CALCV.tag=Object.assign({},CALCV.tag,{operation:o});const subs=CALCV.tag.subcycleKey?SUBS(CALCV.tag.cycleFamily).find(x=>x.key===CALCV.tag.subcycleKey):null;if(subs&&!(subs.usableAs||[]).includes(o))CALCV.tag.subcycleKey='';const sp=$('.tp[data-tp="calc"]');if(sp){const tmp=document.createElement('span');tmp.innerHTML=tpHtml('calc',CALCV.tag);sp.replaceWith(tmp.firstChild)}drawCalcOut()}drawCalc6();return}
+ if(t.id==='c6reset'){drawCalc6(true);toast('Calculator reset');return}
+ if(t.id==='c6log'){const st=C6.st,v=CALCV,g=k=>{const r=c6Row(k);return r?st[r.key]:undefined},rd=(x,n)=>x==null||!isFinite(x)?'':+(+x).toFixed(n),op=(C6.def&&C6.def.op)||'rough';
+  openLog({material:v.mat,tool:v.tool,machine:v.mach,holder:v.holder,stickout:v.so,coolant:C6.adv.coolant,operation:legacyOp(op),cycle:v.tag.subcycleKey?cycleNameFor(v.tag.subcycleKey):'',vc:rd(g('Vc'),1),fz:rd(g('fz'),4),doc:rd(g('ap'),3),woc:rd(isFinite(g('ae'))?g('ae'):g('ae_ball'),3),cycleFamily:v.tag.cycleFamily,subcycleKey:v.tag.subcycleKey||null,subOp:op});return}
+ if(t.id==='c6save'){const nm=prompt('Name this preset',`${CALCV.tool} · ${CALCV.mat}${CALCV.tag.subcycleKey?' · '+subName(CALCV.tag.subcycleKey):''}`);if(!nm)return;if(OFFLINE||!db)return toast('Offline — not saved');
+  const locked={};C6.locked.forEach(k=>{if(isFinite(C6.st[k]))locked[k]=C6.st[k]});const p={name:nm.trim(),at:new Date().toISOString(),tool:CALCV.tool,mat:CALCV.mat,tag:CALCV.tag,mach:CALCV.mach,op:C6.op,adv:C6.adv,locked,values:Object.fromEntries(Object.entries(C6.st).filter(([,v])=>isFinite(v)))};
+  const items=(C6.presets||[]).filter(x=>x.name!==p.name).concat([p]);try{await db.doc('lib/presets').set({v:LIB_V,items});C6.presets=items;logChange('presets',p.name,'preset','',JSON.stringify(p.locked),'Calculator');await saveCLOG();toast('Preset saved');$('#calc6').innerHTML=calc6Html()}catch(x){toast('Save failed: '+(x.message||x.code))}}});
+async function c6LoadPresets(){if(C6.presets||!db)return;try{const s=await db.doc('lib/presets').get();C6.presets=s.exists?(dat(s).items||[]):[]}catch(e){C6.presets=[]}}
+function c6AdvHtml(){const v=CALCV,a=C6.adv,ball=C6.def&&C6.def.ball,known=!!(v.mach&&v.holder),t=tool(v.tool),d=t?+t['Diameter (mm)']:NaN,tb=t?SF.bandOf(d,L.bands):null,B=(L.bands&&L.bands.length?L.bands:SF.BANDS).slice().sort((x,y)=>x.lo-y.lo),bi=tb?B.findIndex(x=>x.label===tb.label):-1,near=bi<0?[]:B.slice(Math.max(0,bi-2),bi+3);
+ const hx=(()=>{const st=C6.st,ae=st[(c6Row('ae')||{}).key],fz=st[(c6Row('fz')||{}).key];if(!(d>0)||!isFinite(ae)||!isFinite(fz))return '';return f(fz*(SF.sRad?SF.sRad(ae,d):1),4)})();
+ return `<details id="calc_adv"${C6.advOpen?' open':''}><summary>Advanced</summary><div class="g" style="margin-top:6px">
+ <div><label>Chip thickness hex <small class="mu">mm</small></label><input value="${esc(hx)}" readonly title="max chip thickness at this fz and ae (radial chip thinning)"></div>
+ <div><label for="c6a_coolant">Coolant</label><select id="c6a_coolant">${opt(['Flood','Through-spindle','MQL','Air','Dry'],a.coolant)}</select></div>
+ <div><label for="cc_so">Stickout (mm)</label><input id="cc_so" type="number" step="any" inputmode="decimal" value="${esc(v.so)}"></div>
+ <div><label for="cc_h">Holder</label><input id="cc_h" list="dh" value="${esc(v.holder)}"></div>
+ <div><label for="cc_k">Machine (spindle limit)</label><select id="cc_k"><option value="">Default 12 000 rpm</option>${opt(L.machines.map(m=>m.Machine),v.mach)}</select></div>
+ <div><label for="cc_b">Band</label><select id="cc_b"><option value="">${tb?'From tool: Ø'+esc(tb.label):'From tool'}</option>${near.filter(x=>x.label!==(tb&&tb.label)).map(x=>`<option value="${esc(x.label)}"${x.label===v.band?' selected':''}>Preview Ø${esc(x.label)}</option>`).join('')}</select></div>
+ <div><label for="c6a_strategy">Roughing strategy</label><select id="c6a_strategy">${opt(['','traditional','dynamic'],a.strategy)}</select></div>
+ <div><label for="c6a_cond">Tool condition</label><select id="c6a_cond">${opt(['new','reground'],a.cond)}</select></div>
+ ${known?`<div><label for="c6a_plimit">Power limit <small class="mu">kW</small></label><input id="c6a_plimit" type="number" step="any" inputmode="decimal" value="${esc(a.plimit)}" placeholder="machine rating"></div><div><label for="c6a_dlimit">Deflection limit <small class="mu">mm</small></label><input id="c6a_dlimit" type="number" step="any" inputmode="decimal" value="${esc(a.dlimit)}"></div>`:'<div class="mu" style="align-self:end">Power and deflection limits appear once a machine and a holder are chosen.</div>'}
+ </div></details>`}
+
+function calcHtml(){const v=CALCV,sg=c6Sig();if(sg!==C6.sig){C6.sig=sg;c6Reset()}
+ return `<div class="card" id="calc"><h2>Calculator</h2><p class="mu" style="margin:0 0 8px">Pick the cycle family, operation and sub-cycle, then the material and tool. Every field is live: change any one and the others follow (Vc ↔ RPM, fz ↔ Vf, ae / ap ↔ Q). Values start from the same resolver as Log cut's Suggested start.</p>
  <div class="g"><div style="grid-column:1/-1"><label>Family › Operation › Sub-cycle</label>${tpHtml('calc',v.tag)}</div>
  <div><label for="cc_m">Material</label><select id="cc_m"><option></option>${opt(mats(),v.mat)}</select></div>
- <div><label for="cc_t">Tool</label><input id="cc_t" list="dt" value="${esc(v.tool)}" placeholder="e.g. 26 BX"></div>
- <div><label for="cc_so">Stickout (mm)</label><input id="cc_so" type="number" step="any" inputmode="decimal" value="${esc(v.so)}"></div>
- <div><label for="cc_h">Holder (optional)</label><input id="cc_h" list="dh" value="${esc(v.holder)}"></div>
- <div><label for="cc_k">Machine (spindle limit)</label><select id="cc_k"><option value="">Default 12 000 rpm</option>${opt(L.machines.map(m=>m.Machine),v.mach)}</select></div>
- <div><label for="cc_b">Band</label><select id="cc_b"><option value="">${tb?'From tool: Ø'+esc(tb.label):'From tool'}</option>${near.filter(x=>x.label!==(tb&&tb.label)).map(x=>`<option value="${esc(x.label)}"${x.label===v.band?' selected':''}>Preview Ø${esc(x.label)}</option>`).join('')}</select></div></div>
- <div id="calc_out" style="margin-top:10px">${calcOut()}</div></div>`}
+ <div><label for="cc_t">Tool</label><input id="cc_t" list="dt" value="${esc(v.tool)}" placeholder="e.g. 26 BX"></div></div>
+ ${c6AdvHtml()}
+ <div id="calc6" style="margin-top:10px">${calc6Html()}</div>
+ <details id="calc_tbl" style="margin-top:12px"${C6.tblOpen?' open':''}><summary><b>All sub-cycles in this family</b> <small class="mu">— the same values for every sub-cycle, side by side</small></summary><div id="calc_out" style="margin-top:10px">${calcOut()}</div></details></div>`}
 function calcOut(){const v=CALCV,fam=v.tag.cycleFamily,t=tool(v.tool);
  if(!fam)return '<p class="mu">Choose a cycle family to start.</p>';if(!v.mat)return '<p class="mu">Choose a material.</p>';if(!t)return `<p class="mu">${v.tool?'Unknown tool code — ':''}Choose a tool from your library.</p>`;
  const sfx=AUD.sfxOf(v.tool),d=+t['Diameter (mm)'],kf=KIND_FAM[sfx],warn=kf&&kf!==fam?`<div class="note w">${esc(v.tool)} is a ${esc(t.Type||sfx)} — normally used with ${esc(kf)}, not ${esc(fam)}.</div>`:!kf&&['Drilling','Reaming','Threading'].includes(fam)&&!/helical/.test(v.tag.subcycleKey||'')?`<div class="note w">${esc(fam)} with a ${esc(t.Type||sfx)}: values are milling values for this tool (pick a helical sub-cycle for interpolated holes).</div>`:'';
@@ -3487,7 +3640,9 @@ let CALCROWS=[];
 /* one-line 'based on' for the table; the full origin goes in the tooltip */
 const shortBased=r=>{const b=String(r.basedOn||'');if(r.src==='MFR'||r.src==='MFR≈')return b.replace(/^[^—]*—\s*/,'').replace(/^Similar tool[^:]*:\s*/,'similar tool: ').replace(/^Derived[\s\S]*?Based on\s*/,'scaled: ').split(':')[0];
  if(r.src==='CAL')return 'calibrated on '+(r.n||'')+' verified cuts';if(r.src==='BASE')return b.split(' · ')[0];return b};
-function drawCalcOut(){const h=$('#calc_out');if(h)h.innerHTML=calcOut()}
+function drawCalcOut(){const h=$('#calc_out');if(h)h.innerHTML=calcOut();drawCalc6()}
+document.addEventListener('toggle',e=>{if(e.target.id==='calc_adv')C6.advOpen=e.target.open;if(e.target.id==='calc_tbl')C6.tblOpen=e.target.open},true);
+document.addEventListener('change',e=>{if(e.target.id==='cc_h'||e.target.id==='cc_k'||e.target.id==='cc_t'){const a=$('#calc_adv');if(a){const tmp=document.createElement('div');tmp.innerHTML=c6AdvHtml();a.replaceWith(tmp.firstChild)}}});
 document.addEventListener('input',e=>{const id=e.target.id;if(!['cc_t','cc_so','cc_h'].includes(id))return;const v=CALCV;
  if(id==='cc_t'){v.tool=e.target.value.trim();const t=tool(v.tool);if(t&&!v.soDirty){const reach=+t['Reach (mm)']||+t['Cutting Length (mm)']||+t['Max DOC (mm)'];v.so=reach>0?String(Math.round(reach+5)):'';const so=$('#cc_so');if(so)so.value=v.so}
   if(t){const c=$('#calc');if(c){const tmp=document.createElement('div');tmp.innerHTML=calcHtml();c.replaceWith(tmp.firstChild);const ti=$('#cc_t');ti.focus();ti.setSelectionRange(ti.value.length,ti.value.length);return}}}
@@ -3503,11 +3658,12 @@ const tierNote=()=>{const off=SF.SFTIERS.filter(t=>SET.tiers&&SET.tiers[t]===fal
 function tierBarHtml(){return `<div class="card noprint" style="padding:10px 14px"><div class="row" id="tiers" style="gap:6px 14px;align-items:center"><b style="margin-right:4px">Sources</b>${SF.SFTIERS.map(t=>`<label style="display:flex;gap:5px;align-items:center;margin:0" title="${esc(TIERL[t]||t)}"><input type="checkbox" data-tier="${esc(t)}"${SET.tiers&&SET.tiers[t]===false?'':' checked'}>${srcB(t)}</label>`).join('')}<span class="mu" id="tiers_n">${esc(tierNote())}</span></div></div>`}
 function renderCheat(){if(!L.materials.length){$('#cheat').innerHTML='<div class="card empty">Loading library…</div>';return}if(!CSM||!mats().includes(CSM))CSM=mats().includes('SS 17-4PH H1025')?'SS 17-4PH H1025':mats()[0];
  if(!CALCV.mat)CALCV.mat=CSM;
+ if(!C6.presets)c6LoadPresets().then(()=>{if(C6.presets&&C6.presets.length){const h=$('#calc6');if(h)h.innerHTML=calc6Html()}});
  $('#cheat').innerHTML=tierBarHtml()+calcHtml()+`<h2 style="margin:18px 0 8px">Library grid</h2><div class="ctl"><div class="row"><div style="flex:1;min-width:200px"><label>Material</label><select id="cs_m">${opt(mats(),CSM)}</select></div><div style="flex:1;min-width:200px"><label>Machine (spindle limit)</label><select id="cs_k"><option value="">Default 12 000 rpm</option>${opt(L.machines.map(m=>m.Machine),CSK)}</select></div><div><label>Operation</label><div class="seg" id="cs_o">${[['all','All'],['R','Roughing'],['S','Semi'],['F','Finishing']].map(([k,l])=>`<button data-o="${k}" class="${k===CSOP?'on':''}">${l}</button>`).join('')}</div></div></div>
  <div class="row" style="margin-top:8px"><input id="cs_search" placeholder="Search tools, sizes, cycles, rules, G-codes…" value="${esc(CSQ)}"><button class="b s" id="cs_x">✕</button></div><div class="pl" id="cs_p">${CATS.map(([k,l])=>`<button data-c="${k}" class="${k===CSC?'on':''}">${l}</button>`).join('')}</div></div>
  <div class="cs"><nav class="sb" id="cs_nav"></nav><div id="cs_body"></div></div>`;
  $('#tiers').onchange=async e=>{const t=e.target.dataset.tier;if(!t)return;const nx=Object.assign({},SET.tiers||{});if(e.target.checked)delete nx[t];else nx[t]=false;SET.tiers=Object.keys(nx).length?nx:null;
-  SF.invalidate();const c=$('#calc_out');if(c)c.innerHTML=calcOut();drawCS();$('#tiers_n').textContent=tierNote();
+  SF.invalidate();const c=$('#calc_out');if(c)c.innerHTML=calcOut();drawCalc6();drawCS();$('#tiers_n').textContent=tierNote();
   if(OFFLINE||!db)return toast('Offline — not saved');try{await db.doc('lib/settings').update({tiers:SET.tiers})}catch(x){toast('Could not save the source switches')}};
  $('#cs_m').onchange=e=>{CSM=e.target.value;drawCS()};$('#cs_k').onchange=e=>{CSK=e.target.value;drawCS()};
  $('#cs_o').onclick=e=>{const k=e.target.dataset.o;if(!k)return;CSOP=k;$$('#cs_o button').forEach(b=>b.classList.toggle('on',b.dataset.o===k));drawCS()};
@@ -4148,7 +4304,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-13.9';
+const APP_V='2026-10-13.10';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
