@@ -153,6 +153,9 @@ ul{margin:4px 0 0 18px;padding:0}li{margin:3px 0;max-width:80ch}
 .mbt>summary::-webkit-details-marker{display:none}.mbt>summary::before{content:'⊞';color:var(--mu)}.mbt[open]>summary::before{content:'⊟'}
 .mbt>summary .mu{font-weight:400}
 .mbt table{margin:0}.mbt .tw{margin:0 10px 8px;border-radius:3px}
+.bltab td{padding-top:3px;padding-bottom:3px;vertical-align:middle}.bltab input{min-height:30px;padding:3px 7px}
+.bltab tr.blhd td{background:var(--sub);font-weight:600;font-size:15px;border-top:2px solid var(--bd2)}.bltab tr.blfam td{background:var(--hiwash)}
+.bltab tr.blfirst td{border-top:1px solid var(--bd2)}.bltab td.blx{white-space:normal;min-width:260px;font-size:12px;color:var(--mu);line-height:1.4}
 .mbt input[type=number]{width:92px;min-height:30px;padding:3px 8px}
 .mbt td{padding-top:3px;padding-bottom:3px;vertical-align:middle}
 .mbt td.mbs{white-space:normal;min-width:220px;max-width:380px;font-size:12px;color:var(--mu);line-height:1.35}
@@ -980,7 +983,7 @@ const SF = (() => {
   }
   function opDefaultsFor(sub, op, tree) {
     if (!sub) return null; const ly = opDefaultsLayers(sub, op, tree); if (ly) return ly.values;
-    if (sub.ap && (sub.usableAs || []).length === 1 && sub.usableAs[0] === op) return od(sub.ap.mult, sub.ae && sub.ae.mult, sub.vcMult, sub.coolant, sub.note, sub.fzMode ? { fzMode: sub.fzMode } : null);
+    if (sub.ap && (sub.usableAs || []).length === 1 && sub.usableAs[0] === op) { const x = {}; ['fzMode', 'fzMult', 'apDmax', 'aeDmax'].forEach(k => { if (!blank(sub[k])) x[k] = sub[k]; }); return od(sub.ap.mult, sub.ae && sub.ae.mult, sub.vcMult, sub.coolant, sub.note, x); }
     return null;
   }
 
@@ -1060,8 +1063,10 @@ const SF = (() => {
     /* Phase 7: ap / ae order is user override › sub-cycle opDefaults (its own, then its family's) › baseline row › family default › code default,
        so a sub-cycle's ap / ae beat a baseline row; coolant and note still come from the most specific baseline row first. Rules (below) apply last. */
     if (d0) { ['apD', 'aeD'].forEach(f => { if (!blank(d0[f])) { if (out[f] !== undefined && out.src[f]) out.src[f].shadowedBy = 'sub-cycle'; out[f] = d0[f]; out.src[f] = { tier: 9.5, key: 'sub-cycle opDefaults' }; } });
-      ['coolant', 'note'].forEach(f => { if (out[f] === undefined && !blank(d0[f])) { out[f] = d0[f]; out.src[f] = { tier: 9.5, key: 'sub-cycle opDefaults' }; } }); out.vcMult = blank(d0.vcMult) ? 1 : +d0.vcMult; }
-    else out.vcMult = 1;
+      ['coolant', 'note'].forEach(f => { if (out[f] === undefined && !blank(d0[f])) { out[f] = d0[f]; out.src[f] = { tier: 9.5, key: 'sub-cycle opDefaults' }; } }); out.vcMult = blank(d0.vcMult) ? 1 : +d0.vcMult;
+      /* 2026-10-14 baseline formula: f/edge multiplier and the sub-cycle's own ap / ae limits (×Ø) */
+      out.fzMult = blank(d0.fzMult) ? 1 : +d0.fzMult; if (!blank(d0.apDmax)) out.subApDmax = +d0.apDmax; if (!blank(d0.aeDmax)) out.subAeDmax = +d0.aeDmax; }
+    else { out.vcMult = 1; out.fzMult = 1; }
     if (Array.isArray(q.rules) && q.rules.length) applyRules(out, q.rules, { material: q.material, iso: q.iso, tool: q.tool, op: q.op, band: q.band, diameter: q.diameter });
     return out;
   }
@@ -1101,6 +1106,8 @@ const SF = (() => {
         if (res.apDmax !== undefined && apD > res.apDmax) { apD = res.apDmax; caps.push(`${res.apDmax}×Ø limit for ${res.src.apDmax.key.split(' | ')[0]}`); }
         if (band && band.apDmax && apD > band.apDmax) { apD = band.apDmax; caps.push(`${band.apDmax}×Ø band limit (Ø${band.label})`); }
       }
+      if (res.subApDmax > 0 && apD != null && apD > res.subApDmax) { apD = res.subApDmax; caps.push(`${res.subApDmax}×Ø sub-cycle ap limit`); }
+      if (res.subAeDmax > 0 && aeD != null && aeD > res.subAeDmax) { aeD = res.subAeDmax; caps.push(`${res.subAeDmax}×Ø sub-cycle ae limit`); }
       if (o === 'F' && !ball) aeD = Math.max(aeD, Math.min(AE_THIN_MIN, .3 / d));
       let ap = apD == null ? null : apD * d; const ae = aeD == null ? null : Math.min(aeD, 1) * d;
       if (ap != null && isFinite(cl) && cl > 0) { const lim = info.iso === 'PL' ? .6 * cl : cl; if (ap > lim + 1e-9) { ap = lim; caps.push(`${info.iso === 'PL' ? '0.6 × ' : ''}cutting length ${cl} mm`); } }
@@ -1117,7 +1124,7 @@ const SF = (() => {
     const tags = [...(e.caps.length ? ['capped: ' + e.caps.join(', ')] : []), band && band.edge ? '— band edge' : ''].filter(Boolean);
     const rn = (e.res.appliedRules || []).map(x => x.note).filter(Boolean);
     return { ap: e.ap, ae: e.ae, ball: e.ball, txt: e.txt + (tags.length ? ' · ' + tags.join(' ') : '') + (rn.length ? ' · rule: ' + rn.join('; ') : ''), caps: e.caps, band, edge: !!(band && band.edge),
-      vcMult: e.res.vcMult || 1, Vc: e.res.Vc, fzAbs: e.res.fz, coolant: e.res.coolant, note: e.res.note, notUsable: e.res.notUsable, src: e.res.src, from: e.from,
+      vcMult: e.res.vcMult || 1, fzMult: e.res.fzMult || 1, apDmax: e.res.subApDmax, aeDmax: e.res.subAeDmax, Vc: e.res.Vc, fzAbs: e.res.fz, coolant: e.res.coolant, note: e.res.note, notUsable: e.res.notUsable, src: e.res.src, from: e.from,
       block: !!e.res.block, blockNote: e.res.blockNote || '', rules: e.res.appliedRules || [], ruleVcMult: e.res.ruleVcMult,
       chain: e.res.chain || [], odFrom: e.res.odFrom || null, odFamily: e.res.odFamily || '', subName: e.res.sub ? e.res.sub.name : '',
       bvals: { apD: e.res.apD, aeD: e.res.aeD, apDmax: e.res.apDmax, Vc: e.res.Vc, fz: e.res.fz, coolant: e.res.coolant, note: e.res.note, r_D_band: e.res.r_D_band } };
@@ -1223,7 +1230,7 @@ const SF = (() => {
     /* GEM cycle override: multiplies on top of what resolveBaseline returned (vcMult and the reference hex), never replaces it */
     const gvm = gc && +gc.vc_multiplier > 0 ? +gc.vc_multiplier : 1, ghm = gc && +gc.hex_multiplier > 0 ? +gc.hex_multiplier : 1;
     const vcT = (eng.Vc > 0 ? +eng.Vc : vc0 * (eng.vcMult || 1)) * gvm * adj.k * (eng.ruleVcMult > 0 ? eng.ruleVcMult : 1);
-    const hex = (br ? +br.fz : hexBase(info.iso, d) * f[1]) * (op === 'S' ? .85 : op === 'F' ? .75 : 1) * ghm;
+    const hex = (br ? +br.fz : hexBase(info.iso, d) * f[1]) * (op === 'S' ? .85 : op === 'F' ? .75 : 1) * ghm * (eng.fzMult > 0 ? eng.fzMult : 1);
     if (gc) {
       /* GEM engagement only where neither the sub-cycle's op-defaults nor a baseline row set ap / ae (the sub-cycle is more specific) */
       const ge = gc.engagement || {}, len = (a, m) => a == null ? null : m === 'nD' ? mid2(a) * d : mid2(a), e2 = Object.assign({}, eng), from = eng.from || {}, used = [];
@@ -4316,10 +4323,10 @@ const clone=o=>JSON.parse(JSON.stringify(o));
    Tree editor + Sub-cycles → lib/cycles · Baselines (+ Bands) → lib/baseline, lib/bands · Formulas → lib/formulas.
    Every change is logged; nothing a logged cut depends on can be renamed, moved or removed from under it. ---------- */
 let PS='groups';
-function drawParams(){const tabs=[['groups','Cycle settings groups'],['tree','Tree editor'],['subs','Sub-cycles'],['bands','Bands'],['base','Baselines'],['fx','Formulas']];
+function drawParams(){const tabs=[['groups','Cycle settings groups'],['tree','Tree editor'],['bands','Bands'],['bl','Baselines'],['base','Material limits'],['fx','Formulas']];if(PS==='subs')PS='bl';
  $('#lbody').innerHTML=`<div class="seg noprint" id="psub" style="margin-bottom:12px">${tabs.map(([k,l])=>`<button data-ps="${k}" class="${k===PS?'on':''}">${l}</button>`).join('')}</div><div id="pbody"></div>`;
  $('#psub').onclick=e=>{const k=e.target.dataset.ps;if(k){PS=k;drawParams()}};$('#lbody').onchange=null;$('#lbody').onclick=null;
- if(PS==='tree')drawTreeEd();else if(PS==='subs')drawSubEd();else if(PS==='base')drawBaseEd();else if(PS==='bands')drawBandEd();else if(PS==='fx')drawFxList();else drawParamGroups()}
+ if(PS==='tree')drawTreeEd();else if(PS==='subs')drawSubEd();else if(PS==='base')drawBaseEd();else if(PS==='bands')drawBandEd();else if(PS==='bl')drawBLEd();else if(PS==='fx')drawFxList();else drawParamGroups()}
 const TR=()=>L.cycles.map((r,i)=>[r,i]).filter(([r])=>r&&r.key);
 const OPS_ALL=['rough','semi','finish','drill','ream','bore','thread','probe'],KINDS=['rough','semi','finish','drill','thread','bore','probe'];
 const famRows=()=>TR().filter(([r])=>!r.parent).sort((a,b)=>(a[0].order||0)-(b[0].order||0));
@@ -4389,7 +4396,7 @@ function drawBaseEd(){const rows=L.baseline.map((r,i)=>[r,i]).filter(([r])=>Obje
  const vals=k=>[...new Set(L.baseline.map(r=>String(r[k]??'*')))].sort(),B=(L.bands&&L.bands.length?L.bands:SF.BANDS).slice().sort((a,b)=>a.lo-b.lo);
  const flt=(k,l)=>`<div><label>${l}</label><select data-bf="${k}"><option value="">All</option>${opt(vals(k),BF[k])}</select></div>`;
  const cell=(i,k,v,n)=>`<td${n?' class="n"':''}><input data-br="${i}" data-bk="${k}" value="${v==null?'':esc(v)}"${n?' type="number" step="any" inputmode="decimal" style="width:70px"':` style="min-width:${k==='note'?220:k==='subcycle'?150:80}px"`}></td>`;
- $('#pbody').innerHTML=`<div class="card"><h2>Baselines</h2><p class="mu">Field by field, the most specific row wins: material (exact → *family → *) › sub-cycle › tool suffix › op › band; then the sub-cycle's own values, then the code default. Use <code>*</code> for “any”, <code>*P1</code>-style for an ISO family.</p>
+ $('#pbody').innerHTML=`<div class="card"><h2>Material limits</h2><p class="mu">Advanced: material-, tool- and Ø-specific caps and overrides (e.g. PEEK roughing ≤ 0.4×Ø, aluminium dynamic ≤ 1.5×Ø below Ø4). The per-sub-cycle formula lives in <b>Baselines</b>. Field by field, the most specific row wins: material (exact → *family → *) › sub-cycle › tool suffix › op › band; then the sub-cycle's own values, then the code default. Use <code>*</code> for “any”, <code>*P1</code>-style for an ISO family.</p>
  <div class="g">${flt('material','Material')}${flt('tool','Tool')}${flt('subcycle','Sub-cycle')}${flt('op','Op')}${flt('band','Band')}</div>
  <p class="row"><button class="b s sm" id="badd">+ Add row</button>${BF.band&&BF.band!=='*'?`<button class="b s sm" id="breset">Reset band ${esc(BF.band)}</button>`:''}<span class="mu">${rows.length} of ${L.baseline.length} rows</span><span id="bmsg" class="mu"></span></p>
  <div class="tw"><table><thead><tr><th>material</th><th>tool</th><th>subcycle</th><th>op</th><th>band</th><th class="n">Vc</th><th class="n">fz</th><th class="n">ap×D</th><th class="n">ae×D</th><th class="n">apDmax</th><th>coolant</th><th>note</th><th></th></tr></thead><tbody>${rows.map(([r,i])=>`<tr>${cell(i,'material',r.material)}${cell(i,'tool',r.tool)}${cell(i,'subcycle',r.subcycle)}${cell(i,'op',r.op)}${cell(i,'band',r.band)}${cell(i,'Vc',r.Vc,1)}${cell(i,'fz',r.fz,1)}${cell(i,'apD',r.apD,1)}${cell(i,'aeD',r.aeD,1)}${cell(i,'apDmax',r.apDmax,1)}${cell(i,'coolant',r.coolant)}${cell(i,'note',r.note)}<td style="white-space:nowrap"><button class="b s sm" data-bcopy="${i}" title="Copy this row to every band">→ all bands</button><button class="b s sm" data-bdel="${i}" title="Delete row">✕</button></td></tr>`).join('')||'<tr><td colspan="13" class="empty">No rows match.</td></tr>'}</tbody></table></div></div>
@@ -4472,6 +4479,41 @@ function drawBandEd(){const mats=L.materials.map(m=>m.Material).filter(Boolean),
 function mbCSV(){const cell=v=>{if(v==null)return '';const t=String(v);return /[",\n\r]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t};
  const rows=L.matbands.slice().sort((a,b)=>String(a.material).localeCompare(String(b.material))||String(a.cutter).localeCompare(String(b.cutter))||(+a.lo - +b.lo));
  return [MB_COLS.join(',')].concat(rows.map(r=>MB_COLS.map(k=>cell(r[k])).join(','))).join('\r\n')}
+/* ---------- Baselines (2026-10-14): one row per sub-cycle × operation, laid out like hyperMILL's Formulas dialog.
+   Vc ×, f/edge × scale the band values; ap / ae (×Ø) set the engagement and ap max / ae max limit it. Stored on the
+   sub-cycle itself in lib/cycles (opDefaults[op]; fixed-op families on the sub-cycle's own fields). ---------- */
+let BLF='';
+const BL_F=[['vcMult','Vc ×'],['fzMult','f/edge ×'],['apD','ap ×Ø'],['apDmax','ap max ×Ø'],['aeD','ae ×Ø'],['aeDmax','ae max ×Ø']];
+function blVals(r,op,fixed){if(fixed)return{vcMult:r.vcMult,fzMult:r.fzMult,apD:r.ap&&r.ap.mult,apDmax:r.apDmax,aeD:r.ae&&r.ae.mult,aeDmax:r.aeDmax,coolant:r.coolant,note:r.note};return (r.opDefaults&&r.opDefaults[op])||{}}
+function blFormula(v,op){const x=k=>v[k]!=null&&v[k]!==''?+v[k]:null,vm=x('vcMult'),fm=x('fzMult'),ap=x('apD'),ae=x('aeD'),apm=x('apDmax'),aem=x('aeDmax');
+ const opn=op==='finish'?' × finish ratio':op==='semi'?' × semi ratio':'',fop=op==='finish'?' × 0.75':op==='semi'?' × 0.85':'';
+ return `Vc = Vc<sub>band</sub>${opn}${vm!=null&&vm!==1?' × '+vm:''} · fz = f/edge<sub>band</sub>${fop}${fm!=null&&fm!==1?' × '+fm:''}${ae!=null&&ae<.5?' ÷ thinning(ae)':''} · F = n·fz·z`+
+  (ap!=null||ae!=null?`<br>ap ${ap!=null?ap+'×Ø':'default'}${apm!=null?' (≤ '+apm+'×Ø)':''} · ae ${ae!=null?ae+'×Ø':'default'}${aem!=null?' (≤ '+aem+'×Ø)':''}`:'')}
+function drawBLEd(){const fams=famRows(),names=fams.map(([f])=>f.Cycle);if(BLF&&!names.includes(BLF))BLF='';
+ const fromSheet=(SHEET_CFG.tabs||[]).includes('cycles');
+ const num=(i,op,k,v,ph)=>`<input data-bl="${i}" data-blop="${op}" data-blk="${k}" type="number" step="any" min="0" inputmode="decimal" value="${v==null?'':esc(v)}"${ph!=null&&ph!==''?` placeholder="${esc(ph)}" title="Empty — uses the family default ${esc(ph)}"`:''} style="width:74px">`;
+ const txt=(i,op,k,v,w,ph)=>`<input data-bl="${i}" data-blop="${op}" data-blk="${k}" value="${esc(v||'')}"${ph?` placeholder="${esc(ph)}"`:''} style="min-width:${w}px">`;
+ const body=fams.filter(([f])=>!BLF||f.Cycle===BLF).map(([fam,fi])=>{const fixed=fam.fixedOp,subs=TR().filter(([r])=>r.parent===fam.Cycle).sort((a,b)=>(a[0].order||0)-(b[0].order||0));
+  const fod=op=>(fam.opDefaults&&fam.opDefaults[op])||null;
+  const famRow=!fixed?[...new Set(subs.flatMap(([r])=>r.usableAs||[]))].filter(op=>fod(op)).map(op=>{const v=fod(op);return `<tr class="blfam"><td><b>${esc(fam.Cycle)}</b> <small class="mu">family default</small></td><td>${esc(op)}</td>${BL_F.map(([k])=>`<td class="n">${num(fi,op,k,v[k])}</td>`).join('')}<td>${txt(fi,op,'coolant',v.coolant,80)}</td><td class="blx">${blFormula(v,op)}</td><td>${txt(fi,op,'note',v.note,160)}</td></tr>`}).join(''):'';
+  const rows=subs.map(([r,i])=>(fixed?[fixed]:(r.usableAs||[])).map((op,k)=>{const v=blVals(r,op,fixed),fo=!fixed&&r.opDefaults&&r.opDefaults[op]?fod(op):null,ph=f=>fo&&fo[f]!=null?fo[f]:null,eff=Object.assign({},fo||{},Object.fromEntries(Object.entries(v).filter(([,x])=>x!=null&&x!=='')));
+   return `<tr${k?'':' class="blfirst"'}><td>${k?'':`<b>${esc(r.Cycle)}</b>`}</td><td>${esc(op)}</td>${BL_F.map(([f])=>`<td class="n">${num(i,fixed?'':op,f,v[f],ph(f))}</td>`).join('')}<td>${txt(i,fixed?'':op,'coolant',v.coolant,80,ph('coolant'))}</td><td class="blx">${blFormula(eff,op)}</td><td>${txt(i,fixed?'':op,'note',v.note,160,ph('note'))}</td></tr>`}).join('')).join('');
+  return `<tr class="blhd"><td colspan="11">${esc(fam.Cycle)}${fixed?` <small class="mu">fixed operation: ${esc(fixed)}</small>`:''}</td></tr>`+famRow+(rows||'<tr><td colspan="11" class="empty">No sub-cycles.</td></tr>')}).join('');
+ $('#pbody').innerHTML=`<div class="card"><h2>Baselines</h2><p class="mu">The formula every sub-cycle puts the <b>band</b> values through, so speed and feed ratios stay the same across materials and tools. <b>Vc ×</b> and <b>f/edge ×</b> scale the band's Vc and f/edge; <b>ap / ae ×Ø</b> set the default engagement and <b>ap max / ae max</b> are hard limits (Speeds &amp; Feeds and the calculator never go past them). When ae is below ½Ø the programmed fz is raised by radial chip thinning. Empty = no change / no extra limit; a grey value is inherited from the family default.</p>
+ <div class="row noprint"><select id="blf" style="max-width:280px"><option value="">All families</option>${opt(names,BLF)}</select><button class="b s sm" id="blcsv">Download cycles CSV for the Sheet</button><span class="mu" id="blmsg">${fromSheet?'Your cycles tab loads from the Google Sheet — after editing here, import this CSV into the Sheet’s <i>cycles</i> tab or the Sheet will put the old values back at the next start-up.':''}</span></div>
+ <div class="tw bltab"><table><thead><tr><th>Sub-cycle</th><th>Op</th>${BL_F.map(([,l])=>`<th class="n">${l}</th>`).join('')}<th>Coolant</th><th>Formula</th><th>Comment</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+ $('#blf').onchange=e=>{BLF=e.target.value;drawBLEd()};
+ $('#pbody').onclick=e=>{if(e.target.id==='blcsv')sheetDownload('cycles')};
+ $('#pbody').onchange=async e=>{const d=e.target.dataset;if(d.bl==null)return;const r=L.cycles[+d.bl],k=d.blk,op=d.blop,isNum=BL_F.some(([f])=>f===k);let v=e.target.value.trim();
+  if(isNum){if(v==='')v=null;else{v=+v;if(!isFinite(v)||v<0){e.target.value='';return $('#blmsg').textContent='Numbers only (0 or more).'}}}else if(v==='')v=null;
+  let from;
+  if(op){const od=r.opDefaults=r.opDefaults||{},o=od[op]=od[op]||{};from=o[k];if(v==null)delete o[k];else o[k]=v;
+   const fm=r.parent?L.cycles.find(x=>x&&x.key&&!x.parent&&x.Cycle===r.parent):null,keepEmpty=!!(fm&&fm.opDefaults&&fm.opDefaults[op]);
+   if(!Object.keys(o).length&&!keepEmpty)delete od[op];if(!Object.keys(od).length)r.opDefaults=null}
+  else if(k==='apD'||k==='aeD'){const kk=k==='apD'?'ap':'ae';from=r[kk]&&r[kk].mult;r[kk]=Object.assign({},r[kk]||{},{mult:v});if(kk==='ap'&&!r.ap.cap)r.ap.cap='cutLen'}
+  else{from=r[k];if(v==null)delete r[k];else r[k]=v}
+  await saveCyc(r.Cycle,(op?op+' ':'')+k,from,v);const m=$('#blmsg');if(m)m.textContent=`Saved ${r.Cycle}${op?' · '+op:''} · ${k}.`;
+  const tr=e.target.closest('tr'),cell=tr&&tr.querySelector('.blx');if(cell){const fixed=!op,v2=fixed?blVals(r,'',true):Object.assign({},(r.parent?((L.cycles.find(x=>x&&x.key&&!x.parent&&x.Cycle===r.parent)||{}).opDefaults||{})[op]:null)||{},(r.opDefaults||{})[op]||{});cell.innerHTML=blFormula(v2,op||((L.cycles.find(x=>x&&x.key&&!x.parent&&x.Cycle===r.parent)||{}).fixedOp)||'rough')}}}
 /* Formulas list (editing happens on the Formulas page, same editor) */
 function drawFxList(){const all=FXL();
  $('#pbody').innerHTML=`<div class="card"><h2>Formulas</h2><p class="mu">Stored in lib/formulas. Edit opens the formula on the Formulas page with its live syntax check.</p><p><button class="b s sm" id="fxnew">+ Add formula</button></p>
@@ -4694,7 +4736,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-14.4';
+const APP_V='2026-10-14.5';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
@@ -4725,6 +4767,8 @@ function selfTest(){const R=[],ok=(name,c,info)=>{R.push([name,!!c]);console[c?'
    ok('band table: f/edge drop is flagged',SF.bandTableWarnings([{lo:1,hi:2,Vc:100,fz:.05},{lo:3,hi:4,Vc:100,fz:.01}]).length===1);
    const sm=SF.bandSmooth([{lo:1,hi:2,d:1.5,Vc:100,fz:.01,src:'Catalogue'},{lo:3,hi:4,d:3,Vc:300,fz:.5,src:'Catalogue'}],[{lo:1,hi:2,d:1.5,Vc:100,fz:.01},{lo:3,hi:4,d:3,Vc:100,fz:.015}]);
    ok('band seed: level capped at 2× typical, f/edge rises with Ø',sm[0].Vc<=200&&sm[1].fz>sm[0].fz&&/capped/.test(sm[0].src),JSON.stringify(sm.map(x=>[x.Vc,x.fz,x.src])));
+   {const tr=[{key:'fam',Cycle:'F',name:'F',parent:'',fixedOp:null},{key:'s1',Cycle:'S1',name:'S1',parent:'F',usableAs:['rough'],opDefaults:{rough:{apD:1,aeD:.5,vcMult:1.1,fzMult:1.2,aeDmax:.3}}}];
+   const rb=SF.resolveBaseline({material:'X',iso:'P1',tool:'BX',subcycle:'s1',op:'rough',band:null,rows:[],tree:tr});ok('baseline formula: f/edge × and ae max come from the sub-cycle',rb.fzMult===1.2&&rb.subAeDmax===.3&&rb.vcMult===1.1,JSON.stringify([rb.fzMult,rb.subAeDmax]));}
    ok('pick ladder: BAND beats catalogue',SF.pick({band:{src:'BAND',vc:1,fz:.01},mfr:{src:'MFR',vc:1,fz:.01}}).src==='BAND');}
    ok('pick ladder: MFR≈ › GEM › CAL › BASE',SF.pick({mfr:m,gem:g,cal:c,typ:t}).src==='MFR≈'&&SF.pick({gem:g,cal:c,typ:t}).src==='GEM'&&SF.pick({cal:c,typ:t}).src==='CAL'&&SF.pick({typ:t}).src==='BASE')}
   if(GEMD.baselines.length){
