@@ -151,6 +151,16 @@ table.gt td.alls{font-size:12px;line-height:1.35;white-space:nowrap;color:var(--
 .mbl button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--bd);background:transparent;color:var(--tx);padding:7px 10px;cursor:pointer;font:inherit;font-size:14px}
 .mbl button:hover{background:var(--sub)}.mbl button.on{background:var(--hibg);font-weight:600}
 .mbl small{color:var(--mu);white-space:nowrap}
+.lockbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;margin:0 0 10px;border:1px solid var(--bd);border-left:4px solid var(--warn);border-radius:var(--r);background:var(--warnbg);font-size:14px}
+.lockbar.on{border-left-color:var(--ok);background:var(--okbg)}.lockbar .mu{flex:1 1 260px}
+.islocked input:disabled,.islocked select:disabled,.islocked textarea:disabled{border-color:transparent!important;background:transparent!important;color:var(--tx)!important;opacity:1!important;-webkit-appearance:none;appearance:none;box-shadow:none!important;cursor:default}
+.islocked input[type=checkbox]:disabled,.islocked input[type=radio]:disabled{-webkit-appearance:auto;appearance:auto}
+.islocked button[data-lk]{display:none!important}.islocked input:disabled::placeholder{color:transparent}.islocked #cp_addc{display:none}
+.islocked .srcedit,.islocked .lkhide{display:none}.sstyle{display:flex;gap:4px;align-items:center;flex-wrap:wrap}.sstyle select{width:auto;min-width:0;padding:2px 4px;min-height:0}
+.rcard{border:1px solid var(--bd);border-radius:var(--r);padding:10px 12px;margin:0 0 10px;background:var(--card)}.rcard.off{opacity:.6}
+.rcard .rsay{font-size:15px;margin:0 0 8px}.rcard .rraw{font:12px ui-monospace,monospace;color:var(--mu);margin-top:6px;word-break:break-word}
+.rline{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0}.rline select,.rline input{width:auto;min-width:0}.rline .rlab{min-width:44px;font-weight:600;color:var(--mu);font-size:13px}
+table.rref td,table.rref th{font-size:13px;vertical-align:top}
 .mbt{border:1px solid var(--bd);border-radius:var(--r);margin:0 0 12px;background:var(--card)}
 .mbt>summary{cursor:pointer;padding:8px 12px;font-weight:600;display:flex;gap:10px;align-items:center;flex-wrap:wrap;list-style:none}
 .mbt>summary::-webkit-details-marker{display:none}.mbt>summary::before{content:'⊞';color:var(--mu)}.mbt[open]>summary::before{content:'⊟'}
@@ -1047,21 +1057,26 @@ const SF = (() => {
            '*' = any. Numbers also take key<n, key>n, key<=n, key>=n. Every condition must match (case-insensitive).
      set:  comma-separated key=value — ra, raK, vc_mult, apD, aeD, apDmax, coolant, block.
      Rules apply LAST (after baseline rows and opDefaults); a later rule overrides an earlier one for the same field. ---- */
-  const RULE_WHEN = ['material', 'iso', 'tool_suffix', 'op', 'band', 'diameter', 'diameter_max', 'diameter_min'];
-  const RULE_SET = ['ra', 'rak', 'vc_mult', 'apd', 'aed', 'apdmax', 'coolant', 'block'];
-  const ruleParts = s => String(s == null ? '' : s).split(',').map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^([A-Za-z_]+)\s*(<=|>=|=|<|>)\s*(.*)$/); return m ? { k: m[1].toLowerCase(), op: m[2], v: m[3].trim() } : { bad: x }; });
+  /* 2026-10-15: more conditions (sub-cycle, family, cutter key, corner, flutes, coolant, machine), "a|b" = any of, != = not;
+     more actions (f/edge ×, Vc / f/edge / RPM / feed caps, ae max, a warning) */
+  const RULE_WHEN = ['material', 'iso', 'tool_suffix', 'cutter', 'corner', 'flutes', 'op', 'subcycle', 'family', 'band', 'diameter', 'diameter_max', 'diameter_min', 'coolant', 'machine'];
+  const RULE_SET = ['vc_mult', 'fz_mult', 'vc_max', 'fz_max', 'rpm_max', 'feed_max', 'apd', 'aed', 'apdmax', 'aedmax', 'ra', 'rak', 'coolant', 'warn', 'block'];
+  const RULE_TEXT = ['coolant', 'warn', 'block'];
+  const ruleParts = s => String(s == null ? '' : s).split(',').map(x => x.trim()).filter(Boolean).map(x => { const m = x.match(/^([A-Za-z_]+)\s*(<=|>=|!=|=|<|>)\s*(.*)$/); return m ? { k: m[1].toLowerCase(), op: m[2], v: m[3].trim() } : { bad: x }; });
+  const eqV = (k, val, x, c) => { x = x.trim(); if (x === '*') return true; if (k === 'diameter' || k === 'flutes') return isFinite(+val) && Math.abs(+val - +x) < 1e-6;
+    const lx = x.toLowerCase(); return String(val).trim().toLowerCase() === lx || (k === 'subcycle' && c.subName && String(c.subName).trim().toLowerCase() === lx); };
   function matchWhen(when, c) {
     const w = String(when == null ? '' : when).trim(); if (!w) return false; if (w === '*') return true;
     const parts = ruleParts(w); if (!parts.length || parts.some(p => p.bad || !RULE_WHEN.includes(p.k))) return false;
     return parts.every(({ k, op, v }) => {
       if (v === '*') return true;
-      const val = k === 'material' ? c.material : k === 'iso' ? c.iso : k === 'tool_suffix' ? c.tool : k === 'op' ? c.op : k === 'band' ? c.band : c.diameter;
+      const val = k === 'tool_suffix' ? c.tool : /^diameter/.test(k) ? c.diameter : c[k];
       if (k === 'diameter_max') return isFinite(+val) && +val <= +v;
       if (k === 'diameter_min') return isFinite(+val) && +val >= +v;
+      if (op === '!=') { if (val == null || val === '') return true; return !v.split('|').some(x => eqV(k, val, x, c)); }
       if (op !== '=') { const a = +val, b = +v; if (!isFinite(a) || !isFinite(b) || val == null || val === '') return false; return op === '<' ? a < b : op === '>' ? a > b : op === '<=' ? a <= b : a >= b; }
       if (val == null || val === '') return false;
-      if (k === 'diameter') return isFinite(+val) && Math.abs(+val - +v) < 1e-6;
-      return String(val).trim().toLowerCase() === v.toLowerCase();
+      return v.split('|').some(x => eqV(k, val, x, c));
     });
   }
   /* problems with one rule row, for the Rules editor ([] = fine) */
@@ -1070,7 +1085,7 @@ const SF = (() => {
     if (!w) out.push('when is empty (use * for every row)');
     else if (w !== '*') ruleParts(w).forEach(p => { if (p.bad || !RULE_WHEN.includes(p.k)) out.push('when: ' + (p.bad || p.k) + ' not understood'); });
     const st = ruleParts(r && r.set); if (!st.length) out.push('set is empty');
-    st.forEach(p => { if (p.bad || !RULE_SET.includes(p.k) || p.op !== '=') out.push('set: ' + (p.bad || p.k) + ' not understood'); else if (p.k !== 'coolant' && p.k !== 'block' && !(isFinite(+p.v) && p.v !== '')) out.push('set: ' + p.k + ' needs a number'); });
+    st.forEach(p => { if (p.bad || !RULE_SET.includes(p.k) || p.op !== '=') out.push('set: ' + (p.bad || p.k) + ' not understood'); else if (!RULE_TEXT.includes(p.k) && !(isFinite(+p.v) && p.v !== '' && +p.v >= 0)) out.push('set: ' + p.k + ' needs a number (0 or more)'); });
     return out;
   }
   const RULE_FIELD = { apd: 'apD', aed: 'aeD', apdmax: 'apDmax', coolant: 'coolant' };
@@ -1078,10 +1093,13 @@ const SF = (() => {
   function applyRules(out, rules, c) {
     out.appliedRules = []; if (!out.src) out.src = {};
     (Array.isArray(rules) ? rules : []).forEach(r => {
-      if (!r || ruleProblems(r).length || !matchWhen(r.when, c)) return;
+      if (!r || /^(off|no|false|0)$/i.test(String(r.on == null ? '' : r.on).trim()) || ruleProblems(r).length || !matchWhen(r.when, c)) return;
       ruleParts(r.set).forEach(({ k, v }) => {
         if (RULE_FIELD[k]) { const f = RULE_FIELD[k]; out[f] = f === 'coolant' ? v : +v; out.src[f] = { tier: 11, key: 'rule: ' + r.when, rule: r }; }
         else if (k === 'ra') out.ra = +v; else if (k === 'rak') out.raK = +v; else if (k === 'vc_mult') out.ruleVcMult = +v;
+        else if (k === 'fz_mult') out.ruleFzMult = +v; else if (k === 'vc_max') out.ruleVcMax = +v; else if (k === 'fz_max') out.ruleFzMax = +v;
+        else if (k === 'rpm_max') out.ruleRpmMax = +v; else if (k === 'feed_max') out.ruleFeedMax = +v; else if (k === 'aedmax') out.subAeDmax = +v;
+        else if (k === 'warn') { out.ruleWarns = (out.ruleWarns || []).concat([v]); }
         else if (k === 'block') { out.block = /^(true|yes|1|y)$/i.test(v); out.blockNote = out.block ? (r.note || r.when) : ''; }
       });
       out.appliedRules.push({ rule: r, note: r.note || '' });
@@ -1094,7 +1112,7 @@ const SF = (() => {
     const L = (a, b) => { const B = String(b).trim().toLowerCase(), A = String(a == null || a === '' ? '*' : a); return A.indexOf(',') < 0 ? A.trim().toLowerCase() === B : A.split(',').some(x => (x.trim() || '*').toLowerCase() === B); };
     out.chain = [];
     const uq = a => [...new Set(a.map(x => x == null || x === '' ? '*' : String(x)))];
-    const mats = uq([q.material, q.iso ? '*' + q.iso : '*', '*']), subs = uq([q.subcycle, '*']), tools = uq([q.tool, '*']), ops = uq([q.op, '*']), bands = uq([q.band, '*']);
+    const mats = uq([q.material, q.iso ? '*' + q.iso : '*', '*']), subs = uq([q.subcycle, '*']), tools = uq([q.cutter || q.tool, q.tool, '*']), ops = uq([q.op, '*']), bands = uq([q.band, '*']);
     /* r_D_band: a tool with no band (null) only matches rows WITHOUT r_D_band ('*'); a bull-nose tool matches its own band, then rows without one */
     const rdbs = uq([q.rdBand, '*']);
     let tier = 0;
@@ -1117,7 +1135,8 @@ const SF = (() => {
       /* 2026-10-14 baseline formula: f/edge multiplier and the sub-cycle's own ap / ae limits (×Ø) */
       out.fzMult = blank(d0.fzMult) ? 1 : +d0.fzMult; if (!blank(d0.apDmax)) out.subApDmax = +d0.apDmax; if (!blank(d0.aeDmax)) out.subAeDmax = +d0.aeDmax; }
     else { out.vcMult = 1; out.fzMult = 1; }
-    if (Array.isArray(q.rules) && q.rules.length) applyRules(out, q.rules, { material: q.material, iso: q.iso, tool: q.tool, op: q.op, band: q.band, diameter: q.diameter });
+    if (Array.isArray(q.rules) && q.rules.length) applyRules(out, q.rules, { material: q.material, iso: q.iso, tool: q.tool, op: q.op, band: q.band, diameter: q.diameter,
+      subcycle: q.subcycle && q.subcycle !== '*' ? q.subcycle : '', subName: out.sub ? out.sub.name : '', family: out.sub ? out.sub.parent : (q.family || ''), cutter: q.cutter || q.tool, corner: q.corner || '', flutes: q.flutes, coolant: q.coolant || '', machine: q.machine || '' });
     return out;
   }
 
@@ -1135,7 +1154,9 @@ const SF = (() => {
     return null; /* semi: interpolated by the caller */
   }
   /* engagement for one tool type / op / Ø / sub-cycle: { ap, ae (mm), txt, caps, band, ... } */
-  function engagement(ctx, info, sfx, op, d, cl, sub, rdb) {
+  function engagement(ctx, info, sfx, op, d, cl, sub, rdb, xg) {
+    const X = xg || {}, cornerOf = GEO_SPLIT.includes(sfx) ? (X.R > 0 || rdb ? 'bull' : 'square') : sfx === 'BN' || sfx === 'LP' ? 'ball' : 'none';
+    const rq = { cutter: GEO_SPLIT.includes(sfx) && cornerOf === 'bull' ? sfx + '-R' : sfx, corner: cornerOf, flutes: X.z, coolant: ctx.coolant, machine: ctx.machine || '' };
     const band = bandFor(ctx, d), ra = ctx.ra > 0 ? ctx.ra : 1.6, k = ctx.raK > 0 ? ctx.raK : 1;
     const L = v => isFinite(cl) && cl > 0 ? Math.min(v, cl) : v;
     if (sfx === 'CH') return { ap: null, ae: null, txt: 'chamfer: depth = chamfer size', band };
@@ -1143,7 +1164,7 @@ const SF = (() => {
       const rn = rr.appliedRules.map(x => x.note).filter(Boolean), rt = rn.length ? ' · rule: ' + rn.join('; ') : '', ex = { block: !!rr.block, blockNote: rr.blockNote || '', rules: rr.appliedRules, ruleVcMult: rr.ruleVcMult };
       const a = Math.min(.1, .05 * d), s = raStep(d, ra2, k2); return Object.assign(op === 'F' ? { ap: a, ae: s, ball: true, txt: `light undercut passes · stepover ${sig(s, 2)} mm for Ra ${ra2} µm target${rt}`, band } : { ap: a, ae: a, ball: true, txt: 'light undercut passes' + rt, band }, ex); }
     const one = o => {
-      const res = resolveBaseline({ material: ctx.mat && ctx.mat.Material, iso: info.iso, tool: sfx, subcycle: sub || '*', op: OPW[o], band: band && band.label, rdBand: rdb || null, rows: ctx.baseline, tree: ctx.tree, rules: ctx.rules, diameter: d, srcOv: ctx.srcOv || null, srcbase: ctx.srcbase });
+      const res = resolveBaseline(Object.assign({ material: ctx.mat && ctx.mat.Material, iso: info.iso, tool: sfx, subcycle: sub || '*', op: OPW[o], band: band && band.label, rdBand: rdb || null, rows: ctx.baseline, tree: ctx.tree, rules: ctx.rules, diameter: d, srcOv: ctx.srcOv || null, srcbase: ctx.srcbase }, rq));
       let def, txt, ball = sfx === 'BN';
       const ra2 = res.ra > 0 ? res.ra : ra, k2 = res.raK > 0 ? res.raK : k;
       if (ball) { const s = raStep(d, ra2, k2); def = o === 'R' ? { apD: .1, aeD: .3, txt: 'ball roughing' } : o === 'S' ? { apD: .06, aeD: .15, txt: 'ball semi-finish' } : { apD: .05, aeD: s / d, txt: `ball finishing · stepover ${sig(s, 2)} mm for Ra ${ra2} µm target (k ${k2})` }; }
@@ -1173,19 +1194,26 @@ const SF = (() => {
     if (!e) return { ap: null, ae: null, txt: '', band };
     const tags = [...(e.caps.length ? ['capped: ' + e.caps.join(', ')] : []), band && band.edge ? '— band edge' : ''].filter(Boolean);
     const rn = (e.res.appliedRules || []).map(x => x.note).filter(Boolean);
-    return { ap: e.ap, ae: e.ae, ball: e.ball, txt: e.txt + (tags.length ? ' · ' + tags.join(' ') : '') + (rn.length ? ' · rule: ' + rn.join('; ') : ''), caps: e.caps, band, edge: !!(band && band.edge),
+    const rw = e.res.ruleWarns || [];
+    return { ap: e.ap, ae: e.ae, ball: e.ball, txt: e.txt + (tags.length ? ' · ' + tags.join(' ') : '') + (rn.length ? ' · rule: ' + rn.join('; ') : '') + (rw.length ? ' · ⚠ ' + rw.join('; ') : ''), caps: e.caps, band, edge: !!(band && band.edge),
       vcMult: e.res.vcMult || 1, fzMult: e.res.fzMult || 1, apDmax: e.res.subApDmax, aeDmax: e.res.subAeDmax, Vc: e.res.Vc, fzAbs: e.res.fz, coolant: e.res.coolant, note: e.res.note, notUsable: e.res.notUsable, src: e.res.src, from: e.from,
       block: !!e.res.block, blockNote: e.res.blockNote || '', rules: e.res.appliedRules || [], ruleVcMult: e.res.ruleVcMult,
+      ruleFzMult: e.res.ruleFzMult, ruleVcMax: e.res.ruleVcMax, ruleFzMax: e.res.ruleFzMax, ruleRpmMax: e.res.ruleRpmMax, ruleFeedMax: e.res.ruleFeedMax, ruleWarns: e.res.ruleWarns || [],
       chain: e.res.chain || [], odFrom: e.res.odFrom || null, odFamily: e.res.odFamily || '', subName: e.res.sub ? e.res.sub.name : '',
       bvals: { apD: e.res.apD, aeD: e.res.aeD, apDmax: e.res.apDmax, Vc: e.res.Vc, fz: e.res.fz, coolant: e.res.coolant, note: e.res.note, r_D_band: e.res.r_D_band } };
   }
   /* core: given target Vc, reference hex and an engagement, produce RPM / fz / feed */
   function solve(ctx, d, z, vcT, hex, eng, R, src, extra) {
-    const ball = eng && eng.ball, ap = eng ? eng.ap : null, ae = eng ? eng.ae : null;
+    let ball = eng && eng.ball, ap = eng ? eng.ap : null, ae = eng ? eng.ae : null;
     const dEff = ball ? deffOf(ap, d) : d;
     const s = eng && eng.noThin ? 1 : (ball ? sAx(ap, d / 2) : sAx(ap, R)) * sRad(ae, dEff);
-    const fz = eng && eng.fzAbs > 0 ? +eng.fzAbs : Math.max(.002, hex / clamp(s, 1 / 3, 1));
-    const rT = vcT * 1000 / (PI * dEff), rpm = Math.min(rT, ctx.cap), zz = z > 0 ? z : NaN;
+    let fz = eng && eng.fzAbs > 0 ? +eng.fzAbs : Math.max(.002, hex / clamp(s, 1 / 3, 1));
+    const rc = [], rmx = eng && eng.ruleRpmMax > 0 ? eng.ruleRpmMax : Infinity;
+    if (eng && eng.ruleFzMax > 0 && fz > eng.ruleFzMax) { fz = eng.ruleFzMax; rc.push('f/edge ≤ ' + eng.ruleFzMax); }
+    const rT = vcT * 1000 / (PI * dEff), rpm = Math.min(rT, ctx.cap, rmx), zz = z > 0 ? z : NaN;
+    if (rmx < Math.min(rT, ctx.cap)) rc.push('RPM ≤ ' + rmx);
+    if (eng && eng.ruleFeedMax > 0 && rpm * fz * zz > eng.ruleFeedMax) { fz = eng.ruleFeedMax / (rpm * zz); rc.push('feed ≤ ' + eng.ruleFeedMax); }
+    if (rc.length && eng) eng = Object.assign({}, eng, { txt: (eng.txt || '') + ' · rule cap: ' + rc.join(', ') });
     return Object.assign({ vc: rpm * PI * d / 1000, vcT, capped: rT > ctx.cap + .5, rpm, fz, feed: rpm * fz * zz, z: zz, hex: eng && (eng.noThin || eng.fzAbs > 0) ? null : fz * s, ap, ae, engTxt: eng ? eng.txt : '', src }, ball && dEff < d - 1e-9 ? { deff: dEff } : {}, eng && eng.band ? { band: eng.band.label, bandEdge: !!eng.band.edge } : {}, extra || {});
   }
   const minCut = (r, T) => Math.min(...(r.tc || []).map(c => T[c] ? (nz(T[c]['Cutting Length (mm)']) || nz(T[c]['Max DOC (mm)'])) : NaN).filter(isFinite));
@@ -1292,15 +1320,16 @@ const SF = (() => {
     const br = ref && +ref.Vc > 0 ? ref : null;
     if (ref && !br) return null;
     if (!f[0] && !br) return null; const adj = adjOf(info.iso, opt || { coolant: ctx.coolant, pref: ctx.pref });
-    let eng = engagement(ctx, info, sfx, op, d, cl, sub, rdb);
+    let eng = engagement(ctx, info, sfx, op, d, cl, sub, rdb, { z, R });
     const opV = op === 'R' ? 1 : op === 'F' ? B[1] / B[0] : (B[0] + B[1]) / 2 / B[0];
     const vc0 = br ? +br.Vc * opV : (op === 'R' ? B[0] : op === 'F' ? B[1] : (B[0] + B[1]) / 2) * info.k * f[0];
     /* GEM cycle override: multiplies on top of what resolveBaseline returned (vcMult and the reference hex), never replaces it */
     const gvm = gc && +gc.vc_multiplier > 0 ? +gc.vc_multiplier : 1, ghm = gc && +gc.hex_multiplier > 0 ? +gc.hex_multiplier : 1;
     let vcT = (eng.Vc > 0 ? +eng.Vc : vc0 * (eng.vcMult || 1)) * gvm * adj.k * (eng.ruleVcMult > 0 ? eng.ruleVcMult : 1);
+    const ruleFm = eng.ruleFzMult > 0 ? eng.ruleFzMult : 1;
     /* corner geometry (square vs bull nose) factors — Cutting data → Baselines; ball / lollipop / chamfer have none */
     const geo = GEO_SPLIT.includes(sfx) ? (R > 0 ? 'bull' : 'sq') : null, gf = geo ? geoF(ctx, geo, op) : { vc: 1, fz: 1 };
-    const hex = (br && +br.fz > 0 ? +br.fz : hexBase(info.iso, d) * f[1]) * (op === 'S' ? .85 : op === 'F' ? .75 : 1) * ghm * (eng.fzMult > 0 ? eng.fzMult : 1) * gf.fz;
+    const hex = (br && +br.fz > 0 ? +br.fz : hexBase(info.iso, d) * f[1]) * (op === 'S' ? .85 : op === 'F' ? .75 : 1) * ghm * (eng.fzMult > 0 ? eng.fzMult : 1) * gf.fz * ruleFm;
     if (gc) {
       /* GEM engagement only where neither the sub-cycle's op-defaults nor a baseline row set ap / ae (the sub-cycle is more specific) */
       const ge = gc.engagement || {}, len = (a, m) => a == null ? null : m === 'nD' ? mid2(a) * d : mid2(a), e2 = Object.assign({}, eng), from = eng.from || {}, used = [];
@@ -1312,7 +1341,8 @@ const SF = (() => {
     }
     /* Phase 9: how the target Vc was built, for "Explain this value" */
     vcT *= gf.vc;
-    const vcWhy = { from: eng.Vc > 0 ? 'baseline' : br ? (br.kind || 'band') : 'model', base: eng.Vc > 0 ? +eng.Vc : vc0, bandRow: br && !br.kind ? br : null, ref: br, geo, geoVc: gf.vc, geoFz: gf.fz, fzNoRef: !!(br && !(+br.fz > 0)), vcMult: eng.Vc > 0 ? 1 : (eng.vcMult || 1), gem: gvm, adj: adj.k, adjTxt: adj.txt || '', rule: eng.ruleVcMult > 0 ? eng.ruleVcMult : 1 };
+    const vcUncapped = vcT; if (eng.ruleVcMax > 0 && vcT > eng.ruleVcMax) vcT = eng.ruleVcMax;
+    const vcWhy = { from: eng.Vc > 0 ? 'baseline' : br ? (br.kind || 'band') : 'model', base: eng.Vc > 0 ? +eng.Vc : vc0, bandRow: br && !br.kind ? br : null, ref: br, geo, geoVc: gf.vc, geoFz: gf.fz, fzNoRef: !!(br && !(+br.fz > 0)), vcMult: eng.Vc > 0 ? 1 : (eng.vcMult || 1), gem: gvm, adj: adj.k, adjTxt: adj.txt || '', rule: eng.ruleVcMult > 0 ? eng.ruleVcMult : 1, ruleFz: ruleFm, ruleVcMax: vcUncapped > vcT ? eng.ruleVcMax : null };
     return { vcT, hex, eng, R, adjTxt: adj.txt, vcWhy, bandRow: br && !br.kind ? br : null };
   }
   /* other tool types: [Vc, fz] by ISO group */
@@ -1758,7 +1788,7 @@ const SF = (() => {
     ['CTE magazine — Thread milling machining parameters', 'https://www.ctemag.com/articles/thread-milling-machining-parameters']
   ];
   return { FAMS, famOf, matFactor, matInfo, build, suggest, invalidate, KC11: KC, TT, OPN, REFS, interp: lerp, sig, ISO_NAME, sRad, sAx, deffOf, aeLim,
-    trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, bandRowFor, bandTableProblems, bandTableWarnings, bandSeed, bandSmooth, GEO_SPLIT, GEO_DEF, ckOfT, baseCk, SRCNAME, cutsRef, srcOrder, srcName, srcOverride, SRC_FIELDS, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, opDefaultsLayers, SFTIERS, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
+    RULE_WHEN, RULE_SET, RULE_TEXT, ruleParts, matchWhen, trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, bandRowFor, bandTableProblems, bandTableWarnings, bandSeed, bandSmooth, GEO_SPLIT, GEO_DEF, ckOfT, baseCk, SRCNAME, cutsRef, srcOrder, srcName, srcOverride, SRC_FIELDS, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, opDefaultsLayers, SFTIERS, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
 })();
 if (typeof module !== 'undefined') module.exports = SF;
 /* @end sf.js */
@@ -2274,10 +2304,10 @@ const TABS=NAVG.flatMap(g=>g[1]);
 $('#nav').innerHTML=NAVG.map(([g,ts])=>`<h6 class="navg">${g}</h6>`+ts.map(t=>`<button data-t="${t[0]}"><i>${t[2]}</i>${t[1]}</button>`).join('')).join('');
 /* pages that host an editor body (#lbody / #pbody): only the visible one keeps those ids, so the editors never write into a hidden page */
 const HOSTED=['lib','data','cycles','rules','prompts','settings'];
-function hostPage(id){$$('#lbody,#pbody').forEach(e=>{if(!e.closest('#'+id))e.removeAttribute('id')})}
+function hostPage(id){HOSTED.forEach(h=>{const el=document.getElementById(h);if(el&&h!==id)el.innerHTML=''});$$('#lbody,#pbody').forEach(e=>{if(!e.closest('#'+id))e.removeAttribute('id')})}
 function renderPage(id){if(!HOSTED.includes(id))return;hostPage(id);
  if(id==='lib')return renderLib();
- const H={data:['Cutting data','Where every speed and feed comes from: your <b>sources</b> (bands, catalogue, typical model, verified cuts and any you create), the <b>bands</b> each one holds, the <b>baselines</b> every value goes through, and the <b>material limits</b> on top.'],cycles:['Cycles','Each hyperMILL cycle as its dialog (the settings you log with a cut), and the cycle tree — families, operations and sub-cycles — that Log cut and Speeds &amp; Feeds use.'],rules:['Rules','Conditions that change or block a recommendation (e.g. a surface-finish target, a Vc factor, a hard stepdown cap).'],prompts:['Prompts','What Ask AI and Learn AI are told before your question.'],settings:['Settings','App-wide defaults, the Google Sheet link and the local AI connection.']}[id];
+ const H={data:['Cutting data','Where every speed and feed comes from: your <b>sources</b> (bands, catalogue, typical model, verified cuts and any you create), the <b>bands</b> each one holds, the <b>baselines</b> every value goes through, and the <b>material limits</b> on top.'],cycles:['Cycles','Each hyperMILL cycle as its dialog (the settings you log with a cut), and the cycle tree — families, operations and sub-cycles — that Log cut and Speeds &amp; Feeds use.'],rules:['Rules','Conditions that change, cap or block a recommendation — on top of every source, the baselines and the material limits.'],prompts:['Prompts','What Ask AI and Learn AI are told before your question.'],settings:['Settings','App-wide defaults, the Google Sheet link and the local AI connection.']}[id];
  $('#'+id).innerHTML=`<p class="mu pagelead">${H[1]}</p><div id="lbody"></div>`;
  if(id==='data'){if(!['sources','bands','bl','base'].includes(PS))PS='sources';drawParams()}
  else if(id==='cycles'){if(!['groups','tree'].includes(PS2))PS2='groups';drawParams()}
@@ -4438,14 +4468,27 @@ const setupLine=c=>`${c.material} | Tool: ${c.tool} | Vc: ${c.vc??''} | RPM: ${c
 
 /* ---------- speeds-and-feeds engine context ---------- */
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
-let SET={ra:1.6,pref:'balanced',raK:1,tiers:null,engage:null,geo:null,srcOrder:null};
+let SET={ra:1.6,pref:'balanced',raK:1,tiers:null,engage:null,geo:null,srcOrder:null,locks:null,srcStyle:null,known:null};
 /* 2026-10-14 calculator engagement adjustment (lib/settings.engage): Vc boost at light ae, fz ease at deep ap */
-const ENG_DEF={vcMax:1.3,vcExp:0.15,apFrom:1,apPer:0.15,apMin:0.7};
-const engCfg=()=>{const e=SET.engage||{},o={};Object.keys(ENG_DEF).forEach(k=>{const v=+e[k];o[k]=isFinite(v)&&e[k]!==''&&e[k]!=null?v:ENG_DEF[k]});return o};
-const engKv=(ae,D,E)=>{const x=ae/D;return !(x>0)||x>=.5?1:Math.max(1,Math.min(E.vcMax,Math.pow(.5/x,E.vcExp)))};
+/* 2026-10-15: per cycle family. Layers: ENG_DEF › your "All families" row › built-in family values › your family row.
+   SET.engage = {'*':{…}, '<family>':{…}} (an older flat {vcMax…} is read as the '*' row). */
+const ENG_DEF={vcFrom:0.5,vcMax:1.3,vcExp:0.15,slotVc:1,slotFz:1,thinMax:3,apFrom:1,apPer:0.15,apMin:0.7};
+const ENG_VARS=[['vcFrom','Light ae starts below','×Ø','ae ÷ Ø below which Vc is boosted (radial chip thinning also starts below ½Ø)'],['vcMax','Vc boost max','×','Cap on the light-ae Vc boost: 1.3 = up to +30 %'],['vcExp','Vc boost exponent','','Vc × (from ÷ (ae/Ø))^x — 0 switches the boost off'],
+ ['slotVc','Vc at full slot','×','Vc factor at ae = 1×Ø (full-width slot), sliding in from the light-ae limit — 1 = no change'],['slotFz','f/edge at full slot','×','fz factor at ae = 1×Ø, sliding in the same way — 1 = no change'],['thinMax','Chip-thinning max','×','Largest fz raise from radial / axial chip thinning (3 = ×3)'],
+ ['apFrom','Deep ap starts at','×Ø','fz eases off once ap passes this × Ø'],['apPer','fz cut per extra ×Ø','','0.15 = −15 % for each 1×Ø of ap past the start'],['apMin','fz never below','×','Floor for the deep-ap ease-off']];
+const ENG_FAM={'Roughing (3D)':{vcMax:1.4,vcExp:0.2,slotVc:0.85,slotFz:0.85,apFrom:1.5,apPer:0.12},'Pocketing (2.5D)':{slotVc:0.85,slotFz:0.8},
+ 'Finishing (3D)':{vcMax:1.2,vcExp:0.1,thinMax:2.5,apFrom:1.5,apPer:0.1,apMin:0.8},'Contouring':{vcMax:1.25,vcExp:0.12,slotVc:0.9,slotFz:0.85,apFrom:1.5,apPer:0.12,apMin:0.75},
+ 'Edges & chamfer':{vcMax:1.1,vcExp:0.08,thinMax:2},'5-Axis (general)':{vcMax:1.25,vcExp:0.12,apFrom:1.5,apPer:0.12,apMin:0.75},'Rest machining (3-axis)':{vcMax:1.15,vcExp:0.1,thinMax:2,apPer:0.2,apMin:0.6},
+ 'Impeller / Blisk':{vcMax:1.2,vcExp:0.12,thinMax:2.5,apPer:0.15},'Tube':{vcMax:1.2,vcExp:0.12}};
+const ENG_NOAE=['Drilling','Reaming','Boring','Threading','Probing'];
+const engUser=()=>{const e=SET.engage;if(!e||typeof e!=='object')return{};return Object.keys(ENG_DEF).some(k=>k in e)?{'*':e}:e};
+const engLayer=(o,src)=>{if(src)Object.keys(ENG_DEF).forEach(k=>{const v=src[k];if(v!==''&&v!=null&&isFinite(+v))o[k]=+v});return o};
+const engCfg=fam=>{const U=engUser(),o=engLayer(Object.assign({},ENG_DEF),U['*']);if(fam){engLayer(o,ENG_FAM[fam]);engLayer(o,U[fam])}return o};
+const engKv=(ae,D,E)=>{const x=ae/D,f=E.vcFrom>0?E.vcFrom:.5;if(!(x>0))return 1;if(x<f)return Math.max(1,Math.min(E.vcMax,Math.pow(f/x,E.vcExp)));const sv=E.slotVc>0?E.slotVc:1;return f>=1?1:1-(1-sv)*Math.min(1,(x-f)/(1-f))};
+const engKf=(ae,D,E)=>{const x=ae/D,f=E.vcFrom>0?E.vcFrom:.5,sf=E.slotFz>0?E.slotFz:1;if(!(x>f)||f>=1)return 1;return 1-(1-sf)*Math.min(1,(x-f)/(1-f))};
 const engKa=(ap,D,E)=>{const x=ap/D;return !(x>E.apFrom)?1:Math.max(E.apMin,1-E.apPer*(x-E.apFrom))};/* lib/settings (raK is stored as ra_cusp_k) */
 let SETDOC={};/* the whole lib/settings document (Phase 3b: formulaGroupOrder) */
-function sfctx(matName,machine,coolant){const m=L.materials.find(x=>x.Material===matName)||L.materials[0];const k=(m&&m.Material)+'|'+(machine||'')+'|'+(coolant||'');const mc=L.machines.find(x=>x.Machine===machine)||{};const c=SFC[k]||(SFC[k]={});if(c.mat!==m||c.tools!==L.tools||c.cuts!==CUTS||c.materials!==L.materials||c.machines!==L.machines||c.baseline!==L.baseline||c.bands!==L.bands||c.matbands!==L.matbands||c.sources!==L.sources||c.srcbase!==L.srcbase||c.srcOrder!==SET.srcOrder||c.rules!==L.rules||c.raK!==SET.raK||c.tiers!==SET.tiers||c.geo!==SET.geo)SF.invalidate(c);return Object.assign(c,{tools:L.tools,cuts:CUTS,materials:L.materials,machines:L.machines,baseline:L.baseline,bands:L.bands,matbands:L.matbands,sources:L.sources,srcbase:L.srcbase,srcOrder:SET.srcOrder||null,rules:L.rules,mat:m,cap:capOf(machine),sfxOf:AUD.sfxOf,parse:AUD.parseDesc,tree:CTREE(),coolant:coolant||'Flood',ra:+SET.ra||1.6,raK:+SET.raK||1,tiers:SET.tiers||null,geo:SET.geo||null,pref:SET.pref||'balanced',kw:+mc['Spindle Power (kW)']||0})}
+function sfctx(matName,machine,coolant){const m=L.materials.find(x=>x.Material===matName)||L.materials[0];const k=(m&&m.Material)+'|'+(machine||'')+'|'+(coolant||'');const mc=L.machines.find(x=>x.Machine===machine)||{};const c=SFC[k]||(SFC[k]={});if(c.mat!==m||c.tools!==L.tools||c.cuts!==CUTS||c.materials!==L.materials||c.machines!==L.machines||c.baseline!==L.baseline||c.bands!==L.bands||c.matbands!==L.matbands||c.sources!==L.sources||c.srcbase!==L.srcbase||c.srcOrder!==SET.srcOrder||c.rules!==L.rules||c.raK!==SET.raK||c.tiers!==SET.tiers||c.geo!==SET.geo)SF.invalidate(c);return Object.assign(c,{tools:L.tools,cuts:CUTS,materials:L.materials,machines:L.machines,baseline:L.baseline,bands:L.bands,matbands:L.matbands,sources:L.sources,srcbase:L.srcbase,srcOrder:SET.srcOrder||null,rules:L.rules,mat:m,cap:capOf(machine),sfxOf:AUD.sfxOf,parse:AUD.parseDesc,tree:CTREE(),coolant:coolant||'Flood',ra:+SET.ra||1.6,raK:+SET.raK||1,tiers:SET.tiers||null,geo:SET.geo||null,pref:SET.pref||'balanced',kw:+mc['Spindle Power (kW)']||0,machine:machine||''})}
 function sfLookup(matName,code,op,machine){const t=tool(code);if(!t||!matName||!L.materials.length)return null;const ctx=sfctx(matName,machine),sfx=AUD.sfxOf(code),d=+t['Diameter (mm)'];
  const secs=SF.build(ctx).filter(s=>s.sfx===sfx||(sfx==='HSS'&&s.sfx==='HSS'));const s=secs[0];if(!s)return null;if(s.kind==='blocked')return{warn:s.note};
  const want=/finish|face|chamfer/i.test(op||'')?'F':/semi/i.test(op||'')?'S':/drill|tap|thread|ream|bor/i.test(op||'')?null:'R';
@@ -4984,7 +5027,7 @@ async function load(){
       /* band tables: the Sheet's rows win; tables that so far only exist in the app (new cutter types, custom sources) are kept until you re-import the CSV */
       if(k==='matbands'){const key=r=>[r.source||'',String(r.material||'').trim().toLowerCase(),String(r.cutter||'').trim().toUpperCase()].join('|'),have=new Set((L[k]||[]).map(key));L[k]=(L[k]||[]).map(r=>{if(r.source===''||r.source==null)delete r.source;return r}).concat((RAW[k].rows||[]).filter(r=>!have.has(key(r))))}
       RAW[k]={rows:L[k],v:LIB_V,exists:true}}else{L[k]=RAW[k].rows}}catch(e){RAW[k]={rows:L[k]||[],v:LIB_V,exists:false}}}
-    try{const s=await db.doc('lib/settings').get();if(s.exists){const d=dat(s);SETDOC=d||{};SET={ra:+d.ra>0?+d.ra:1.6,pref:['balanced','life','cycle'].includes(d.pref)?d.pref:'balanced',raK:+d.ra_cusp_k>0?+d.ra_cusp_k:1,tiers:d.tiers&&typeof d.tiers==='object'?d.tiers:null,engage:d.engage&&typeof d.engage==='object'?d.engage:null,geo:d.geo&&typeof d.geo==='object'?d.geo:null,srcOrder:Array.isArray(d.srcOrder)?d.srcOrder:null}}}catch(e){}
+    try{const s=await db.doc('lib/settings').get();if(s.exists){const d=dat(s);SETDOC=d||{};SET={ra:+d.ra>0?+d.ra:1.6,pref:['balanced','life','cycle'].includes(d.pref)?d.pref:'balanced',raK:+d.ra_cusp_k>0?+d.ra_cusp_k:1,tiers:d.tiers&&typeof d.tiers==='object'?d.tiers:null,engage:d.engage&&typeof d.engage==='object'?d.engage:null,geo:d.geo&&typeof d.geo==='object'?d.geo:null,srcOrder:Array.isArray(d.srcOrder)?d.srcOrder:null,locks:d.locks&&typeof d.locks==='object'?d.locks:null,srcStyle:d.srcStyle&&typeof d.srcStyle==='object'?d.srcStyle:null,known:d.known&&typeof d.known==='object'?d.known:null}}}catch(e){}
     try{const s=await db.doc('lib/auditmeta').get();AM=s.exists?{dismissed:[],resolved:{},...dat(s)}:{dismissed:[],resolved:{}}}catch(e){}
     try{const q=await db.collection('changelog').get();CLOGDOCS={};q.docs.forEach(d=>CLOGDOCS[d.id]=(dat(d).entries||[]));CLOG={entries:Object.values(CLOGDOCS).flat().sort((a,b)=>String(a.at).localeCompare(String(b.at)))}}catch(e){}
     /* v2 seed documents: created once, on first run, from the code defaults; edited in Library → Data afterwards */
@@ -4999,6 +5042,7 @@ async function load(){
     try{const via='CPD 2026-10-13.1';if(!CLOG.entries.some(e=>e.table==='cycleparams'&&e.via===via)){Object.entries(CP_RENAME).forEach(([a,b])=>logChange('cycleparams',a,'key',a,b,via,'same hyperMILL field; logged values under '+a+' are read as '+b));
      logChange('cycleparams','(built-in set)','rewritten','starter set','hyperMILL screenshots',via,'Log cut fields now match your hyperMILL dialogs; starter fields with no screenshot match are kept (hidden) so logged cuts keep their labels; old option wording mapped: Helix→Helical, Climb→Climb milling, Bottom-up/Top-down→Climb (upward)/Conventional (downward), Yes/No→On/Off');await saveCLOG()}}catch(e){}
     const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
+    try{await autoDetect()}catch(e){console.error(e)}
     await tdLoad();await caLoad();try{const qa=await db.collection('asks').get();ASKS=qa.docs.map(d=>({id:d.id,...dat(d)}));drawAH()}catch(e){}DBOK=true;setStatus(`${L.tools.length} tools · ${CUTS.length} cuts`,true);
   }catch(e){setStatus('Load error: '+(e.message||e.code),false)}
   SF.invalidate();renderAll();drawSync();
@@ -5633,7 +5677,14 @@ const TIERN={op:'op — this tool type and operation',group:'group — your over
 /* one-character glyph so colour is not the only signal */
 const SRCG={CUTS:'●',TYP:'○',BAND:'▣','DB-SUB':'●','DB-SUB-FAM':'◐',BASE:'○',DB:'●',MFR:'◆','MFR≈':'◆',GEM:'◆',CAL:'▲',REF:'■',TYP:'○'};
 const srcCtx=()=>({sources:L.sources,srcOrder:SET.srcOrder});
-const srcB=(s,meta)=>{if(!s)return'';if(/^S:/.test(s)){const nm=SF.srcName(srcCtx(),s);return `<span class="src CUS" title="${esc('Your custom source “'+nm+'”: its own band tables and baseline overrides')}">◇ ${esc(nm)}</span>`}let t=SRCT[s]||'',lab=(SRCG[s]?SRCG[s]+' ':'')+esc(s);
+/* 2026-10-15 source icon styles (lib/settings.srcStyle): {'<tag>':{icon,color,fill}} */
+const SRC_ICONS=['●','○','◆','◇','▣','■','□','▲','△','★','☆','◐','✚','⬢','✱','♦'];
+const SRC_COLORS=[['green','--ok','--okbg'],['blue','--info','--infobg'],['amber','--warn','--warnbg'],['red','--bad','--badbg'],['purple','--rf','--rfbg'],['dark','--hi','--hibg'],['grey','--mu','--sub']];
+const SRC_FILLS=[['solid','Solid'],['soft','Soft'],['outline','Outline']];
+const srcSty=t=>{const x=SET.srcStyle&&SET.srcStyle[t];return x&&typeof x==='object'?x:null};
+const srcCss=x=>{const c=SRC_COLORS.find(y=>y[0]===x.color)||SRC_COLORS[0],f=x.fill||'soft';return f==='solid'?`background:var(${c[1]});color:var(--card);border:1px solid var(${c[1]})`:f==='outline'?`background:transparent;color:var(${c[1]});border:1px solid var(${c[1]})`:`background:var(${c[2]});color:var(${c[1]});border:1px solid var(${c[1]})`};
+const srcB=(s,meta)=>{if(!s)return'';const st=srcSty(s);if(/^S:/.test(s)){const nm=SF.srcName(srcCtx(),s);return `<span class="src CUS" style="${st?srcCss(st):''}" title="${esc('Your custom source “'+nm+'”: its own band tables and baseline overrides')}">${esc(st&&st.icon||'◇')} ${esc(nm)}</span>`}let t=SRCT[s]||'',lab=((st&&st.icon)||SRCG[s]?((st&&st.icon)||SRCG[s])+' ':'')+esc(s);
+ if(st)return `<span class="src ${s}" style="${srcCss(st)}" title="${esc(t)}">${lab}</span>`;
  if(meta&&/^DB/.test(s)&&meta.n){t=`${meta.n} logged cut${meta.n>1?'s':''} · results: ${meta.res||'–'} · materials: ${(meta.mats||[]).join(', ')||'–'}`;if(meta.n>=2)lab+=`<sup>${meta.n}</sup>`}
  if(s==='GEM'&&meta)t=meta.note||'typical European mould-shop practice';
  if(meta&&s==='CAL'&&meta.n)t=`Calibrated on ${meta.n} of your cuts · tier: ${TIERN[meta.tier]||meta.tier||'–'}${meta.mats&&meta.mats.length?' · materials: '+meta.mats.join(', '):''}`;
@@ -5839,9 +5890,9 @@ function c6Settle(hold){for(let pass=0;pass<3;pass++){let moved=false;
    boost below ½Ø. A Vc or fz you typed yourself is left alone. */
 function c6Engage(){const d=C6.def;C6.adj=null;if(!d||!d.vals)return;const g=c6Geo(),D=g.D;if(!(D>0))return;
  const rA=c6Row('ae'),rP=c6Row('ap'),rV=c6Row('Vc'),rF=c6Row('fz');if(!rA||!rP)return;
- const ae=C6.st[rA.key],ap=C6.st[rP.key],ae0=d.vals.ae,ap0=d.vals.ap,E=engCfg(),ball=!!d.ball,R=g.R||0;if(!(ae>0)||!(ae0>0))return;
- const thin=(a,p)=>{const de=ball&&p>0?SF.deffOf(p,D):D;return Math.max(1/3,(p>0?(ball?SF.sAx(p,D/2):SF.sAx(p,R)):1)*SF.sRad(a,de))};
- const vk=engKv(ae,D,E)/engKv(ae0,D,E),fk=thin(ae0,ap0)/thin(ae,ap)*(ap>0&&ap0>0?engKa(ap,D,E)/engKa(ap0,D,E):1),same=x=>Math.abs(x-1)<1e-6;
+ const ae=C6.st[rA.key],ap=C6.st[rP.key],ae0=d.vals.ae,ap0=d.vals.ap,E=engCfg(CALCV.tag.cycleFamily||''),ball=!!d.ball,R=g.R||0;if(!(ae>0)||!(ae0>0))return;
+ const thin=(a,p)=>{const de=ball&&p>0?SF.deffOf(p,D):D;return Math.max(1/(E.thinMax>1?E.thinMax:1),(p>0?(ball?SF.sAx(p,D/2):SF.sAx(p,R)):1)*SF.sRad(a,de))};
+ const vk=engKv(ae,D,E)/engKv(ae0,D,E),fk=thin(ae0,ap0)/thin(ae,ap)*(ap>0&&ap0>0?engKa(ap,D,E)/engKa(ap0,D,E):1)*engKf(ae,D,E)/engKf(ae0,D,E),same=x=>Math.abs(x-1)<1e-6;
  if(rV&&!C6.locked.has(rV.key)&&isFinite(d.vals.Vc)){const base=d.capped?d.capped.vcT:d.vals.Vc,capV=capOf(CALCV.mach)*Math.PI*D/1000;C6.st[rV.key]=Math.min(base*vk,capV);C6.src[rV.key]=same(vk)?d.src.Vc:'ae adj'}
  if(rF&&!C6.locked.has(rF.key)&&isFinite(d.vals.fz)){C6.st[rF.key]=d.vals.fz*fk;C6.src[rF.key]=same(fk)?d.src.fz:'ae/ap adj'}
  if(!same(vk)||!same(fk))C6.adj={vk,fk,ae,ae0,ap,ap0}}
@@ -5962,7 +6013,7 @@ function c6Refresh(skip){const ck=c6Checks();calcFields().forEach(r=>{const el=d
 /* typing in a number: every other box, the ×D lines, the picture and the warnings update — the box being typed in is left alone */
 document.addEventListener('input',e=>{const k=e.target.dataset&&e.target.dataset.c6;if(!k)return;c6Set(k,e.target.value);c6Refresh(e.target);const n=$('#c6notes');if(n)n.innerHTML=c6NotesHtml()});
 function c6NotesHtml(){const d=C6.def||{},ck=c6Checks(),a=C6.adj,ov=c6Over(),lim=[ov.apSub?`ap is over the sub-cycle limit (${ov.apSub}×Ø)`:'',ov.aeSub?`ae is over the sub-cycle limit (${ov.aeSub}×Ø)`:''].filter(Boolean);
- const adj=a?`<div class="note" style="margin:8px">ae ${f(a.ae,2)} mm${a.ap>0?' · ap '+f(a.ap,2)+' mm':''} (recommended ${f(a.ae0,2)}${a.ap0>0?' / '+f(a.ap0,2):''} mm): Vc ×${f(a.vk,2)}, fz ×${f(a.fk,2)} — chip thinning${a.vk!==1?', Vc boost at light ae':''}${a.ap>0&&a.ap/(c6Geo().D||1)>engCfg().apFrom?', fz eased for the deep ap':''}. Factors: Cutting data → Baselines.</div>`:'';
+ const adj=a?`<div class="note" style="margin:8px">ae ${f(a.ae,2)} mm${a.ap>0?' · ap '+f(a.ap,2)+' mm':''} (recommended ${f(a.ae0,2)}${a.ap0>0?' / '+f(a.ap0,2):''} mm): Vc ×${f(a.vk,2)}, fz ×${f(a.fk,2)} — chip thinning${a.vk!==1?', Vc boost at light ae':''}${a.ap>0&&a.ap/(c6Geo().D||1)>engCfg(CALCV.tag.cycleFamily||'').apFrom?', fz eased for the deep ap':''}. Factors${CALCV.tag.cycleFamily?' for '+esc(CALCV.tag.cycleFamily):''}: Cutting data → Baselines.</div>`:'';
  return `${adj}${lim.length?`<div class="note e" style="margin:8px">${esc(lim.join('; '))} — Cutting data → Baselines.</div>`:''}${ck.warn.length?`<div class="note e" style="margin:8px">Not computed — ${esc(ck.warn.join('; '))}.</div>`:''}${ck.soft&&ck.soft.length?`<div class="note w" style="margin:8px">${esc(ck.soft.join('; '))}</div>`:''}${d.warn?`<div class="note w" style="margin:8px">${esc(d.warn)}</div>`:''}`}
 document.addEventListener('change',e=>{const id=e.target.id;
  if(id&&id.startsWith('c6a_')){const k=id.slice(4);C6.adv[k]=e.target.value;drawCalc6();return}
@@ -6084,7 +6135,7 @@ let SAVE_T=null;const SAVE_K=new Set();const setLS=t=>{if($('#ls'))$('#ls').text
 function saveLib(key=LK){SF.invalidate();if(key==='bands'){const er=SF.validateBands(L.bands.slice().sort((a,b)=>a.lo-b.lo));if(er.length){setLS('Bands not saved — '+er.join('; '));return toast('Bands not saved: '+er[0])}}if(OFFLINE||!db){setLS('Offline — not saved');return toast('Offline — not saved')}
  SAVE_K.add(key);setLS('Saving…');clearTimeout(SAVE_T);SAVE_T=setTimeout(flushLib,400)}
 async function flushLib(){clearTimeout(SAVE_T);SAVE_T=null;const ks=[...SAVE_K];SAVE_K.clear();if(!ks.length)return true;
- try{for(const k of ks)await writeLib(k,L[k]);setLS('Saved ✓');toast('Library saved');return true}catch(e){ks.forEach(k=>SAVE_K.add(k));setLS('Save failed: '+(e.message||e.code));return false}}
+ try{for(const k of ks)await writeLib(k,L[k]);setLS('Saved ✓');toast('Library saved');if(ks.includes('tools')||ks.includes('materials'))setTimeout(()=>autoDetect(),0);return true}catch(e){ks.forEach(k=>SAVE_K.add(k));setLS('Save failed: '+(e.message||e.code));return false}}
 addEventListener('beforeunload',()=>{if(SAVE_K.size)flushLib()});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&SAVE_K.size)flushLib()});
 /* undo: last 20 field edits made in the Library editor */
@@ -6274,32 +6325,95 @@ function drawPrompts(){
    L.prompts=(L.prompts||[]).filter(x=>x&&x.key!==k);
    try{await writeLib('prompts',L.prompts);logChange('prompts',k,'text',oldTxt,'(default)','Prompts');await saveCLOG();toast('Prompt reset to default');drawPrompts()}catch(x){toast('Reset failed: '+(x.message||x.code))}}};
 }
-/* ---------- Phase 2: Rules (lib/rules). Edits are kept in RULED until Save. ---------- */
+/* ---------- Rules (lib/rules) — 2026-10-15 standard format. Every rule is: conditions (When … — all must match) → actions
+   (Then …), a note and On / Off. Stored as text columns when / set / note / on, e.g. when "material=PEEK|POM, diameter<6",
+   set "apdmax=0.5, coolant=Air". Edits are kept in RULED until Save. ---------- */
 let RULED=null;
-function drawRules(){if(!RULED)RULED=(L.rules||[]).map(r=>({when:String(r.when??''),set:String(r.set??''),note:String(r.note??'')}));
- const fromSheet=(SHEET_CFG.tabs||[]).includes('rules');
- $('#lbody').innerHTML=`<div class="card"><h2>Rules</h2><p class="mu">Rules are applied <b>last</b>, after baseline rows and sub-cycle defaults, to the baseline (BASE) and calibrated (CAL) values. Rules lower in the list override earlier ones for the same field.<br><b>when</b> — comma-separated: material, iso, tool_suffix, op (rough / semi / finish), band, diameter, diameter_max, diameter_min. <code>*</code> = any. Numbers also take &lt; &gt; &lt;= &gt;= (e.g. <code>diameter&lt;6</code>).<br><b>set</b> — comma-separated: ra, raK, vc_mult, apD, aeD, apDmax, coolant, block (e.g. <code>ra=1.6</code>, <code>vc_mult=0.9</code>, <code>block=true</code>).</p>${fromSheet?'<div class="note w">The rules tab is loaded from the Google Sheet — edits made here are replaced by the Sheet on the next load.</div>':''}
- <div class="tw"><table><thead><tr><th>#</th><th>when</th><th>set</th><th>note</th><th></th></tr></thead><tbody>${RULED.map((r,i)=>{const p=SF.ruleProblems(r);return `<tr><td>${i+1}</td><td><input data-ru="${i}" data-rf="when" value="${esc(r.when)}" placeholder="tool_suffix=BN, op=finish" aria-label="Rule ${i+1} when"></td><td><input data-ru="${i}" data-rf="set" value="${esc(r.set)}" placeholder="ra=1.6" aria-label="Rule ${i+1} set"></td><td><input data-ru="${i}" data-rf="note" value="${esc(r.note)}" aria-label="Rule ${i+1} note"></td><td><button class="b s sm" data-rudel="${i}">Delete</button><div class="cap" style="font-size:12px" data-ruw="${i}">${p.length?'⚠ '+esc(p.join(' · ')):''}</div></td></tr>`}).join('')||'<tr><td colspan="5" class="mu">No rules yet — click Add rule.</td></tr>'}</tbody></table></div>
- <div class="row" style="margin-top:8px"><button class="b s sm" id="ruadd">Add rule</button><button class="b sm" id="rusave">Save</button><button class="b s sm" id="rurev">Discard changes</button><span class="mu" id="rumsg"></span></div></div>`;
- $('#lbody').oninput=e=>{const d=e.target.dataset;if(d.ru!=null&&RULED[+d.ru]){RULED[+d.ru][d.rf]=e.target.value;const m=$('#rumsg');if(m)m.textContent='Unsaved changes';
-  const w=document.querySelector('[data-ruw="'+d.ru+'"]'),p=SF.ruleProblems(RULED[+d.ru]);if(w)w.textContent=p.length?'⚠ '+p.join(' · '):''}};
- $('#lbody').onchange=null;
- $('#lbody').onclick=async e=>{const t=e.target,d=t.dataset;
-  if(t.id==='ruadd'){RULED.push({when:'',set:'',note:''});drawRules();const ins=$$('[data-rf="when"]');if(ins.length)ins[ins.length-1].focus();return}
-  if(d.rudel!=null){RULED.splice(+d.rudel,1);drawRules();const m=$('#rumsg');if(m)m.textContent='Unsaved changes';return}
-  if(t.id==='rurev'){RULED=null;drawRules();return}
-  if(t.id==='rusave'){const msg=$('#rumsg');
-   const rows=RULED.map(r=>({when:r.when.trim(),set:r.set.trim(),note:r.note.trim()})).filter(r=>r.when||r.set||r.note);
-   const bad=rows.map((r,i)=>[i,SF.ruleProblems(r)]).filter(x=>x[1].length);
-   if(bad.length){if(msg)msg.textContent='Not saved — fix rule '+bad.map(x=>x[0]+1).join(', ')+' first';return}
-   if(OFFLINE||!db){if(msg)msg.textContent='Offline — not saved';return}
-   const old=(L.rules||[]).map(r=>({when:String(r.when??''),set:String(r.set??''),note:String(r.note??'')})),key=r=>r.when+'\u0001'+r.set+'\u0001'+r.note,ok=new Set(old.map(key)),nk=new Set(rows.map(key)),txt=r=>r.set+(r.note?' — '+r.note:'');
-   try{await writeLib('rules',rows);L.rules=rows;
-    const gone=old.filter(r=>!nk.has(key(r))),added=rows.filter(r=>!ok.has(key(r)));
-    gone.forEach(r=>logChange('rules',r.when,'rule',txt(r),'(removed)','Rules'));added.forEach(r=>logChange('rules',r.when,'rule','(new)',txt(r),'Rules'));
-    if(!gone.length&&!added.length&&old.map(key).join('\u0002')!==rows.map(key).join('\u0002'))logChange('rules','(all)','order',old.map(r=>r.when).join(' ; '),rows.map(r=>r.when).join(' ; '),'Rules');
-    await saveCLOG();SF.invalidate();RULED=null;drawRules();toast('Rules saved');const m2=$('#rumsg');if(m2)m2.textContent='Saved ✓'}
-   catch(x){if(msg)msg.textContent='Save failed: '+(x.message||x.code)}}};
+const RU_NUM=['flutes','diameter','diameter_max','diameter_min'];
+const RUV={material:['Material','Exact name from your Materials list'],iso:['Material group (ISO)','P1, P2, M, K, N1, N2, S1, S2, H1, H2, PL, C'],
+ cutter:['Cutter type','The band-table key: BX, BX-R (bull nose), BN, AL, CD …'],tool_suffix:['Tool suffix','BX matches square and bull-nose BX tools alike'],
+ corner:['Corner','square, bull, ball or none'],flutes:['Flutes','number of flutes'],op:['Operation','rough, semi, finish (drill, ream, bore, thread)'],
+ family:['Cycle family','e.g. Roughing (3D), Finishing (3D)'],subcycle:['Sub-cycle','name or key, e.g. Trochoidal / HPC / MAXX'],band:['Ø band','a band label from Material limits → Bands'],
+ diameter:['Tool Ø (mm)','number; use <, <=, >, >= for ranges'],coolant:['Coolant','Flood, Through-spindle, MQL, Air, Dry'],machine:['Machine','exact machine name'],
+ diameter_max:['Ø at most (old form)','same as diameter<='],diameter_min:['Ø at least (old form)','same as diameter>=']};
+const RUA={vc_mult:['Vc ×','×','multiplies the cutting speed'],fz_mult:['f/edge ×','×','multiplies the chip load (before chip thinning)'],vc_max:['Vc at most','m/min','caps the cutting speed'],
+ fz_max:['f/edge at most','mm','caps the programmed feed per tooth'],rpm_max:['RPM at most','rev/min','caps the spindle speed (on top of the machine limit)'],feed_max:['Feed at most','mm/min','caps the table feed; f/edge is lowered to fit'],
+ apdmax:['Stepdown at most','×Ø','roughing / semi stepdown limit'],aedmax:['Stepover at most','×Ø','stepover limit'],apd:['Stepdown','×Ø','sets the stepdown'],aed:['Stepover','×Ø','sets the stepover'],
+ ra:['Ra target','µm','ball / lollipop finishing stepover from this surface finish'],rak:['Ra cusp factor k','','cusp height = Ra × k ÷ 1000 (1 = cautious, 4 = handbook)'],
+ coolant:['Coolant','text','recommended coolant'],warn:['Warning','text','shown with the value (no commas)'],block:['Block','true','no recommendation at all; the note says why']};
+const RU_OPS=[['=','is'],['!=','is not'],['<','<'],['<=','≤'],['>','>'],['>=','≥']];
+const ruVals=k=>k==='material'?L.materials.map(m=>m.Material):k==='iso'?Object.keys(SF.ISO_NAME):k==='cutter'?[...Object.keys(SF.TT).flatMap(x=>SF.GEO_SPLIT.includes(x)?[x,x+'-R']:[x]),...MB_DRILL]:k==='tool_suffix'?[...Object.keys(SF.TT),...MB_DRILL]
+ :k==='corner'?['square','bull','ball','none']:k==='op'?['rough','semi','finish','drill','ream','bore','thread']:k==='family'?famRows().map(([f])=>f.Cycle):k==='subcycle'?TR().filter(([r])=>r.parent).map(([r])=>r.Cycle)
+ :k==='band'?(L.bands&&L.bands.length?L.bands:SF.BANDS).map(b=>b.label):k==='coolant'?['Flood','Through-spindle','MQL','Air','Dry']:k==='machine'?L.machines.map(m=>m.Machine):k==='flutes'?['2','3','4','5','6']:k==='block'?['true']:[];
+const ruW=r=>{const w=String(r.when||'').trim();return !w||w==='*'?[]:SF.ruleParts(w)},ruS=r=>SF.ruleParts(r.set);
+const ruJoin=ps=>ps.map(p=>p.bad!=null?p.bad:p.k+(p.op||'=')+p.v).join(', ');
+const ruOn=r=>!/^(off|no|false|0)$/i.test(String(r.on==null?'':r.on).trim());
+const lc1=l=>/^[A-Z][a-z]/.test(l)?l[0].toLowerCase()+l.slice(1):l;
+function ruleSay(r){const w=ruW(r),st=ruS(r),opw={'=':'is','!=':'is not','<':'is below','<=':'is at most','>':'is above','>=':'is at least'};
+ const cond=w.length?'When '+w.map(p=>p.bad!=null?`<span class="bad">${esc(p.bad)}</span>`:`<b>${esc(lc1((RUV[p.k]||[p.k])[0]))}</b> ${opw[p.op]||p.op} <b>${esc(p.v.split('|').join(' or '))}</b>`).join(' and '):'For <b>every</b> recommendation';
+ const act=st.map(p=>{if(p.bad!=null)return `<span class="bad">${esc(p.bad)}</span>`;const a=RUA[p.k];if(!a)return esc(p.k+'='+p.v);if(p.k==='block')return /^(true|yes|1|y)$/i.test(p.v)?'<b>block</b> the recommendation':'do not block';if(p.k==='warn')return `warn <b>“${esc(p.v)}”</b>`;
+  return `${esc(lc1(a[0]))} <b>${esc(p.v)}</b>${a[1]&&a[1]!=='text'&&a[1]!=='×'?' '+esc(a[1]):''}`}).join(' · ');
+ return cond+' → '+(act||'<span class="mu">nothing set yet</span>')}
+const RU_EX=()=>[{when:'material=PEEK|POM',set:'apdmax=0.5, coolant=Air',note:'Plastics: shallow roughing, air blast'},{when:'cutter=BX-R, op=rough',set:'fz_mult=1.1',note:'Bull noses rough harder'},
+ {when:'diameter<3',set:'rpm_max=20000, warn=small tool - check runout',note:'Small tools'},{when:'family=Finishing (3D), corner=ball',set:'ra=0.8',note:'Mould-quality finish'},
+ {when:'iso=H1|H2, flutes<4',set:'block=true',note:'Hardened steel needs 4 or more flutes'},...(L.machines[0]?[{when:'machine='+L.machines[0].Machine+', op=rough',set:'feed_max=4000',note:'Feed limit on this machine'}]:[])];
+async function rulesSave(){const msg=$('#rumsg');if(!RULED)return true;
+ const rows=RULED.map(r=>{const o={when:ruJoin(ruW(r))||'*',set:ruJoin(ruS(r)),note:String(r.note||'').trim()};if(!ruOn(r))o.on='off';return o}).filter(r=>r.set||r.note||r.when!=='*');
+ const bad=rows.map((r,i)=>[i,SF.ruleProblems(r)]).filter(x=>x[1].length);if(bad.length){if(msg)msg.textContent='Not saved — fix rule '+bad.map(x=>x[0]+1).join(', ')+' first';return false}
+ const norm=r=>({when:String(r.when??''),set:String(r.set??''),note:String(r.note??''),on:r.on&&!ruOn(r)?'off':''});
+ const old=(L.rules||[]).map(norm),key=r=>[r.when,r.set,r.note,r.on||''].join('\u0001');if(old.map(key).join('\u0002')===rows.map(norm).map(key).join('\u0002')){RULED=null;return true}
+ if(OFFLINE||!db){if(msg)msg.textContent='Offline — not saved';return false}
+ try{await writeLib('rules',rows);const ok=new Set(old.map(key)),nk=new Set(rows.map(norm).map(key)),txt=r=>r.set+(r.note?' — '+r.note:'')+(r.on?' (off)':'');
+  old.filter(r=>!nk.has(key(r))).forEach(r=>logChange('rules',r.when,'rule',txt(r),'(removed)','Rules'));rows.map(norm).filter(r=>!ok.has(key(r))).forEach(r=>logChange('rules',r.when,'rule','(new)',txt(r),'Rules'));
+  L.rules=rows;await saveCLOG();SF.invalidate();renderCheat();RULED=null;toast('Rules saved');return true}catch(x){if(msg)msg.textContent='Save failed: '+(x.message||x.code);return false}}
+function drawRules(){if(!RULED)RULED=(L.rules||[]).map(r=>({when:String(r.when??''),set:String(r.set??''),note:String(r.note??''),on:r.on==null?'':String(r.on)}));
+ const fromSheet=(SHEET_CFG.tabs||[]).includes('rules'),dirty=JSON.stringify(RULED.map(r=>[r.when,r.set,r.note,ruOn(r)]))!==JSON.stringify((L.rules||[]).map(r=>[String(r.when??''),String(r.set??''),String(r.note??''),ruOn(r)]));
+ const vk=Object.keys(RUV).filter(k=>!/^diameter_m/.test(k)),dls=[...new Set([...vk,'block'])].map(k=>`<datalist id="rudl_${k}">${ruVals(k).map(v=>`<option value="${esc(v)}">`).join('')}</datalist>`).join('');
+ const sel=(attr,keys,cur,lab)=>`<select ${attr}>${(keys.includes(cur)||!cur?keys:[cur,...keys]).map(k=>`<option value="${esc(k)}"${k===cur?' selected':''}>${esc(lab(k))}</option>`).join('')}</select>`;
+ const card=(r,i)=>{const w=ruW(r),st=ruS(r),p=SF.ruleProblems({when:ruJoin(w)||'*',set:ruJoin(st)}),on=ruOn(r);
+  const wl=w.map((x,j)=>x.bad!=null?`<div class="rline"><span class="bad">not understood: ${esc(x.bad)}</span><button class="b s sm" data-rwdel="${i}.${j}">✕</button></div>`:`<div class="rline">${sel(`data-rwk="${i}.${j}"`,vk,x.k,k=>(RUV[k]||[k])[0])}${sel(`data-rwo="${i}.${j}"`,RU_OPS.filter(([o])=>RU_NUM.includes(x.k)||o==='='||o==='!=').map(([o])=>o),x.op,o=>(RU_OPS.find(y=>y[0]===o)||[o,o])[1])}<input data-rwv="${i}.${j}" value="${esc(x.v)}" list="rudl_${esc(x.k)}" placeholder="value (a|b = either)" style="min-width:160px"><button class="b s sm" data-rwdel="${i}.${j}" title="Remove this condition">✕</button></div>`).join('');
+  const sl=st.map((x,j)=>x.bad!=null?`<div class="rline"><span class="bad">not understood: ${esc(x.bad)}</span><button class="b s sm" data-rsdel="${i}.${j}">✕</button></div>`:`<div class="rline">${sel(`data-rsk="${i}.${j}"`,Object.keys(RUA),x.k,k=>(RUA[k]||[k])[0])}<input data-rsv="${i}.${j}" value="${esc(x.v)}"${x.k==='block'?' list="rudl_block"':''} style="min-width:${RUA[x.k]&&RUA[x.k][1]==='text'?220:90}px"><small class="mu">${esc(RUA[x.k]&&RUA[x.k][1]!=='text'?RUA[x.k][1]:'')}</small><button class="b s sm" data-rsdel="${i}.${j}" title="Remove this action">✕</button></div>`).join('');
+  return `<div class="rcard${on?'':' off'}"><div class="rline"><b>#${i+1}</b><input data-ru="${i}" data-rf="note" value="${esc(r.note)}" placeholder="Name / why — shown with the value" style="flex:1 1 260px"><label style="display:flex;gap:4px;align-items:center;margin:0"><input type="checkbox" data-ruon="${i}"${on?' checked':''} style="width:auto;min-height:0"> On</label>
+   <button class="b s sm" data-rumv="${i}" data-dir="-1"${i?'':' disabled'} title="Earlier (a later rule wins for the same field)">↑</button><button class="b s sm" data-rumv="${i}" data-dir="1"${i<RULED.length-1?'':' disabled'}>↓</button><button class="b s sm" data-rudup="${i}">Duplicate</button><button class="b s sm" data-rudel="${i}">Delete</button></div>
+   <div class="rsay">${ruleSay(r)}</div>
+   <div class="lkhide"><div class="rline"><span class="rlab">When</span>${w.length?'':'<span class="mu">every recommendation (no conditions)</span>'}</div>${wl}<div class="rline"><span class="rlab"></span><button class="b s sm" data-rwadd="${i}">+ condition</button></div>
+   <div class="rline"><span class="rlab">Then</span>${st.length?'':'<span class="mu">no action yet</span>'}</div>${sl}<div class="rline"><span class="rlab"></span><button class="b s sm" data-rsadd="${i}">+ action</button></div></div>
+   <div class="rraw" title="The stored text — the same columns as the Sheet's rules tab">when: ${esc(ruJoin(w)||'*')} &nbsp;|&nbsp; set: ${esc(ruJoin(st))}${on?'':' &nbsp;|&nbsp; on: off'}</div>${p.length?`<div class="bad" style="font-size:13px;margin-top:4px">⚠ ${esc(p.join(' · '))}</div>`:''}</div>`};
+ const ref=`<details class="card" data-ruhelp="1"${(L.rules||[]).length?'':' open'}><summary style="cursor:pointer;font-weight:600">How rules work — the standard rule format</summary>
+  <ul><li>Every rule is <b>When</b> (conditions) <b>→ Then</b> (actions), with a note. All conditions must match; no conditions = every recommendation. Switch a rule off with <b>On</b> instead of deleting it.</li>
+  <li>Rules are applied <b>last</b>: after the source's band value, the baselines and the material limits. They act on every source (bands, catalogue, typical, your cuts, custom sources) and on the calculator.</li>
+  <li>Rules run top to bottom; when two rules set the same thing, the <b>lower</b> one wins. Caps (at most) only ever lower a value.</li>
+  <li>A value may list choices with <code>|</code> — <code>material=PEEK|POM</code> means PEEK or POM. <b>is not</b> (<code>!=</code>) excludes. Numbers take <code>&lt; &lt;= &gt; &gt;=</code>. Text is not case-sensitive. Values cannot contain commas.</li>
+  <li>The stored format (Sheet <i>rules</i> tab, columns <code>when, set, note, on</code>): <code>when</code> = conditions joined by commas, <code>set</code> = actions joined by commas, <code>on</code> = <code>off</code> to switch off. Example: when <code>cutter=BX-R, op=rough</code> · set <code>fz_mult=1.1</code>.</li></ul>
+  <div class="g" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))"><div class="tw"><table class="rref"><thead><tr><th>When (condition)</th><th>Name</th><th>Values</th></tr></thead><tbody>${Object.entries(RUV).map(([k,[l,h]])=>`<tr><td>${esc(l)}</td><td><code>${k}</code></td><td class="tx">${esc(h)}</td></tr>`).join('')}</tbody></table></div>
+  <div class="tw"><table class="rref"><thead><tr><th>Then (action)</th><th>Name</th><th>Unit</th><th>What it does</th></tr></thead><tbody>${Object.entries(RUA).map(([k,[l,u,h]])=>`<tr><td>${esc(l)}</td><td><code>${k}</code></td><td>${esc(u)}</td><td class="tx">${esc(h)}</td></tr>`).join('')}</tbody></table></div></div>
+  <h3>Examples</h3><ul>${RU_EX().map((x,i)=>`<li>${ruleSay(x)} <span class="mu">— ${esc(x.note)}</span> <button class="b s sm" data-ruex="${i}">Add this rule</button></li>`).join('')}</ul></details>`;
+ $('#lbody').innerHTML=`<div class="card"><h2>Rules</h2><p class="mu">Conditions that change, cap or block a recommendation — e.g. a surface-finish target for ball finishing, a feed limit on one machine, or no recommendation for a tool that should not be used. ${(L.rules||[]).length} saved rule${(L.rules||[]).length===1?'':'s'}.</p>${fromSheet?'<div class="note w">The rules tab is loaded from the Google Sheet — after editing here, download the CSV and paste it into the Sheet’s <i>rules</i> tab, or the Sheet puts the old rules back at the next start-up.</div>':''}
+  <p class="row"><button class="b s sm" id="rutpl" title="An empty rules sheet in the standard format, with two examples">Download blank rules template</button><button class="b s sm" id="rucsv">Download rules CSV for the Sheet</button></p></div>
+  ${ref}${dls}
+  <div>${RULED.map(card).join('')||'<p class="mu">No rules yet — click <b>+ New rule</b> or add an example above.</p>'}</div>
+  <div class="row" style="margin-top:8px"><button class="b s sm" id="ruadd">+ New rule</button><button class="b sm" id="rusave">Save</button><button class="b s sm" id="rurev">Discard changes</button><span class="mu" id="rumsg">${dirty?'Unsaved changes':''}</span></div>`;
+ const at=s=>s.split('.').map(Number),edit=(i,fn)=>{const r=RULED[i];fn(r);drawRules()};
+ const setW=(r,ps)=>{r.when=ruJoin(ps)||'*'},setS=(r,ps)=>{r.set=ruJoin(ps)};
+ $('#lbody').oninput=e=>{const d=e.target.dataset;if(d.ru!=null&&RULED[+d.ru]){RULED[+d.ru][d.rf]=e.target.value;const m=$('#rumsg');if(m)m.textContent='Unsaved changes'}};
+ $('#lbody').onchange=e=>{const t=e.target,d=t.dataset;
+  if(d.ruon!=null)return edit(+d.ruon,r=>{r.on=t.checked?'':'off'});
+  if(d.rwk||d.rwo||d.rwv){const [i,j]=at(d.rwk||d.rwo||d.rwv);return edit(i,r=>{const ps=ruW(r),p=ps[j];if(!p)return;if(d.rwk){p.k=t.value;if(!RU_NUM.includes(p.k)&&!['=','!='].includes(p.op))p.op='='}else if(d.rwo)p.op=t.value;else p.v=t.value.trim().replace(/,/g,' ');setW(r,ps)})}
+  if(d.rsk||d.rsv){const [i,j]=at(d.rsk||d.rsv);return edit(i,r=>{const ps=ruS(r),p=ps[j];if(!p)return;if(d.rsk)p.k=t.value;else p.v=t.value.trim().replace(/,/g,' ');p.op='=';setS(r,ps)})}};
+ $('#lbody').onclick=async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
+  if(t.id==='rutpl'){if(!dl)return toast('Downloads unavailable here');const ex=RU_EX().slice(0,2);try{await dl.save({filename:'rules-template.csv',data:['when,set,note,on'].concat(ex.map(r=>[r.when,r.set,r.note,''].map(csvCell).join(','))).join('\r\n')});toast('Rules template downloaded')}catch(x){toast('Download failed')}return}
+  if(t.id==='rucsv'){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:'rules-for-sheet-'+today()+'.csv',data:['when,set,note,on'].concat((L.rules||[]).map(r=>[r.when,r.set,r.note,r.on||''].map(csvCell).join(','))).join('\r\n')});toast('Rules CSV downloaded')}catch(x){toast('Download failed')}return}
+  if(d.ruex!=null){const x=RU_EX()[+d.ruex];if(x){RULED.push({when:x.when,set:x.set,note:x.note,on:''});drawRules()}return}
+  if(t.id==='ruadd'){RULED.push({when:'*',set:'',note:'',on:''});return drawRules()}
+  if(d.rwadd!=null)return edit(+d.rwadd,r=>{const ps=ruW(r);ps.push({k:'material',op:'=',v:(L.materials[0]||{}).Material||''});setW(r,ps)});
+  if(d.rsadd!=null)return edit(+d.rsadd,r=>{const ps=ruS(r);ps.push({k:'vc_mult',op:'=',v:'1'});setS(r,ps)});
+  if(d.rwdel){const [i,j]=at(d.rwdel);return edit(i,r=>{const ps=ruW(r);ps.splice(j,1);setW(r,ps)})}
+  if(d.rsdel){const [i,j]=at(d.rsdel);return edit(i,r=>{const ps=ruS(r);ps.splice(j,1);setS(r,ps)})}
+  if(d.rumv!=null){const i=+d.rumv,j=i+(+d.dir);if(j<0||j>=RULED.length)return;[RULED[i],RULED[j]]=[RULED[j],RULED[i]];return drawRules()}
+  if(d.rudup!=null){RULED.splice(+d.rudup+1,0,Object.assign({},RULED[+d.rudup]));return drawRules()}
+  if(d.rudel!=null){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Delete?';return}RULED.splice(+d.rudel,1);return drawRules()}
+  if(t.id==='rurev'){RULED=null;return drawRules()}
+  if(t.id==='rusave'){if(await rulesSave()){await setLock('rules',true);drawRules();const m=$('#rumsg');if(m)m.textContent='Saved ✓ — locked'}}};
 }
 function sz(){$$('#lib textarea').forEach(t=>{t.style.height='auto';t.style.height=Math.max(34,t.scrollHeight)+'px'})}
 $('#lib').oninput=e=>{if(e.target.tagName==='TEXTAREA'){e.target.style.height='auto';e.target.style.height=e.target.scrollHeight+'px'}};
@@ -6371,7 +6485,7 @@ const clone=o=>JSON.parse(JSON.stringify(o));
 let PS='sources',PS2='groups';
 function drawParams(){const cyc=CUR==='cycles',tabs=cyc?[['groups','Cycle pages'],['tree','Cycle tree']]:[['sources','Sources'],['bands','Bands'],['bl','Baselines'],['base','Material limits']],cur=cyc?PS2:PS;
  $('#lbody').innerHTML=`<div class="seg noprint" id="psub" style="margin-bottom:12px">${tabs.map(([k,l])=>`<button data-ps="${k}" class="${k===cur?'on':''}">${l}</button>`).join('')}</div><div id="pbody"></div>`;
- $('#psub').onclick=e=>{const k=e.target.dataset.ps;if(k){if(cyc)PS2=k;else PS=k;drawParams()}};$('#lbody').onchange=null;$('#lbody').onclick=null;
+ $('#lbody').querySelector('#psub').onclick=e=>{const k=e.target.dataset.ps;if(k){if(cyc)PS2=k;else PS=k;drawParams()}};$('#lbody').onchange=null;$('#lbody').onclick=null;
  if(cyc){if(PS2==='tree')drawTreeEd();else drawParamGroups()}
  else if(PS==='base')drawBaseEd();else if(PS==='bands')drawBandEd();else if(PS==='bl')drawBLEd();else drawSources()}
 const TR=()=>L.cycles.map((r,i)=>[r,i]).filter(([r])=>r&&r.key);
@@ -6463,7 +6577,7 @@ function drawBaseEd(){const rows=L.baseline.map((r,i)=>[r,i]).filter(([r])=>Obje
  const sel=(i,k,cur,o)=>{cur=String(cur??'*');const has=o.some(([v])=>v===cur);return `<select data-br="${i}" data-bk="${k}">${(has?o:[[cur,cur+' (custom)'],...o]).map(([v,l])=>`<option value="${esc(v)}"${v===cur?' selected':''}>${esc(l)}</option>`).join('')}</select>`};
  const nb=(i,k,v,l,u)=>`<label class="mlv"><span>${l}</span><input data-br="${i}" data-bk="${k}" type="number" step="any" inputmode="decimal" value="${v==null?'':esc(v)}" placeholder="—">${u?`<small>${u}</small>`:''}</label>`;
  const say=mlSay;const _old=r=>{const p=[];if(r.apDmax!=null&&r.apDmax!=='')p.push(`roughing / semi stepdown ≤ <b>${esc(r.apDmax)}×Ø</b>`);if(r.apD!=null&&r.apD!=='')p.push(`stepdown <b>${esc(r.apD)}×Ø</b>`);if(r.aeD!=null&&r.aeD!=='')p.push(`stepover <b>${esc(r.aeD)}×Ø</b>`);if(r.Vc!=null&&r.Vc!=='')p.push(`Vc fixed at <b>${esc(r.Vc)}</b> m/min`);if(r.fz!=null&&r.fz!=='')p.push(`f/edge fixed at <b>${esc(r.fz)}</b> mm`);if(r.coolant)p.push(`coolant <b>${esc(r.coolant)}</b>`);return p.length?p.join(' · '):'<span class="mu">no limit set yet</span>'};
- const card=([r,i])=>`<div class="mlrow"><div class="mlsay">${say(r)}</div>
+ const card=([r,i])=>`<div class="mlrow"><div class="mlsay">${r.auto?`<span class="tag" title="Added ${esc(r.auto)} when this ${r.material&&r.material!=='*'?'material':'cutter type'} first appeared — fill it in or delete it">new · auto</span> `:''}${say(r)}</div>
   <div class="mlscope"><span class="mu">For</span>${sel(i,'material',r.material,matO)}${sel(i,'tool',r.tool,toolO)}${sel(i,'subcycle',r.subcycle,subO)}${sel(i,'op',r.op,opO)}${sel(i,'band',r.band,bandO)}</div>
   <div class="mlvals">${nb(i,'apDmax',r.apDmax,'Max stepdown','×Ø')}${nb(i,'apD',r.apD,'Stepdown','×Ø')}${nb(i,'aeD',r.aeD,'Stepover','×Ø')}${nb(i,'Vc',r.Vc,'Vc','m/min')}${nb(i,'fz',r.fz,'f/edge','mm')}<label class="mlv"><span>Coolant</span><input data-br="${i}" data-bk="coolant" value="${esc(r.coolant||'')}" placeholder="—" style="width:110px"></label></div>
   <div class="mlnote"><input data-br="${i}" data-bk="note" value="${esc(r.note||'')}" placeholder="Why this limit? (shown in Explain)"><button class="b s sm" data-bcopy="${i}" title="Copy this limit to every Ø band">→ all Ø bands</button><button class="b s sm" data-bdel="${i}" title="Delete">✕</button></div></div>`;
@@ -6530,31 +6644,34 @@ function drawBandEd(){const mats=L.materials.map(m=>m.Material).filter(Boolean),
  const missing=[...new Set([...mbCutters(),'TAP'])].filter(c=>!have.includes(c)),num=(i,k,v)=>`<input data-mb="${i}" data-mbk="${k}" type="number" step="any" min="0" inputmode="decimal" value="${v==null||v===''?'':esc(v)}">`;
  const table=c=>{const rows=mbRows(MBM,c),rev=mbIsRev(c),er=SF.bandTableProblems(rows.map(([r])=>r)).filter(x=>!(c==='TAP'&&/f\/edge/.test(x))),wn=SF.bandTableWarnings(rows.map(([r])=>r));
   return `<details class="mbt" open><summary>Cutter type <span class="tag" style="font-weight:600">${esc(c)}</span><span class="mu">${esc(ckName(c))} · ${rows.length} Ø range${rows.length===1?'':'s'}</span>${er.length?`<span class="bad" style="font-weight:400">⚠ ${esc(er[0])}${er.length>1?` (+${er.length-1})`:''}</span>`:wn.length?`<span style="font-weight:400;color:var(--warn)" title="${esc(wn.join('\n'))}">check: ${esc(wn[0])}${wn.length>1?` (+${wn.length-1})`:''}</span>`:''}</summary>
-  <div class="tw"><table><thead><tr><th class="n">Min Ø (mm)</th><th class="n">Max Ø (mm)</th><th class="n">Cutting speed Vc (m/min)</th><th class="n">${rev?(c==='TAP'?'Pitch (mm) — optional':'Feed f (mm/rev)'):'F/edge fz (mm)'}</th><th>Source of the numbers</th><th></th></tr></thead><tbody>
-  ${rows.map(([r,i])=>`<tr><td class="n">${num(i,'lo',r.lo)}</td><td class="n">${num(i,'hi',r.hi)}</td><td class="n">${num(i,'Vc',r.Vc)}</td><td class="n">${num(i,'fz',r.fz)}</td><td class="mbs" title="${esc((r.src||'')+(r.note?'\n'+r.note:''))}"><span><b>${esc(r.src||'')}</b>${r.note?' · '+esc(r.note):''}</span></td><td><button class="b s sm" data-mbdel="${i}" title="Delete this Ø range">✕</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty">No Ø ranges.</td></tr>'}
+  <div class="tw"><table><thead><tr><th class="n">Min Ø (mm)</th><th class="n">Max Ø (mm)</th><th class="n">Cutting speed Vc (m/min)</th><th class="n">${rev?(c==='TAP'?'Pitch (mm) — optional':'Feed f (mm/rev)'):'F/edge fz (mm)'}</th><th class="n" title="Spindle speed across this Ø range: n = Vc × 1000 ÷ (π × Ø)${MBMACH?', capped at '+esc(MBMACH)+'’s spindle limit':''}">RPM</th><th class="n" title="${rev?'Feed = RPM × feed per rev':'Reference feed at full engagement = RPM × f/edge × flutes (flutes of your tools in this range; ≈ = estimated flute count)'}">Feed (mm/min)</th><th>Source of the numbers</th><th></th></tr></thead><tbody>
+  ${rows.map(([r,i])=>`<tr><td class="n">${num(i,'lo',r.lo)}</td><td class="n">${num(i,'hi',r.hi)}</td><td class="n">${num(i,'Vc',r.Vc)}</td><td class="n">${num(i,'fz',r.fz)}</td>${mbRFcells(r,c)}<td class="mbs" title="${esc((r.src||'')+(r.note?'\n'+r.note:''))}"><span><b>${esc(r.src||'')}</b>${r.note?' · '+esc(r.note):''}</span></td><td><button class="b s sm" data-mbdel="${i}" title="Delete this Ø range">✕</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">No Ø ranges.</td></tr>'}
   </tbody></table></div>${er.length>1?`<p class="bad" style="margin:0 12px 8px;font-size:13px">${er.map(esc).join(' · ')}</p>`:''}
   <p class="row" style="margin:0 10px 10px"><button class="b s sm" data-mbadd="${esc(c)}">+ Ø range</button>${MBS?`<button class="b s sm" data-mbfrom="${esc(c)}" title="Replace this table with a copy of the same table in Bands">Copy from Bands</button>`:`<button class="b s sm" data-mbseed="${esc(c)}" title="Replace this table with catalogue / typical-model values">Re-seed from catalogue</button>`}<button class="b s sm" data-mbdeltab="${esc(c)}">Delete table</button></p></details>`};
  const sname=MBS?(srcs.find(x=>x.key===MBS)||{}).name||MBS:'Bands';
  $('#pbody').innerHTML=`<div class="card"><h2>Bands</h2><p class="mu">Cutting data per <b>material › cutter type › Ø range</b>, laid out like hyperMILL's Materials dialog. Vc and f/edge are the <b>roughing reference</b> for that cutter (f/edge = chip thickness at full engagement); drills, reamers and taps use <b>feed per rev</b>. Square and bull-nose end mills have separate tables (BX and BX-R). Every recommendation then goes through <b>Baselines</b>. Edit any cell; it saves straight away.</p>
  <div class="row noprint"><label style="margin:0">Source</label><select id="mbsrc" style="max-width:260px"><option value="">Bands (your main table)</option>${srcs.map(x=>`<option value="${esc(x.key)}"${x.key===MBS?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
- ${MBS?'<button class="b s sm" id="mbfill2">Copy missing tables from Bands</button>':'<button class="b s sm" id="mbfill">Fill missing tables</button>'}<button class="b s sm" id="mbcsv">Download CSV for the Sheet</button><span class="mu" id="mbmsg">${esc(sname)}: ${mine.length} rows</span></div></div>
+ ${MBS?'<button class="b s sm" id="mbfill2">Copy missing tables from Bands</button>':'<button class="b s sm" id="mbfill">Fill missing tables</button>'}<button class="b s sm" id="mbcsv">Download CSV for the Sheet</button><button class="b s sm" data-srctpl="csv" title="Blank band table for every material × cutter × Ø range — Cutting data → Sources explains the format">Blank template</button><label style="margin:0 0 0 8px">RPM limit</label><select id="mbmach" style="max-width:220px" title="Cap the RPM and feed columns at a machine's spindle speed"><option value="">none</option>${L.machines.map(m=>`<option value="${esc(m.Machine)}"${m.Machine===MBMACH?' selected':''}>${esc(m.Machine)} (${esc(m['Max Spindle Speed (RPM)']||'?')} rpm)</option>`).join('')}</select><span class="mu" id="mbmsg">${esc(sname)}: ${mine.length} rows</span></div></div>
  <div class="mbw"><div class="mbl" role="listbox" aria-label="Materials">${mats.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small>${esc(iso(m))} · ${cnt(m)}</small></button>`).join('')}${orphan.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small class="bad">not in materials</small></button>`).join('')}</div>
  <div><div class="card" style="margin-top:0"><h2 style="margin-bottom:4px">${esc(MBM||'—')} <small class="mu" style="font-weight:400">${esc(sname)}</small></h2><p class="mu" style="margin:0 0 8px">${esc(SF.ISO_NAME[iso(MBM)]||'')}${orphan.includes(MBM)?' · <span class="bad">this name is not in your Materials list — rename it there or delete these tables</span>':''}</p>
- <div class="row noprint">${missing.length?`<select id="mbnewc" style="max-width:260px">${missing.map(c=>`<option value="${esc(c)}">${esc(c)} — ${esc(ckName(c))}</option>`).join('')}</select><button class="b s sm" id="mbaddc">+ Add cutter type</button>`:''}<select id="mbcopyf" style="max-width:220px"><option value="">Copy all tables from…</option>${opt(mats.filter(m=>m!==MBM&&cnt(m)))}</select></div></div>
+ <div class="row noprint lkhide">${missing.length?`<select id="mbnewc" style="max-width:260px">${missing.map(c=>`<option value="${esc(c)}">${esc(c)} — ${esc(ckName(c))}</option>`).join('')}</select><button class="b s sm" id="mbaddc">+ Add cutter type</button>`:''}<select id="mbcopyf" style="max-width:220px"><option value="">Copy all tables from…</option>${opt(mats.filter(m=>m!==MBM&&cnt(m)))}</select></div></div>
  ${have.map(table).join('')||'<p class="mu">No tables for this material yet — use <b>Fill missing tables</b> or <b>+ Add cutter type</b>.</p>'}</div></div>`;
  const mm=t=>{const m=$('#mbmsg');if(m)m.textContent=t};
  const save=async(code,field,from,to,note)=>{logChange('matbands',(MBS?'['+sname+'] ':'')+code,field,from??'',to??'','Cutting data → Bands',note||'');saveLib('matbands');await flushLib();saveCLOG();renderCheat()};
  const tag=r=>MBS?Object.assign(r,{source:MBS}):(delete r.source,r);
  $('#pbody').onchange=async e=>{const d=e.target.dataset;
   if(e.target.id==='mbsrc'){MBS=e.target.value;return drawBandEd()}
+  if(e.target.id==='mbmach'){MBMACH=e.target.value;return drawBandEd()}
   if(e.target.id==='mbcopyf'){const from=e.target.value;if(!from)return;const src=mine.filter(r=>mbKey(r.material,'')===mbKey(from,''));if(!src.length)return;
    const n0=L.matbands.length;L.matbands=L.matbands.filter(r=>!(String(r.source||'')===MBS&&mbKey(r.material,'')===mbKey(MBM,'')));const gone=n0-L.matbands.length;
    L.matbands.push(...src.map(r=>Object.assign({},r,{material:MBM,src:'Copied from '+from})));await save(MBM,'copied from',gone+' rows',from,src.length+' rows');return drawBandEd()}
   if(d.mb==null)return;const r=L.matbands[+d.mb],k=d.mbk,old=r[k];let v=e.target.value.trim();if(v===''&&!(k==='fz'&&r.cutter==='TAP')){e.target.value=old??'';return mm('A value is needed — delete the row instead.')}v=v===''?'':+v;if(v!==''&&(!isFinite(v)||v<0)){e.target.value=old??'';return mm('Numbers only (0 or more).')}
   if(String(old)===String(v))return;r[k]=v;if(k==='Vc'||k==='fz')r.src='Edited';await save(`${r.material} › ${r.cutter} › Ø${r.lo}–${r.hi}`,k,old,v);
-  const er=SF.bandTableProblems(mbRows(r.material,r.cutter).map(([x])=>x));mm(er.length?'Saved — but: '+er.join('; '):'Saved ✓');if(k==='lo'||k==='hi'||er.length)drawBandEd()};
+  const er=SF.bandTableProblems(mbRows(r.material,r.cutter).map(([x])=>x));mm(er.length?'Saved — but: '+er.join('; '):'Saved ✓');if(k==='lo'||k==='hi'||er.length)return drawBandEd();
+  const tr=e.target.closest('tr');if(tr){const tb=document.createElement('tbody');tb.innerHTML='<tr>'+mbRFcells(r,String(r.cutter).toUpperCase())+'</tr>';const nw=[...tb.querySelectorAll('td')];tr.querySelectorAll('.mbrf').forEach((td,j)=>nw[j]&&td.replaceWith(nw[j]))}};
  $('#pbody').onclick=async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
   if(d.mbm!=null){MBM=d.mbm;return drawBandEd()}
+  if(d.srctpl){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:'source-template-'+today()+'.csv',data:srcTemplate('csv')});toast('Blank template downloaded')}catch(x){toast('Download failed')}return}
   if(t.id==='mbcsv'){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:'matbands-for-sheet-'+today()+'.csv',data:mbCSV()});toast('matbands CSV downloaded')}catch(x){toast('Download failed: '+(x.message||x))}return}
   if(t.id==='mbfill'){const add=mbFillMissing();if(!add.length)return mm('Nothing missing — every material has a table for every cutter type in your tool library.');L.matbands.push(...add);await save('(all)','filled','',add.length+' rows','catalogue / typical model');drawBandEd();return mm(`${add.length} rows added.`)}
   if(t.id==='mbfill2'){const keys=new Set(mine.map(r=>mbKey(r.material,r.cutter))),add=L.matbands.filter(r=>!r.source&&!keys.has(mbKey(r.material,r.cutter))).map(r=>tag(Object.assign({},r,{src:'Copied from Bands'})));if(!add.length)return mm('Nothing missing.');L.matbands.push(...add);await save('(all)','copied from Bands','',add.length+' rows');return drawBandEd()}
@@ -6596,17 +6713,21 @@ function drawBLEd(){if(BLS&&!(L.sources||[]).some(x=>x.key===BLS))BLS='';if(BLS)
  <p class="mu" style="margin:6px 0">AL, BX, BT and DM cutters with a corner radius are <b>bull nose</b> (band tables BX-R …); without one they are <b>square</b>. These factors go on top of every sub-cycle for that corner type: bull noses have a stronger corner, so they can rough harder; square end mills give the sharper wall / floor finish. Ball-nose, lollipop and chamfer tools are not affected.</p>
  <div class="tw"><table><thead><tr><th>Corner</th>${['Roughing','Semi-finishing','Finishing'].map(x=>`<th class="n">${x}: Vc ×</th><th class="n">f/edge ×</th>`).join('')}</tr></thead><tbody>${[['sq','Square'],['bull','Bull nose']].map(([g,l])=>`<tr><td><b>${l}</b></td>${['R','S','F'].map(o=>['vc','fz'].map(k=>{const cur=SET.geo&&SET.geo[g]&&SET.geo[g][o]&&SET.geo[g][o][k],d=SF.GEO_DEF[g][o][k];return `<td class="n"><input data-geo="${g}.${o}.${k}" type="number" step="any" min="0" value="${cur!=null?esc(cur):''}" placeholder="${d}" style="width:70px"></td>`}).join('')).join('')}</tr>`).join('')}</tbody></table></div>
  <p class="row" style="margin:6px 0 0"><button class="b s sm" id="geodef">Reset to defaults</button><span class="mu" id="geomsg"></span></p></details>
- <details class="card" style="margin:10px 0 0;padding:10px 14px"${SET.engage?' open':''}><summary style="cursor:pointer;font-weight:600">Calculator: how Vc and fz follow ae / ap</summary>
- <p class="mu" style="margin:6px 0">When you change ae or ap in the calculator, fz is re-derived by chip thinning (radial below ½Ø; axial for ball and bull-nose tools) and these factors apply, relative to the recommended engagement. A Vc or fz you typed yourself is never changed.</p>
- <div class="g">${[['vcMax','Vc boost at light ae — max ×','1.3 = up to +30 %'],['vcExp','Vc boost exponent','Vc × (0.5 ÷ (ae/Ø))^x, 0 = off'],['apFrom','fz eases off past ap ×Ø',''],['apPer','fz reduction per extra ×Ø','0.15 = −15 % per 1×Ø'],['apMin','fz never below ×','']].map(([k,l,h])=>`<div><label>${l}</label><input type="number" step="any" min="0" data-eng="${k}" value="${esc(engCfg()[k])}"${h?` title="${esc(h)}"`:''}></div>`).join('')}</div>
- <p class="row" style="margin:8px 0 0"><button class="b s sm" id="engdef">Reset to defaults</button><span class="mu" id="engmsg"></span></p></details>
+ <details class="card" style="margin:10px 0 0;padding:10px 14px"${SET.engage?' open':''}><summary style="cursor:pointer;font-weight:600">Calculator: how Vc and fz follow ae / ap — per cycle family</summary>
+ <p class="mu" style="margin:6px 0">When you change ae or ap in the calculator, fz is re-derived by chip thinning (radial below ½Ø; axial for ball and bull-nose tools) and these factors apply, relative to the recommended engagement. The family of the sub-cycle you picked decides which row is used. A grey value is inherited (built-in family value, else the <b>All families</b> row, else the app default); type to override, clear to inherit. A Vc or fz you typed yourself is never changed. Drilling, reaming, boring, threading and probing have no ae, so they are not listed.</p>
+ <div class="tw"><table class="engt"><thead><tr><th>Family</th>${ENG_VARS.map(([k,l,u,h])=>`<th class="n" title="${esc(h)}">${esc(l)}${u?` <small class="mu">${u}</small>`:''}</th>`).join('')}</tr></thead><tbody>
+ ${[['*','All families'],...famRows().map(([f])=>f.Cycle).filter(f=>!ENG_NOAE.includes(f)).map(f=>[f,f])].map(([fk,fl])=>{const U=engUser(),own=U[fk]||{},inh=fk==='*'?ENG_DEF:engLayer(engLayer(Object.assign({},ENG_DEF),U['*']),ENG_FAM[fk]);
+  return `<tr${fk==='*'?' class="blfam"':''}><td><b>${esc(fl)}</b></td>${ENG_VARS.map(([k])=>`<td class="n"><input data-engf="${esc(fk)}" data-eng="${k}" type="number" step="any" min="0" value="${own[k]!=null&&own[k]!==''?esc(own[k]):''}" placeholder="${esc(+(+inh[k]).toFixed(3))}" style="width:66px"></td>`).join('')}</tr>`}).join('')}
+ </tbody></table></div>
+ <details style="margin-top:6px"><summary class="mu" style="cursor:pointer">What each factor does</summary><ul class="mu">${ENG_VARS.map(([k,l,u,h])=>`<li><b>${esc(l)}</b> (${k}): ${esc(h)}</li>`).join('')}</ul></details>
+ <p class="row" style="margin:8px 0 0"><button class="b s sm" id="engdef">Reset all to defaults</button><span class="mu" id="engmsg"></span></p></details>
  <div class="tw bltab"><table><thead><tr><th>Sub-cycle</th><th>Op</th>${BL_F.map(([,l])=>`<th class="n">${l}</th>`).join('')}<th>Coolant</th><th>Formula</th><th>Comment</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
  $('#blf').onchange=e=>{BLF=e.target.value;drawBLEd()};$('#bls').onchange=e=>{BLS=e.target.value;drawBLEd()};
  const geoSave=async()=>{SF.invalidate();renderCheat();if(OFFLINE||!db)return $('#geomsg').textContent='Offline — applied for this session';try{await db.doc('lib/settings').update({v:LIB_V,geo:SET.geo});$('#geomsg').textContent='Saved ✓'}catch(x){$('#geomsg').textContent='Save failed: '+(x.message||x)}};
  const engSave=async()=>{SETDOC=Object.assign(SETDOC||{},{engage:SET.engage});if(OFFLINE||!db)return $('#engmsg').textContent='Offline — applied for this session';try{await db.doc('lib/settings').update({v:LIB_V,engage:SET.engage});$('#engmsg').textContent='Saved ✓'}catch(x){$('#engmsg').textContent='Save failed: '+(x.message||x)}};
  $('#pbody').onclick=async e=>{if(e.target.id==='blcsv')sheetDownload('cycles');if(e.target.id==='engdef'){SET.engage=null;await engSave();drawBLEd()}if(e.target.id==='geodef'){SET.geo=null;await geoSave();drawBLEd()}};
  $('#pbody').onchange=async e=>{const d=e.target.dataset;
-  if(d.geo){const [g,o,k]=d.geo.split('.'),v=e.target.value.trim(),n=+v,G=JSON.parse(JSON.stringify(SET.geo||{}));G[g]=G[g]||{};G[g][o]=G[g][o]||{};if(v===''){delete G[g][o][k]}else{if(!isFinite(n)||n<=0){e.target.value='';return}G[g][o][k]=n}SET.geo=G;return geoSave()}if(d.eng){const v=e.target.value.trim(),n=+v;if(v===''||!isFinite(n)||n<0){e.target.value=engCfg()[d.eng];return}SET.engage=Object.assign({},engCfg(),{[d.eng]:n});return engSave()}
+  if(d.geo){const [g,o,k]=d.geo.split('.'),v=e.target.value.trim(),n=+v,G=JSON.parse(JSON.stringify(SET.geo||{}));G[g]=G[g]||{};G[g][o]=G[g][o]||{};if(v===''){delete G[g][o][k]}else{if(!isFinite(n)||n<=0){e.target.value='';return}G[g][o][k]=n}SET.geo=G;return geoSave()}if(d.eng){const v=e.target.value.trim(),n=+v,fk=d.engf||'*';if(v!==''&&(!isFinite(n)||n<0)){e.target.value='';return}const U=JSON.parse(JSON.stringify(engUser()));U[fk]=U[fk]||{};if(v==='')delete U[fk][d.eng];else U[fk][d.eng]=n;if(!Object.keys(U[fk]).length)delete U[fk];SET.engage=Object.keys(U).length?U:null;return engSave()}
   if(d.bl==null)return;const r=L.cycles[+d.bl],k=d.blk,op=d.blop,isNum=BL_F.some(([f])=>f===k);let v=e.target.value.trim();
   if(isNum){if(v==='')v=null;else{v=+v;if(!isFinite(v)||v<0){e.target.value='';return $('#blmsg').textContent='Numbers only (0 or more).'}}}else if(v==='')v=null;
   let from;
@@ -6656,28 +6777,38 @@ async function srcCreate(name,note,bands,baselines,via){if(OFFLINE||!db){toast('
  ['sources','matbands','srcbase'].forEach(k=>saveLib(k));await flushLib();saveCLOG();SF.invalidate();renderCheat();return key}
 /* a JSON package, or a CSV with material, cutter, lo, hi, Vc, fz columns (e.g. the matbands export) */
 function srcParse(text,fname){const t=String(text||'').trim();if(!t)throw new Error('Nothing to import');
- if(t[0]==='{'){const o=JSON.parse(t);if(o.type!==SRC_PKG||!Array.isArray(o.bands))throw new Error('Not a source package');return o}
+ const filled=r=>r&&[r.Vc,r.fz].some(v=>v!==''&&v!=null);
+  if(t[0]==='{'){const o=JSON.parse(t);if(o.type!==SRC_PKG||!Array.isArray(o.bands))throw new Error('Not a source package');o.bands=o.bands.filter(filled);o.baselines=(o.baselines||[]).map(r=>{const x=Object.assign({},r);delete x.subcycleName;return x});return o}
  const rows=parseCSV(t),h=(rows[0]||[]).map(x=>String(x).trim()),need=['material','cutter','lo','hi','Vc','fz'];if(!need.every(k=>h.includes(k)))throw new Error('CSV needs the columns '+need.join(', '));
- const bands=rows.slice(1).filter(r=>r.some(x=>String(x).trim())).map(r=>{const o={};h.forEach((k,i)=>{let v=String(r[i]??'').trim();o[k]=v!==''&&isFinite(+v)&&['lo','hi','Vc','fz'].includes(k)?+v:v});delete o.source;return o});
+ const bands=rows.slice(1).filter(r=>r.some(x=>String(x).trim())).filter(r=>[h.indexOf('Vc'),h.indexOf('fz')].some(i=>String(r[i]??'').trim()!=='')).map(r=>{const o={};h.forEach((k,i)=>{let v=String(r[i]??'').trim();o[k]=v!==''&&isFinite(+v)&&['lo','hi','Vc','fz'].includes(k)?+v:v});delete o.source;return o});
  return {type:SRC_PKG,v:1,name:String(fname||'Imported source').replace(/\.(csv|json)$/i,''),note:'imported from '+(fname||'pasted CSV'),bands,baselines:[]}}
 async function srcCopyText(txt){try{await navigator.clipboard.writeText(txt);toast('Source copied — paste it into another copy of the app (Cutting data → Sources → Paste)');return true}catch(e){return false}}
 function drawSources(){const ord=srcList(),srcs=L.sources||[],cnt=k=>L.matbands.filter(r=>String(r.source||'')===String(k||'')).length,ovr=k=>(L.srcbase||[]).filter(r=>r.source===k).length;
  const kindTxt={BAND:'Your main band tables, through the shared baselines',CUTS:'Your verified cuts, turned back into band values, through the baselines',MFR:'Manufacturer catalogue values, turned into band values, through the baselines',TYP:'App’s typical model (coated carbide by material group), through the baselines'};
+ const lk=isLocked('data:sources');
+ const look=t=>{const st=srcSty(t)||{},o=(a,cur,lab)=>a.map(([v,l])=>`<option value="${esc(v)}"${v===(cur||'')?' selected':''}>${esc(l)}</option>`).join('');
+  return `<div class="sstyle"><select data-sst="${esc(t)}" data-ssk="icon" title="Icon">${o([['','default'],...SRC_ICONS.map(x=>[x,x])],st.icon)}</select><select data-sst="${esc(t)}" data-ssk="color" title="Colour">${o([['','default colour'],...SRC_COLORS.map(([c])=>[c,c])],st.color)}</select><select data-sst="${esc(t)}" data-ssk="fill" title="Style">${o([['','default style'],...SRC_FILLS],st.fill)}</select></div>`};
+ const holds=(t,cus,k)=>cus?`${cnt(k)} band rows · ${ovr(k)} overrides`:t==='BAND'?cnt('')+' band rows':'';
+ const view=(t,cus,k)=>`${cus||t==='BAND'?`<button class="b s sm" data-srcbands="${esc(k)}">Bands</button>${cus?`<button class="b s sm" data-srcbl="${esc(k)}">Baselines</button>`:''}<button class="b s sm" data-srccp="${esc(k)}" title="Copy as text — paste into another copy of the app">Copy</button><button class="b s sm" data-srcexp="${esc(k)}" title="Download as a file">Export</button>`:''}`;
  const row=(t,i)=>{const cus=/^S:/.test(t),k=cus?t.slice(2):'',S=cus?srcs.find(x=>x.key===k)||{}:null,on=!(SET.tiers&&SET.tiers[t]===false);
+  if(lk)return `<tr${on?'':' style="opacity:.55"'}><td class="n">${i+1}</td><td>${on?'✓ on':'— off'}</td><td>${srcB(t)}</td><td class="tx">${esc(cus?S.note||'':kindTxt[t]||'')}</td><td class="n">${holds(t,cus,k)}</td><td><div class="row" style="gap:4px;flex-wrap:wrap">${view(t,cus,k)}</div></td></tr>`;
   return `<tr><td class="n" style="white-space:nowrap"><button class="b s sm" data-srcup="${i}"${i?'':' disabled'} title="Earlier in the order">↑</button><button class="b s sm" data-srcdn="${i}"${i<ord.length-1?'':' disabled'} title="Later in the order">↓</button></td>
   <td><label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" data-srcon="${esc(t)}"${on?' checked':''}> ${i+1}</label></td>
   <td>${cus?`<input data-srcname="${esc(k)}" value="${esc(S.name||k)}" style="min-width:180px">`:srcB(t)}</td>
   <td class="tx">${cus?`<input data-srcnote="${esc(k)}" value="${esc(S.note||'')}" placeholder="What is this source? (e.g. Harvey Tool data, aggressive roughing)" style="min-width:240px">`:esc(kindTxt[t]||'')}</td>
-  <td class="n">${cus?`${cnt(k)} band rows · ${ovr(k)} overrides`:t==='BAND'?cnt('')+' band rows':''}</td>
+  <td>${srcB(cus?t:t)}${look(t)}</td>
+  <td class="n">${holds(t,cus,k)}</td>
   <td><div class="row" style="gap:4px;flex-wrap:wrap">${cus||t==='BAND'?`<button class="b s sm" data-srcbands="${esc(k)}">Bands</button>${cus?`<button class="b s sm" data-srcbl="${esc(k)}">Baselines</button>`:''}`:''}
    ${t!=='CUTS'?`<button class="b s sm" data-srcdup="${esc(t)}" title="${cus||t==='BAND'?'Make a new source with a copy of these bands and overrides':'Freeze these values into the band tables of a new source you can edit'}">${cus||t==='BAND'?'Duplicate':'Copy as new source'}</button>`:''}
    ${cus||t==='BAND'?`<button class="b s sm" data-srccp="${esc(k)}" title="Copy as text — paste into another copy of the app">Copy</button><button class="b s sm" data-srcexp="${esc(k)}" title="Download as a file">Export</button>`:''}
    ${cus?`<button class="b s sm" data-srcdel="${esc(k)}">Delete</button>`:''}</div></td></tr>`};
  $('#pbody').innerHTML=`<div class="card"><h2>Sources</h2><p class="mu">Every speed and feed comes from one of these. Each source gives a <b>band value</b> (roughing Vc + f/edge for the material, cutter type and Ø) that then goes through the <b>Baselines</b> — so the same sub-cycle, engagement and chip-thinning rules apply whichever source wins. The first source in this order that has a value is used; untick one to switch it off. The calculator can be told to use any one of them, and Speeds &amp; Feeds shows them all side by side.</p>
- <div class="tw"><table><thead><tr><th>Order</th><th>On</th><th>Source</th><th>What it is</th><th class="n">Holds</th><th></th></tr></thead><tbody>${ord.map(row).join('')}</tbody></table></div><p class="mu" id="srcmsg"></p></div>
- <div class="card"><h2>New source</h2><p class="mu">A source of your own — e.g. a tool maker's data, or a more aggressive set for rigid set-ups. It gets its own band tables (Cutting data → Bands → pick the source) and can override any baseline value (Cutting data → Baselines → pick the source); anything left blank uses the shared baselines.</p>
+ <div class="tw"><table><thead><tr><th>Order</th><th>On</th><th>Source</th><th>What it is</th>${lk?'':'<th>Look (icon · colour · style)</th>'}<th class="n">Holds</th><th></th></tr></thead><tbody>${ord.map(row).join('')}</tbody></table></div><p class="mu" id="srcmsg"></p></div>
+ <div class="card"><h2>Blank source template</h2><p class="mu">The standard format for a source, ready to fill in — in a spreadsheet, or to send to a tool maker. Every material × cutter type × Ø range in your library, with <b>Vc</b> and <b>fz</b> left empty. Fill in what you have, then bring it back with <b>Paste or import</b> below; rows left empty are skipped. Columns: <code>material</code> (exact name), <code>cutter</code> (BX, BX-R = bull nose, CD = carbide drill …), <code>lo</code> / <code>hi</code> (Ø range, mm), <code>Vc</code> (roughing m/min), <code>fz</code> (f/edge at full engagement, mm; drills and reamers: feed per rev), <code>src</code>, <code>note</code>. The JSON version also lists every sub-cycle baseline row (Vc ×, f/edge ×, ap / ae ×Ø and limits).</p>
+ <p class="row"><button class="b s sm" data-srctpl="csv">Download blank template (CSV)</button><button class="b s sm" data-srctpl="json">Download blank template (JSON, with baselines)</button></p></div>
+ ${lk?'<div class="card"><p class="mu" style="margin:0">To make a <b>new source</b>, or <b>paste / import</b> one, press <b>Unlock to edit</b> at the top.</p></div>':''}<div class="card srcedit"><h2>New source</h2><p class="mu">A source of your own — e.g. a tool maker's data, or a more aggressive set for rigid set-ups. It gets its own band tables (Cutting data → Bands → pick the source) and can override any baseline value (Cutting data → Baselines → pick the source); anything left blank uses the shared baselines.</p>
  <div class="g" style="grid-template-columns:2fr 2fr 1fr"><div><label>Name</label><input id="srcnew_n" placeholder="e.g. Harvey Tool data"></div><div><label>Start from</label><select id="srcnew_f"><option value="">Empty — I'll fill the bands in</option><option value="BAND">A copy of my Bands</option><option value="MFR">The catalogue, frozen into bands</option><option value="TYP">The typical model, frozen into bands</option>${srcs.map(x=>`<option value="S:${esc(x.key)}">A copy of ${esc(x.name)}</option>`).join('')}</select></div><div style="align-self:end"><button class="b" id="srcnew">Create source</button></div></div></div>
- <div class="card"><h2>Paste or import a source</h2><p class="mu">Paste text copied with <b>Copy</b> (from this or another copy of the app), or import a file made with <b>Export</b>. A CSV with the columns <code>material, cutter, lo, hi, Vc, fz</code> (like the matbands download) also works — it becomes a new source with those bands.</p>
+ <div class="card srcedit"><h2>Paste or import a source</h2><p class="mu">Paste text copied with <b>Copy</b> (from this or another copy of the app), or import a file made with <b>Export</b>. A CSV with the columns <code>material, cutter, lo, hi, Vc, fz</code> (like the matbands download) also works — it becomes a new source with those bands.</p>
  <textarea id="srcpaste" rows="4" placeholder="Paste a copied source here…"></textarea>
  <p class="row"><button class="b s" id="srcpastebtn">Create from pasted text</button><button class="b s" id="srcclip" title="Read straight from the clipboard">Paste from clipboard</button><button class="b s" id="srcimp">Import file…</button><input type="file" id="srcfile" accept=".json,.csv,application/json,text/csv" hidden><span class="mu" id="srcimpmsg"></span></p></div>`;
  const msg=t=>{const m=$('#srcmsg');if(m)m.textContent=t},imsg=t=>{const m=$('#srcimpmsg');if(m)m.textContent=t};
@@ -6685,6 +6816,7 @@ function drawSources(){const ord=srcList(),srcs=L.sources||[],cnt=k=>L.matbands.
  const fromPkg=async(o,via)=>{let nm=o.name||'Imported source';if((L.sources||[]).some(x=>x.name===nm))nm+=' (copy)';const k=await srcCreate(nm,o.note,o.bands,o.baselines,via);if(k){drawSources();msg(`“${nm}” created — ${o.bands.length} band rows, ${(o.baselines||[]).length} overrides.`)}};
  $('#pbody').onclick=async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;
   if(d.srcup!=null||d.srcdn!=null){const i=+(d.srcup!=null?d.srcup:d.srcdn),j=d.srcup!=null?i-1:i+1,o=ord.slice();[o[i],o[j]]=[o[j],o[i]];SET.srcOrder=o;await saveSet({srcOrder:o});return drawSources()}
+  if(d.srctpl){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:'source-template-'+today()+'.'+d.srctpl,data:srcTemplate(d.srctpl)});toast('Blank source template downloaded')}catch(x){toast('Download failed: '+(x.message||x))}return}
   if(d.srcbands!=null){MBS=d.srcbands;PS='bands';return drawParams()}
   if(d.srcbl!=null){BLS=d.srcbl;PS='bl';return drawParams()}
   if(d.srccp!=null){const p=srcPackage(d.srccp);if(!p)return;const txt=JSON.stringify(p);if(!(await srcCopyText(txt))){const ta=$('#srcpaste');ta.value=txt;ta.select();msg('Clipboard not available here — the text is selected in the box below; copy it with Ctrl+C.')}return}
@@ -6702,9 +6834,109 @@ function drawSources(){const ord=srcList(),srcs=L.sources||[],cnt=k=>L.matbands.
   if(b.id==='srcimp')return $('#srcfile').click()};
  $('#pbody').onchange=async e=>{const t=e.target,d=t.dataset;
   if(t.id==='srcfile'){const f=t.files&&t.files[0];t.value='';if(!f)return;try{await fromPkg(srcParse(await f.text(),f.name),'imported '+f.name)}catch(x){imsg(x.message||String(x))}return}
+  if(d.sst){const st=Object.assign({},SET.srcStyle||{}),o=Object.assign({},st[d.sst]||{});if(t.value)o[d.ssk]=t.value;else delete o[d.ssk];if(Object.keys(o).length)st[d.sst]=o;else delete st[d.sst];SET.srcStyle=Object.keys(st).length?st:null;await saveSet({srcStyle:SET.srcStyle});return drawSources()}
   if(d.srcon){const nx=Object.assign({},SET.tiers||{});if(t.checked)delete nx[d.srcon];else nx[d.srcon]=false;SET.tiers=Object.keys(nx).length?nx:null;return saveSet({tiers:SET.tiers})}
   if(d.srcname!=null||d.srcnote!=null){const k=d.srcname!=null?d.srcname:d.srcnote,S=srcs.find(x=>x.key===k);if(!S)return;const f=d.srcname!=null?'name':'note',old=S[f],v=t.value.trim();if(f==='name'&&!v){t.value=old;return}S[f]=v;
    logChange('sources',S.name,f,old||'',v,'Cutting data → Sources');saveLib('sources');await flushLib();saveCLOG();renderCheat();msg('Saved ✓')}}}
+/* ---------- 2026-10-15 page locks: every editing page opens locked (view only). "Unlock to edit" → edit → "Save & lock"
+   saves anything still pending, tidies the rows so they are uniform, and locks the page again. lib/settings.locks = {page:false}
+   for pages left unlocked. Controls that only look (filters, pickers, downloads) stay usable while locked. ---------- */
+let CPW_SAVED=null;
+const csvCell=v=>{if(v==null)return '';const t=String(v);return /[",\n\r]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t};
+const LOCKP={
+ 'data:sources':{name:'Sources',allow:'[data-srcbands],[data-srcbl],[data-srccp],[data-srcexp],[data-srctpl]',norm:()=>normSources()},
+ 'data:bands':{name:'Bands',allow:'#mbsrc,[data-mbm],#mbcsv,#mbmach,[data-srctpl]',norm:()=>normBands()},
+ 'data:bl':{name:'Baselines',allow:'#bls,#blf,#blcsv'},
+ 'data:base':{name:'Material limits',allow:'[data-bf]',norm:()=>normBase()},
+ 'cycles:groups':{name:'Cycle pages',allow:'[data-cpi],#cpq,#cp_pv *,#hmtablist *',save:async()=>{if(!CPW||JSON.stringify(CPW)===CPW_SAVED)return true;const b=$('#cp_save');if(!b)return true;b.click();await new Promise(r=>setTimeout(r,900));return JSON.stringify(CPW)===CPW_SAVED}},
+ 'cycles:tree':{name:'Cycle tree',allow:'#topenall,#tcloseall'},
+ rules:{name:'Rules',allow:'[data-ruhelp],#rutpl,#rucsv',save:()=>rulesSave()},
+ prompts:{name:'Prompts',allow:'',save:()=>promptsSave()},
+ 'lib:data':{name:'Library data',allow:'#lk,#lf,#lmore,#lbak'}};
+const lockKey=()=>CUR==='data'?'data:'+PS:CUR==='cycles'?'cycles:'+PS2:CUR==='lib'?(LS==='data'?'lib:data':''):(CUR==='rules'||CUR==='prompts')?CUR:'';
+const isLocked=k=>!(SET.locks&&SET.locks[k]===false);
+let LOCKMO=null;
+function lockDisable(root,allow){root.querySelectorAll('input,select,textarea,button').forEach(el=>{if(el.dataset.lk||el.closest('.lockbar'))return;if(allow&&el.matches(allow))return;el.disabled=true;el.dataset.lk='1'})}
+function applyLock(){const k=lockKey(),P=LOCKP[k];if(LOCKMO){LOCKMO.disconnect();LOCKMO=null}if(!P)return;
+ const page=document.getElementById(CUR);const root=page&&(page.querySelector('#pbody')||page.querySelector('#lbody'));if(!root)return;
+ root.querySelectorAll(':scope > .lockbar').forEach(x=>x.remove());const lk=isLocked(k);root.classList.toggle('islocked',lk);
+ const bar=document.createElement('div');bar.className='lockbar noprint'+(lk?'':' on');
+ bar.innerHTML=lk?`<span>🔒 <b>${esc(P.name)} — locked</b></span><span class="mu">View only, so nothing changes by accident. Unlock to edit; <b>Save &amp; lock</b> saves, tidies the rows and locks it again.</span><button class="b sm" data-lockt="${esc(k)}">Unlock to edit</button>`
+  :`<span>✎ <b>Editing ${esc(P.name)}</b></span><span class="mu">${P.save?'Press <b>Save &amp; lock</b> when you are done — it saves your changes first.':'Changes save as you go; press <b>Save &amp; lock</b> when you are done.'}</span><button class="b sm" data-lockt="${esc(k)}">Save &amp; lock</button>`;
+ root.prepend(bar);
+ if(lk){lockDisable(root,P.allow);LOCKMO=new MutationObserver(()=>lockDisable(root,P.allow));LOCKMO.observe(root,{childList:true,subtree:true})}}
+async function setLock(k,locked){const n=Object.assign({},SET.locks||{});if(locked)delete n[k];else n[k]=false;SET.locks=Object.keys(n).length?n:null;SETDOC=Object.assign(SETDOC||{},{locks:SET.locks});
+ if(!OFFLINE&&db)try{await db.doc('lib/settings').update({v:LIB_V,locks:SET.locks})}catch(x){}}
+function redrawLocked(){if(CUR==='data'||CUR==='cycles')drawParams();else if(CUR==='lib')renderLib();else if(CUR==='rules')drawRules();else if(CUR==='prompts')drawPrompts()}
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('[data-lockt]');if(!b)return;const k=b.dataset.lockt,P=LOCKP[k];if(!P)return;
+ if(isLocked(k)){await setLock(k,false);return redrawLocked()}
+ b.disabled=true;b.textContent='Saving…';
+ if(P.save){let ok=false;try{ok=await P.save()}catch(x){console.error(x)}if(!ok){b.disabled=false;b.textContent='Save & lock';toast('Not locked — fix the problems shown first');return}}
+ let m='';if(P.norm)try{m=await P.norm()||''}catch(x){console.error(x)}
+ await setLock(k,true);redrawLocked();toast(P.name+' saved and locked'+(m?' — '+m:''))});
+/* after a Save button succeeds on its own, the page locks again */
+document.addEventListener('click',e=>{if(e.target.id==='cp_save')setTimeout(async()=>{if(CPW&&JSON.stringify(CPW)===CPW_SAVED&&!isLocked('cycles:groups')){await setLock('cycles:groups',true);if(CUR==='cycles')drawParams()}},900)});
+/* tidy-ups run by Save & lock — make the rows uniform */
+const sigN=(v,n)=>v===''||v==null||!isFinite(+v)?v:+(+v).toPrecision(n);
+async function normBands(){let ch=0;L.matbands.forEach(r=>{if(String(r.source||'')!==MBS)return;const o=JSON.stringify(r);r.material=String(r.material||'').trim();r.cutter=String(r.cutter||'').trim().toUpperCase();
+  ['lo','hi'].forEach(k=>{if(r[k]!==''&&r[k]!=null&&isFinite(+r[k]))r[k]=+(+r[k]).toFixed(3)});if(r.Vc!==''&&r.Vc!=null&&isFinite(+r.Vc))r.Vc=+r.Vc>=100?Math.round(+r.Vc):sigN(r.Vc,3);r.fz=sigN(r.fz,3);if(r.src)r.src=String(r.src).trim();if(JSON.stringify(r)!==o)ch++});
+ L.matbands.sort((a,b)=>String(a.source||'').localeCompare(String(b.source||''))||String(a.material).localeCompare(String(b.material))||String(a.cutter).localeCompare(String(b.cutter))||(+a.lo - +b.lo));
+ logChange('matbands','(tidy)','tidied and locked','',ch+' rows','Save & lock');saveLib('matbands');await flushLib();saveCLOG();return ch?`${ch} band row${ch===1?'':'s'} tidied`:''}
+async function normSources(){let ch=0;(L.sources||[]).forEach(S=>{const o=JSON.stringify(S);S.name=String(S.name||S.key).trim().replace(/\s+/g,' ');S.note=String(S.note||'').trim();if(JSON.stringify(S)!==o)ch++});
+ if(ch){saveLib('sources');await flushLib()}return ''}
+async function normBase(){const num=['Vc','fz','apD','aeD','apDmax'];let ch=0;L.baseline.forEach(r=>{const o=JSON.stringify(r);['material','tool','subcycle','op','band'].forEach(k=>{r[k]=String(r[k]==null||r[k]===''?'*':r[k]).trim()});
+  num.forEach(k=>{if(r[k]===''||r[k]==null)delete r[k];else if(isFinite(+r[k]))r[k]=sigN(r[k],3)});['coolant','note'].forEach(k=>{if(r[k]!=null){r[k]=String(r[k]).trim();if(!r[k])delete r[k]}});if(JSON.stringify(r)!==o)ch++});
+ if(ch){logChange('baseline','(tidy)','tidied and locked','',ch+' rows','Save & lock');saveLib('baseline');await flushLib();saveCLOG()}return ch?`${ch} limit${ch===1?'':'s'} tidied`:''}
+async function promptsSave(){const keys=['ask.core','ask.knowledge','learn.tutor'];let n=0;let P=(L.prompts||[]).slice();
+ for(const k of keys){const el=document.getElementById('pr_'+k);if(!el)continue;const p=P.find(x=>x&&x.key===k),cur=(p&&p.text)||promptFor(k);if(el.value===cur)continue;logChange('prompts',k,'text',p?p.text:'',el.value,'Prompts');P=P.filter(x=>x&&x.key!==k).concat([{key:k,text:el.value}]);n++}
+ if(!n)return true;if(OFFLINE||!db){toast('Offline — not saved');return false}try{await writeLib('prompts',P);L.prompts=P;await saveCLOG();return true}catch(x){toast('Save failed: '+(x.message||x.code));return false}}
+
+/* ---------- 2026-10-15 blank source template: the standard format for a source — every material × cutter type × Ø range in
+   your library with empty Vc / f/edge, plus (JSON) every sub-cycle × operation baseline row with empty multipliers ---------- */
+function srcTemplate(kind){const bands=[];L.materials.forEach(m=>{const mat=m.Material;if(!mat)return;mbCutters().forEach(ck=>mbRanges(ck).forEach(b=>bands.push({material:mat,cutter:ck,lo:b.lo,hi:b.hi,Vc:'',fz:'',src:'',note:''})))});
+ if(kind==='csv')return ['material,cutter,lo,hi,Vc,fz,src,note'].concat(bands.map(r=>['material','cutter','lo','hi','Vc','fz','src','note'].map(k=>csvCell(r[k])).join(','))).join('\r\n');
+ const bl=[];['rough','semi','finish'].forEach(op=>bl.push({subcycle:'*',op,vcMult:'',fzMult:'',apD:'',apDmax:'',aeD:'',aeDmax:''}));
+ famRows().forEach(([f])=>TR().filter(([r])=>r.parent===f.Cycle).forEach(([r])=>(f.fixedOp?[f.fixedOp]:(r.usableAs||[])).forEach(op=>bl.push({subcycle:r.key,subcycleName:f.Cycle+' › '+r.Cycle,op,vcMult:'',fzMult:'',apD:'',apDmax:'',aeD:'',aeDmax:''}))));
+ return JSON.stringify({type:SRC_PKG,v:1,name:'My source',note:'',format:{bands:'material = exact name in Materials · cutter = cutter type (BX, BX-R = bull nose, CD = carbide drill …) · lo / hi = Ø range in mm · Vc = roughing cutting speed m/min · fz = f/edge at full engagement in mm (drills, reamers: feed per rev; taps: pitch, optional) · src / note = where the numbers came from. Rows left blank are skipped on import.',
+  baselines:'one row per sub-cycle × operation; subcycle * = this source’s default for that operation. vcMult / fzMult = × on the band values; apD / aeD = stepdown / stepover ×Ø; apDmax / aeDmax = limits ×Ø. Blank = use the shared baselines.'},bands,baselines:bl},null,1)}
+
+/* ---------- 2026-10-15 auto-detect: a material or cutter type that is new to the app gets generic band tables (catalogue, else
+   typical model) in Bands, blank tables in each custom source, and a blank material-limits row, so they are ready to fill in.
+   lib/settings.known remembers what has been seen; the first run only records it. ---------- */
+let AUTO_BUSY=false;
+async function autoDetect(){if(AUTO_BUSY||OFFLINE||!db||!L.materials.length||!L.tools.length)return null;AUTO_BUSY=true;try{
+ const mats=L.materials.map(m=>m.Material).filter(Boolean),cks=mbCutters(),K=SET.known;
+ const save=async k=>{SET.known=k;SETDOC=Object.assign(SETDOC||{},{known:k});try{await db.doc('lib/settings').update({v:LIB_V,known:k})}catch(x){}};
+ if(!K||!Array.isArray(K.materials)){await save({materials:mats,cutters:cks});return null}
+ const km=new Set(K.materials.map(x=>String(x).trim().toLowerCase())),kc=new Set((K.cutters||[]).map(x=>String(x).trim().toUpperCase()));
+ const nm=mats.filter(m=>!km.has(m.trim().toLowerCase())),nc=cks.filter(c=>!kc.has(c));if(!nm.length&&!nc.length)return null;
+ const add=[],lim=[];
+ mats.forEach(m=>cks.forEach(c=>{if(!nm.includes(m)&&!nc.includes(c))return;const why=nm.includes(m)?'new material '+m:'new cutter type '+c;
+  if(!mbRows(m,c,'').length)add.push(...mbSeedTable(m,c).map(r=>Object.assign(r,{src:'Generic (auto) · '+(r.src||''),note:'added automatically for the '+why+' — check and adjust'})));
+  (L.sources||[]).forEach(S=>{if(mbRows(m,c,S.key).length)return;mbRanges(c).forEach(b=>add.push({material:m,cutter:c,lo:b.lo,hi:b.hi,Vc:'',fz:'',src:'Blank (auto)',note:'fill in, or delete to use the next source',source:S.key}))})}));
+ nm.forEach(m=>{if(!L.baseline.some(r=>String(r.material||'').trim().toLowerCase()===m.trim().toLowerCase()))lim.push({material:m,tool:'*',subcycle:'*',op:'*',band:'*',auto:today()})});
+ nc.forEach(c=>{if(!L.baseline.some(r=>String(r.tool||'').trim().toUpperCase()===c))lim.push({material:'*',tool:c,subcycle:'*',op:'*',band:'*',auto:today()})});
+ const via='auto-detect';if(add.length){L.matbands.push(...add);await writeLib('matbands',L.matbands);logChange('matbands',[...nm,...nc].join(', '),'auto-added','',add.length+' rows',via,'generic tables in Bands, blank tables in custom sources')}
+ if(lim.length){L.baseline.push(...lim);await writeLib('baseline',L.baseline);logChange('baseline',[...nm,...nc].join(', '),'auto-added','',lim.length+' blank rows',via)}
+ await save({materials:[...new Set([...K.materials,...mats])],cutters:[...new Set([...(K.cutters||[]),...cks])]});saveCLOG();SF.invalidate();
+ const t=`New ${[nm.length?'material'+(nm.length>1?'s':'')+' '+nm.join(', '):'',nc.length?'cutter type'+(nc.length>1?'s':'')+' '+nc.join(', '):''].filter(Boolean).join(' and ')}: generic band tables and blank material limits added — check them in Cutting data.`;
+ toast(t,6000);return {nm,nc,bands:add.length,limits:lim.length}}catch(e){console.error('autoDetect',e);return null}finally{AUTO_BUSY=false}}
+
+/* ---------- 2026-10-15 Bands: RPM and feed range for each Ø row (n = Vc·1000 ÷ πØ; F = n · f/edge · z, or n · f for drills) ---------- */
+let MBMACH='';
+const mbZdef=ck=>{const b=SF.baseCk(ck);return mbIsRev(ck)?1:b==='BN'||b==='LP'||b==='CH'?2:b==='AL'?3:4};
+function mbRF(r,c){const Vc=+r.Vc,f=+r.fz,lo=Math.max(+r.lo||0,.1),hi=+r.hi;if(!(Vc>0)||!(hi>0))return null;
+ const cap=MBMACH?capOf(MBMACH):Infinity,rpm=D=>Math.min(Vc*1000/(Math.PI*D),cap),rev=mbIsRev(c);
+ const ts=L.tools.filter(t=>ckOfCode(t['Tool Code'])===c).map(t=>({D:+t['Diameter (mm)'],z:+t.Flutes})).filter(t=>t.D>=lo-.005&&t.D<=hi+.005);
+ const pts=ts.length?ts:[{D:lo,z:NaN},{D:hi,z:NaN}],zOf=t=>rev?1:t.z>0?t.z:mbZdef(c);
+ const rs=pts.map(t=>rpm(t.D)),fs=f>0?pts.map(t=>rpm(t.D)*f*zOf(t)):[];
+ return {r0:Math.min(...rs),r1:Math.max(...rs),f0:fs.length?Math.min(...fs):NaN,f1:fs.length?Math.max(...fs):NaN,capped:Vc*1000/(Math.PI*lo)>cap,est:!ts.length||(!rev&&ts.some(t=>!(t.z>0))),n:ts.length}}
+function mbRFcells(r,c){const x=mbRF(r,c);if(!x)return '<td class="n mu mbrf">—</td><td class="n mu mbrf">—</td>';const tt=`${x.n?x.n+' of your tools in this range':'no tools in this range — Ø ends shown'}${x.est?' · flute count estimated':''}${x.capped?' · capped by the spindle limit':''}`;
+ return `<td class="n mbrf" title="${esc(tt)}" style="white-space:nowrap">${x.capped?'<span class="bad">⚠</span> ':''}${mbRng(x.r0,x.r1)}</td><td class="n mbrf" title="${esc(tt)}" style="white-space:nowrap">${x.est&&isFinite(x.f0)?'≈ ':''}${mbRng(x.f0,x.f1)}</td>`}
+const mbRng=(a,b)=>{const f=x=>Math.round(x).toLocaleString();return !isFinite(a)?'—':Math.abs(a-b)<.5?f(a):f(a)+'–'+f(b)};
+
+/* lock wrappers: every editing page re-applies its lock after it draws */
+['drawSources','drawBandEd','drawBLEd','drawBaseEd','drawParamGroups','drawTreeEd','drawRules','drawPrompts','drawLibData'].forEach(n=>{const f=window[n];if(typeof f!=='function')return;window[n]=function(){const r=f.apply(this,arguments);try{applyLock()}catch(e){console.error('lock',e)}return r}});
 /* Formulas list (editing happens on the Formulas page, same editor) */
 function drawFxList(){const all=FXL();
  $('#pbody').innerHTML=`<div class="card"><h2>Formulas</h2><p class="mu">Stored in lib/formulas. Edit opens the formula on the Formulas page with its live syntax check.</p><p><button class="b s sm" id="fxnew">+ Add formula</button></p>
@@ -6719,7 +6951,7 @@ let CPI=0,CPQ='';
 const CP_CTL=[['radio','Radio buttons'],['dropdown','Dropdown'],['check','Tick box'],['number','Number'],['text','Value / expression']];
 const cpCtlOf=p=>p.type==='select'?(p.ctl||((p.options||[]).filter(Boolean).join()==='On,Off'?'check':'dropdown')):p.type==='text'?'text':'number';
 const reEsc=t=>String(t).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-function drawParamGroups(){if(!CPW)CPW=clone(CP());const using=cpHasLayout(L.cycleparams)?'your saved pages':L.cycleparams.length?'the built-in pages (your earlier saved set has no tab layout, so it is not used)':'the built-in pages';
+function drawParamGroups(){if(!CPW){CPW=clone(CP());CPW_SAVED=JSON.stringify(CPW)}const using=cpHasLayout(L.cycleparams)?'your saved pages':L.cycleparams.length?'the built-in pages (your earlier saved set has no tab layout, so it is not used)':'the built-in pages';
  if(CPI>=CPW.length)CPI=0;const rx=g=>{try{return new RegExp(g.Match||'a^','i')}catch(e){return null}},g=CPW[CPI]||{Group:'',Match:'',Params:[]},r=rx(g),ms=r?HMC().filter(c=>r.test(c.Cycle)):[],un=HMC().filter(c=>!CPW.some(x=>{const q=rx(x);return q&&q.test(c.Cycle)}));
  const list=CPW.map((x,i)=>[x,i]).filter(([x])=>!CPQ||(x.Group+' '+x.Match).toLowerCase().includes(CPQ.toLowerCase()));
  const P=g.Params||[],tabs=[...new Set(P.map(p=>p.tab||'Settings'))].sort((a,b)=>{const i=HM_TABS.indexOf(a),j=HM_TABS.indexOf(b);return (i<0?50:i)-(j<0?50:j)});
@@ -6767,7 +6999,7 @@ function drawParamGroups(){if(!CPW)CPW=clone(CP());const using=cpHasLayout(L.cyc
   if(b.id==='cp_dup'){const c=clone(G);c.Group+=' (copy)';c.Match='';CPW.splice(CPI+1,0,c);CPI++;return drawParamGroups()}
   if(b.id==='cp_reset'){if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Replace every page with the built-in set? Click again';return}CPW=clone(CPD);CPI=0;drawParamGroups();return msg('Built-in pages loaded — press Save to keep them.')}
   if(b.id==='cp_save'){if(OFFLINE||!db)return toast('Offline — not saved');const keys=new Set();for(const x of CPW)for(const p of (x.Params||[])){if(!p.key)return msg(`A field in “${x.Group}” has no key.`)}
-   try{const rows=CPW.map(g=>({...g,Params:(g.Params||[]).map(p=>{const q={...p};Object.keys(q).forEach(k=>(q[k]===''||q[k]==null)&&delete q[k]);if(q.type!=='select')delete q.options;return q})}));await writeLib('cycleparams',rows);L.cycleparams=rows;logChange('cycleparams','(pages)','saved','',rows.length+' pages','Cycles → Cycle pages');saveCLOG();msg('Saved ✓');toast('Cycle pages saved');const h=$('#cp');if(h)h.dataset.k='';renderLog()}catch(x){msg('Save failed: '+(x.message||x.code))}}}}
+   try{const rows=CPW.map(g=>({...g,Params:(g.Params||[]).map(p=>{const q={...p};Object.keys(q).forEach(k=>(q[k]===''||q[k]==null)&&delete q[k]);if(q.type!=='select')delete q.options;return q})}));await writeLib('cycleparams',rows);L.cycleparams=rows;CPW_SAVED=JSON.stringify(CPW);logChange('cycleparams','(pages)','saved','',rows.length+' pages','Cycles → Cycle pages');saveCLOG();msg('Saved ✓');toast('Cycle pages saved');const h=$('#cp');if(h)h.dataset.k='';renderLog()}catch(x){msg('Save failed: '+(x.message||x.code))}}}}
 
 /* ----- 3.7 undo the last sub-cycle migration batch: every cut in it goes back to untagged (family, sub-cycle, band null; the
    legacy operation string restored). Cut records are never deleted; the undo is itself logged. ----- */
@@ -6924,10 +7156,18 @@ function renderSetup(){const jobs=[...new Set(CUTS.map(c=>c.job).filter(Boolean)
  $('#sj').onchange=draw;$('#sp').onclick=()=>window.print();draw()}
 
 /* ---------- User guide ---------- */
-function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Where things are</h2><ul><li><b>Shop floor</b>: Speeds &amp; Feeds, Log cut, Cut database, Setup sheet.</li><li><b>Data</b>: <b>Cutting data</b> (Sources, Bands, Baselines, Material limits) · <b>Cycles</b> (Cycle pages, Cycle tree) · <b>Library</b> (tools, materials, holders, machines, tooling audit, change log) · <b>Rules</b> · <b>Formulas</b>.</li><li><b>AI</b>: Ask AI, Learn AI, Prompts (the instructions each AI uses).</li><li><b>App</b>: Settings (API key, Google Sheet, backup / restore), To-do, this guide.</li></ul></div>
+function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Where things are</h2><ul><li><b>Shop floor</b>: Speeds &amp; Feeds, Log cut, Cut database, Setup sheet.</li><li><b>Data</b>: <b>Cutting data</b> (Sources, Bands, Baselines, Material limits) · <b>Cycles</b> (Cycle pages, Cycle tree) · <b>Library</b> (tools, materials, holders, machines, tooling audit, change log) · <b>Rules</b> · <b>Formulas</b>.</li><li><b>AI</b>: Ask AI, Learn AI, Prompts (the instructions each AI uses).</li><li><b>App</b>: Settings (API key, Google Sheet, backup / restore), To-do, this guide.</li>
+<li><b>Locks</b>: every editing page (Sources, Bands, Baselines, Material limits, Cycle pages, Cycle tree, Rules, Prompts, Library data) opens <b>locked</b> — view only, filters and downloads still work. Press <b>Unlock to edit</b>; when done press <b>Save &amp; lock</b>, which saves anything pending, tidies the rows (numbers rounded the same way, tables sorted) and locks the page again. Saving Rules or Cycle pages with their own Save button locks them too.</li>
+<li><b>New materials and cutter types</b> are picked up automatically (at start-up and when you edit the library): they get generic band tables in Bands (catalogue, else typical model — marked <i>Generic (auto)</i>), blank tables in each custom source, and a blank Material limits row marked <i>new · auto</i>. Check them, then download the CSVs for the Sheet.</li></ul></div>
 <div class="card"><h2>Speeds &amp; Feeds</h2><ul><li>Every recommendation starts from a <b>band</b> reference (roughing Vc and f/edge at full engagement for a material › cutter type › Ø range) and goes through the same <b>baseline</b> formula: operation ratio, the sub-cycle's Vc × / f/edge ×, chip thinning at light ae, the square / bull-nose factor and the material limits. Sources only differ in where the reference comes from.</li><li><b>Sources</b>: <span class="src BAND">BAND</span> your band tables · <span class="src CUTS">CUTS</span> your <i>Verified</i> cuts, worked back to a reference and averaged (median) · <span class="src MFR">MFR</span> manufacturer catalogue · <span class="src TYP">TYP</span> typical values · <span class="src CUS">custom</span> sources you make. The first enabled source in your order that has data is used; set the order and switch sources on/off in Cutting data → Sources.</li><li>The grid shows a column for every source so you can compare them. In the calculator, the source chips let you force one source; <b>Auto</b> goes back to the order.</li><li><b>Square vs bull nose</b>: end mills, bull-nose and similar tools with a corner radius have their own tables (e.g. BX and BX-R). Bull noses rough harder (f/edge ×1.15 by default); square end mills finish better. The factors are in Cutting data → Baselines.</li><li><b>Drills, reamers and taps</b> have their own band tables with feed per rev (f/rev). Taps feed at the pitch, so the TAP table only holds Vc.</li><li><b>Calculator</b>: change ae or ap and Vc / fz follow. <b>Open in Log cut</b> fills the log form — nothing is saved until you press Save there.</li><li>Hover any value for its full working: reference, source, each factor and limit.</li></ul></div>
-<div class="card"><h2>Cutting data</h2><ul><li><b>Sources</b>: order, on/off, and your own sources. <b>New source</b> starts empty or as a copy of the bands, catalogue, typical values or another source; it gets its own band tables and baseline overrides. <b>Copy</b> puts a source on the clipboard, <b>Export</b> saves a .json file, and <b>Paste or import</b> takes either back in (.json, or a bands-style .csv).</li><li><b>Bands</b>: pick the source, material and cutter type, then edit the Ø table. <b>Fill from catalogue</b> seeds an empty table; problems (overlaps, gaps, odd jumps) are flagged.</li><li><b>Baselines</b>: one row per sub-cycle — Vc ×, f/edge ×, ap / ae (×Ø) and their max. Pick a custom source to override just some of its rows ('All sub-cycles' changes every row at once). Also holds the square / bull-nose factors and the calculator's engagement factors.</li><li><b>Material limits</b>: each row reads as a sentence ("In 17-4PH, BX, Ø6–12: max stepdown 1×Ø"); choose what it applies to, then fill only the limits you need. Empty fields mean no limit.</li></ul></div>
+<div class="card"><h2>Cutting data</h2><ul><li><b>Sources</b>: order, on/off, and your own sources. <b>New source</b> starts empty or as a copy of the bands, catalogue, typical values or another source; it gets its own band tables and baseline overrides. <b>Copy</b> puts a source on the clipboard, <b>Export</b> saves a .json file, and <b>Paste or import</b> takes either back in (.json, or a bands-style .csv).</li><li><b>Bands</b>: pick the source, material and cutter type, then edit the Ø table. <b>Fill from catalogue</b> seeds an empty table; problems (overlaps, gaps, odd jumps) are flagged. The <b>RPM</b> and <b>Feed</b> columns show the range across each Ø row (from your tools in that range; ≈ = flute count estimated); pick a machine under <b>RPM limit</b> to cap them at its spindle speed.</li>
+<li><b>Source look</b>: unlock Sources to give any source its own icon, colour and style (solid, soft, outline); the tags in Speeds &amp; Feeds and the calculator follow.</li>
+<li><b>Blank source template</b> (Sources, or Bands): the standard format for a source — every material × cutter × Ø range with Vc and fz empty (CSV), or with every baseline row too (JSON). Fill it in and import it as a new source; empty rows are skipped.</li><li><b>Baselines</b>: one row per sub-cycle — Vc ×, f/edge ×, ap / ae (×Ø) and their max. Pick a custom source to override just some of its rows ('All sub-cycles' changes every row at once). Also holds the square / bull-nose factors and the <b>calculator factors per cycle family</b>: where the light-ae Vc boost starts and how far it goes, Vc and f/edge at a full-width slot, the chip-thinning limit, and how fz eases off at deep ap. Each family has its own built-in values (roughing boosts more and slows down in a full slot; finishing stays gentler); grey = inherited, type to override.</li><li><b>Material limits</b>: each row reads as a sentence ("In 17-4PH, BX, Ø6–12: max stepdown 1×Ø"); choose what it applies to, then fill only the limits you need. Empty fields mean no limit.</li></ul></div>
 <div class="card"><h2>Cycles</h2><ul><li><b>Cycle pages</b>: what Log cut shows for each hyperMILL cycle, laid out like its dialog (tabs › boxes › fields). Pick a page, add or remove the cycles it is used for, edit fields (name, control, options, unit) and watch the preview. Press <b>Save</b>; <b>Reset</b> returns to the built-in pages.</li><li><b>Cycle tree</b>: families › operations › sub-cycles as cards. Click a family to open it, click an operation chip to allow / disallow it for a sub-cycle, and use <b>+ Sub-cycle</b> to add one. Anything a logged cut uses cannot be removed, and every change goes to the Change log.</li></ul></div>
+<div class="card"><h2>Rules</h2><ul><li>Every rule is <b>When</b> (conditions, all must match) <b>→ Then</b> (actions), with a note and On / Off. Build them with the drop-downs; the sentence above each rule says what it does, and the grey line is the stored form (Sheet <i>rules</i> tab: <code>when, set, note, on</code>).</li>
+<li>Conditions: material, material group (ISO), cutter type (BX-R …), tool suffix, corner (square / bull / ball), flutes, operation, cycle family, sub-cycle, Ø band, tool Ø, coolant, machine. <code>a|b</code> = either; <b>is not</b>; numbers take &lt; ≤ &gt; ≥.</li>
+<li>Actions: Vc ×, f/edge ×, Vc / f/edge / RPM / feed at most, stepdown / stepover (set or at most), Ra target, coolant, a warning, or block.</li>
+<li>Rules apply last, to every source and the calculator; lower rules win for the same field. <b>How rules work</b> on the page has the full reference and examples you can add with one click; <b>Download blank rules template</b> gives the format as a CSV.</li></ul></div>
 <div class="card"><h2>Log cut</h2><ul><li>Required: material and tool code. Pick the <b>Sub-cycle</b> (family › operation › sub-cycle) so the cut can feed the CUTS source later; the Ø band is fixed from the tool when you save. A sub-cycle that does not allow the chosen operation is refused.</li><li><b>Suggested start</b> uses the same resolver as Speeds &amp; Feeds and says what it is based on — <b>see them</b> opens those cuts. <b>Use these</b> fills Vc, Fz, ap and ae.</li><li>RPM = Vc×1000 ÷ (π×Ø), Feed = RPM × Fz × flutes, MRR = Feed × DOC × WOC ÷ 1000, all live from the tool's diameter and flutes. The geometry card warns on L/D, DOC beyond the flute length, spindle limit and chip load.</li><li>Choosing a <b>hyperMILL cycle</b> shows that cycle's extra settings. They are saved with the cut and shown in the Cut database, Setup sheet and Ask AI.</li><li>Always record the Result, then tick <b>Verified</b> in the Cut database once you trust a cut — only verified Good/Stable/Quick cuts feed recommendations.</li></ul></div>
 <div class="card"><h2>Cut database</h2><ul><li><b>Filters</b>: type in the search box, or click a pill (Material, Tool, Type, Family, Sub-cycle, Operation, Band, Machine, Job, Holder, Result, Date) and tick values. Values in one pill widen the list (OR); different pills narrow it (AND). The number beside each value is how many cuts you would see if you added it. Chosen values show as chips — × removes one; <b>Clear all</b> removes everything. Clicking the Date, Material, Tool, Cycle, Sub-cycle or Result column header opens the same filter with sort buttons.</li><li><b>Views ▾</b> applies a built-in view (My BX roughs, All PEEK, Recent failures) or one you saved; saved views stay in this browser.</li><li>The filter is remembered and is in the page address, so a link to the Cut database opens with it. <b>Export CSV</b> exports the filtered rows; the first line records the filter.</li><li>Tick <b>Verified</b> on cuts you trust — only those feed recommendations. Click a <b>Sub-cycle</b> cell to tag or re-tag a cut.</li><li><b>Upload toolpath (POF)</b>: choose hyperMILL .pof files. Decode fills Log cut with the RPM, feed, stepdown, stepover, tool and sub-cycle it was programmed with (14 cycle types so far); add the material and result, then Save — the POF is attached to that cut. Only the parameter part of the file is kept.</li></ul></div>
 <div class="card"><h2>Ask AI</h2><ul><li>Ask for parameters: "Rough 17-4PH H1025 with a Ø12 end mill". It searches your logs first, then calls the Speeds &amp; Feeds engine and states each value's source tag.</li><li>It can tell you which hyperMILL cycle settings to fill in, and flags suspect tool geometry.</li><li>Use the Question builder to compose a precise question.</li></ul></div>
@@ -6967,7 +7207,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-14.11';
+const APP_V='2026-10-15.1';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
@@ -7001,6 +7241,13 @@ function selfTest(){const R=[],ok=(name,c,info)=>{R.push([name,!!c]);console[c?'
    {const tr=[{key:'fam',Cycle:'F',name:'F',parent:'',fixedOp:null},{key:'s1',Cycle:'S1',name:'S1',parent:'F',usableAs:['rough'],opDefaults:{rough:{apD:1,aeD:.5,vcMult:1.1,fzMult:1.2,aeDmax:.3}}}];
    const rb=SF.resolveBaseline({material:'X',iso:'P1',tool:'BX',subcycle:'s1',op:'rough',band:null,rows:[],tree:tr});ok('baseline formula: f/edge × and ae max come from the sub-cycle',rb.fzMult===1.2&&rb.subAeDmax===.3&&rb.vcMult===1.1,JSON.stringify([rb.fzMult,rb.subAeDmax]));}
    {const E=ENG_DEF;ok('calculator: Vc boost only below ½Ø and capped',engKv(5,10,E)===1&&engKv(1,10,E)>1&&engKv(.01,10,E)===E.vcMax);ok('calculator: fz eases past 1×Ø ap, not below the floor',engKa(10,10,E)===1&&Math.abs(engKa(20,10,E)-.85)<1e-9&&engKa(100,10,E)===E.apMin);}
+   {const R1=engCfg('Roughing (3D)'),F1=engCfg('Finishing (3D)');ok('calculator factors differ by cycle family',R1.vcMax!==F1.vcMax&&engKv(10,10,R1)<1&&engKv(10,10,F1)===1&&engKf(10,10,R1)<1);
+    const c={material:'PEEK',iso:'PL',tool:'BX',cutter:'BX-R',corner:'bull',flutes:3,op:'rough',diameter:8,family:'Roughing (3D)',subcycle:'',machine:'M1',coolant:'Air'};
+    ok('rules: either-or, not, numbers, new conditions',SF.matchWhen('material=POM|PEEK, cutter!=BX, flutes>=3, family=roughing (3d), corner=bull, coolant=air, machine=M1',c)&&!SF.matchWhen('cutter=BX',c)&&SF.matchWhen('tool_suffix=BX, diameter<10',c));
+    const ro=SF.applyRules({src:{}},[{when:'*',set:'fz_mult=1.2, rpm_max=9000, feed_max=1500, vc_max=300, warn=x'},{when:'*',set:'vc_mult=2',on:'off'}],c);
+    ok('rules: new actions, and a rule switched off is skipped',ro.ruleFzMult===1.2&&ro.ruleRpmMax===9000&&ro.ruleFeedMax===1500&&ro.ruleVcMax===300&&ro.ruleWarns[0]==='x'&&ro.ruleVcMult==null);
+    ok('rules editor: unknown names are refused',SF.ruleProblems({when:'colour=red',set:'speed=3'}).length===2);
+    ok('blank source template has every column',/^material,cutter,lo,hi,Vc,fz,src,note/.test(srcTemplate('csv')));}
    ok('pick ladder: BAND beats catalogue',SF.pick({band:{src:'BAND',vc:1,fz:.01},mfr:{src:'MFR',vc:1,fz:.01}}).src==='BAND');}
    ok('pick ladder: BAND › CUTS › MFR › TYP (GEM / CAL ignored)',SF.pick({cuts:{vc:1,fz:.01},mfr:m,gem:g,cal:c,typ:t}).src==='CUTS'&&SF.pick({mfr:m,gem:g,cal:c,typ:t}).src==='MFR'&&SF.pick({gem:g,cal:c,typ:t}).src==='TYP'&&SF.pick({typ:t},{TYP:false})===null)}
   if(GEMD.baselines.length){
