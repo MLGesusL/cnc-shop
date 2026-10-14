@@ -153,6 +153,25 @@ ul{margin:4px 0 0 18px;padding:0}li{margin:3px 0;max-width:80ch}
 .mbt>summary::-webkit-details-marker{display:none}.mbt>summary::before{content:'⊞';color:var(--mu)}.mbt[open]>summary::before{content:'⊟'}
 .mbt>summary .mu{font-weight:400}
 .mbt table{margin:0}.mbt .tw{margin:0 10px 8px;border-radius:3px}
+/* hyperMILL cycle pages (2026-10-14): tab strip › boxed groups › radios / ticks / values, no diagrams */
+.hmp{border:1px solid var(--bd2);border-radius:var(--r);background:var(--card);margin:8px 0 12px}
+.hmtabs{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--bd2);background:var(--sub);border-radius:var(--r) var(--r) 0 0;padding:4px 4px 0}
+.hmtabs button{border:1px solid transparent;border-bottom:0;background:transparent;color:var(--tx);padding:6px 12px;font:inherit;font-size:14px;cursor:pointer;border-radius:4px 4px 0 0;margin-bottom:-1px}
+.hmtabs button small{color:var(--mu);margin-left:5px;font-size:11px}
+.hmtabs button.on{background:var(--card);border-color:var(--bd2);font-weight:600}
+.hmpanel{padding:10px}.hmprint{display:none}
+.hmboxes{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;align-items:start}
+.hmbox{border:1px solid var(--bd2);border-radius:4px;margin:0;padding:6px 10px 8px;min-width:0}
+.hmbox legend{font-size:13px;color:var(--mu);padding:0 4px;font-weight:600}
+.hmf{margin:5px 0}.hmf[hidden],.hmbox[hidden]{display:none}
+.hmv{display:grid;grid-template-columns:1fr minmax(90px,130px);gap:8px;align-items:center}
+.hmv input,.hmv select{min-height:32px;padding:3px 8px;width:100%}
+.hml{font-size:14px}.hmf>.hml{display:block}.hmv>.hml{display:inline}
+.hmr{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:2px 12px}
+.hmr label,.hmc{display:flex;gap:6px;align-items:center;font-size:14px;margin:2px 0;cursor:pointer;font-weight:400}
+.hmr input,.hmc input{width:auto;min-height:0;margin:0}
+.hmp .hmf b{display:block}
+@media print{.hmpanel[hidden]{display:block!important}.hmprint{display:block;font-weight:600;margin:6px 0}}
 .bltab td{padding-top:3px;padding-bottom:3px;vertical-align:middle}.bltab input{min-height:30px;padding:3px 7px}
 .bltab tr.blhd td{background:var(--sub);font-weight:600;font-size:15px;border-top:2px solid var(--bd2)}.bltab tr.blfam td{background:var(--hiwash)}
 .bltab tr.blfirst td{border-top:1px solid var(--bd2)}.bltab td.blx{white-space:normal;min-width:260px;font-size:12px;color:var(--mu);line-height:1.4}
@@ -2222,7 +2241,7 @@ const CP_5X=[CPs('incl_mode','Tilt strategy',['Fixed','Automatic','Radial Z','Ma
  CPdeg('max_ang_z','Max. angle to Z','Machine limitation'),CPc('auto_index','Automatic indexing',{sec:'Automatic indexing'}),CPc('allow_vert','Allow vertical',{sec:'Automatic indexing'}),CPc('allow_sim','Allow simultaneous',{sec:'Automatic indexing'})];
 const CP_REF=[CPs('ref_type','Type',['Ballmill'],{sec:'Reference (Tool tab)',hint:ONLY('Ballmill')}),CPmm('ref_tool_d','Diameter','Reference (Tool tab)')];
 const INF='No screenshot of this cycle — fields taken from the matching screenshot named here (same OPEN MIND brochure tab list).';
-const CPD=[
+const CPD0=[
 /* ===== Drilling (IMG 1–44) ===== */
 {Group:'Centering',Match:'^centering',Note:'IMG 1–6, Parameters tab.',Params:[
  CPs('cen_mode','Machining mode',['Centering','Chamfer existing hole']),CPs('cen_depth','Machining depth',['Related to depth','Related to diameter','Related to hole diameter']),
@@ -2444,6 +2463,1865 @@ const CPD=[
  P('hand','Hand','select',{options:['','RH','LH']}),P('entry_arc','Lead-in arc (°)',0,{unit:'°'}),P('smooth_overlap','Smooth overlap (mm)',0,{unit:'mm'}),
  P('fin_tool','Finishing tool type','select',{options:['','Ball / bull nose','Barrel (circle-segment)','Conical barrel','Lens']}),P('strat','Pocket / path strategy','select',{options:['','Spiral','Parallel','Contour-parallel','Trochoidal']})]}
 ];
+/* ---------- 2026-10-14: hyperMILL cycle PAGES — every cycle as its dialog: tab › box › field, read from the 226 screenshots
+   (hypermill_cycle_pages.docx). Tabs that only pick geometry (Contours selection lists, Boundary curves, Feature, Transformation)
+   are left out; the Tool tab only where it holds cutting values. Spec lines:
+     @Group | match regex | note        =Tab        [Box]        %MACRO … / &MACRO (shared blocks)
+     key * Label : a | b    radio        key v Label : a | b   dropdown        key ? Label   tick box (On / Off)
+     key #mm Label          value (unit after #: mm, °, s, rpm, mm/min, or none)       key $ Label   value / hyperMILL expression
+     … @key=Value           shown only when that radio / dropdown is set to Value (as hyperMILL hides the other mode's fields)
+     … // hint
+   Existing keys are kept so logged cuts keep their labels. Editable in Library → Cycle parameters (saved copy wins). ---------- */
+const CPL=String.raw`%DMODE
+=Contours
+[Drilling mode]
+drill_mode * Drilling mode : 2D drilling | 2D multi index drilling | 5X Drilling
+%DOPT
+=Optimization
+[Sorting strategy]
+sort * Sorting strategy : Off | Shortest distance | Circular | X parallel | Y parallel | Contour parallel
+[Start]
+start_ref ? Use start reference
+[Z optimization]
+max_z #mm Max. Z depth
+%MAREA
+[Machining area]
+top_off #mm Top offset
+abs_top ? Absolute top
+off_bot #mm Offset bottom
+abs_bot ? Absolute bottom
+tip_comp ? Tip angle compensation
+break_through ? Break through length
+%HOLESEC
+[Hole security]
+clear_d #mm Clearance distance
+retract_d #mm Retract distance
+%RETSAFE
+[Retract mode]
+ret_mode * Retract mode : Clearance plane | Clearance distance
+[Safety]
+safe_plane #mm Clearance plane
+safe_dist #mm Clearance distance
+%MACRO3D
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Auto macro]
+macro_len $ Macro length @macro_mode=Auto // e.g. 0.35*T:Dia
+side_dist $ Side distance @macro_mode=Auto // e.g. 0.1*T:Dia
+vert_dist $ Vertical distance @macro_mode=Auto // e.g. 0.02*T:Dia
+[Approach macro]
+app_macro v Approach macro : Perpendicular | Tangential | Quarter circle | Half circle | None @macro_mode=Manual
+app_r #mm Radius @macro_mode=Manual
+app_h #mm Height @macro_mode=Manual
+app_ext #mm Macro extension @macro_mode=Manual
+[Retract macro]
+ret_macro v Retract macro : Perpendicular | Tangential | Quarter circle | Half circle | None @macro_mode=Manual
+ret_r #mm Radius @macro_mode=Manual
+ret_h #mm Height @macro_mode=Manual
+ret_ext #mm Macro extension @macro_mode=Manual
+[Contour extension (open contours only)]
+ext_start #mm Start @macro_mode=Manual
+ext_end #mm End @macro_mode=Manual
+[Macro position]
+macro_pos * Macro position : Left | Right @macro_mode=Manual
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+%RETSAFE3D
+[Retract mode]
+retract_sel v Retract mode : Clearance plane | Clearance distance
+[Safety]
+safe_plane #mm Clearance plane
+axial_clear #mm Axial clearance
+side_clear $ Side clearance // e.g. 0.1*T:Rad
+%HPC
+=High Performance
+[High Performance Roughing]
+hp_mode ? High Performance Mode
+open_cut ? Opening cut
+hp_zigzag ? Zigzag
+[Feedrate limit]
+min_feed $ Min. feedrate // tick + value in hyperMILL (e.g. J:F*0.5) — leave blank when unticked
+[Reposition]
+repos_clear $ Clearance // e.g. J:Sd*0.1
+repos_f #mm/min Feedrate
+[Infeed]
+dense_step # Dense area stepover (factor)
+plunge_f $ Plunge feedrate // e.g. J:Fr
+infeed_min_feed ? Min. feedrate
+[Entry feedrate]
+side_entry # Factor side entry
+%MAN
+[Machining area]
+man_top ? Manual top
+man_bot ? Manual bottom
+%BND3D
+=Boundary
+[Strategy]
+bnd_strat * Boundary strategy : Boundary curve | Milling surfaces
+[Smooth overlap at boundary]
+smooth_ov ? Use smooth overlap
+[Milling surface mode]
+surf_mode * Milling surface mode : Extension | Standard
+[Milling surface extension]
+surf_ext ? Auto
+ext_len $ Length // default Rad*0.5
+[Stop surfaces]
+stop_hoff #mm Additional horizontal offset
+stop_off $ Offset // e.g. I:MTol*2
+[Trim]
+trim_stock ? Trim to Stock
+%TOL3D
+[Tolerance parameters]
+tol_cases ? Tolerance use cases
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+g0_min #mm Min. G0 distance
+%REFTOOL
+=Tool
+[Reference]
+ref_type v Type : Ballmill // only this value was visible in the screenshot
+ref_tool_d #mm Diameter
+%MACVTC
+=Macros
+[Approach macro]
+app_macro * Approach macro : Vertical | Tangential | Circular
+app_r #mm Radius
+[Retract macro]
+ret_macro * Retract macro : Vertical | Tangential | Circular
+ret_r #mm Radius
+[Return macro]
+ret_ret * Return macro : Yes | No
+macro_normal ? Macros normal to surfaces
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+%TOOLREF
+[Tool reference]
+tool_ref * Tool reference : To | On | Past | Contact
+bnd_off #mm Offset
+%AX5
+=5 Axes
+[Tilt strategy]
+incl_mode * Tilt strategy : Fixed | Automatic | Radial Z | Manual curve | Offset curve
+[Setup: C axis]
+c_axis * Setup: C axis : Holder (tilt curve) | Tip (radial curve)
+rigid ? Rigid guiding
+lead #° Additional lead angle
+[Setup: A / B axis]
+side #° Tilt angle
+[Collision avoidance A/B]
+collision ? Collision avoidance
+prefer_ab ? Prefer A/B
+max_range #° Max. range
+[Machine limitation]
+max_ang_z #° Max. angle to Z
+[Automatic indexing]
+auto_index ? Automatic indexing
+allow_vert ? Allow vertical
+allow_sim ? Allow simultaneous
+%MAC5SW
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Approach macro]
+app_smooth ? Smooth @macro_mode=Auto
+app_len $ Length @macro_mode=Auto // e.g. Dia*0.35
+app_side $ Side clearance @macro_mode=Auto
+app_axial $ Axial clearance @macro_mode=Auto
+app_lift $ Max. axial lift @macro_mode=Auto
+app_macro * Approach macro : Perpendicular | Tangential | Circular | Ramp @macro_mode=Manual
+app_l #mm Length @macro_mode=Manual
+app_rh #mm Ramp height @macro_mode=Manual
+app_axd #mm Additional axial distance @macro_mode=Manual
+[Retract macro]
+ret_smooth ? Smooth @macro_mode=Auto
+ret_len $ Length @macro_mode=Auto
+ret_side $ Side clearance @macro_mode=Auto
+ret_axial $ Axial clearance @macro_mode=Auto
+ret_lift $ Max. axial lift @macro_mode=Auto
+ret_macro * Retract macro : Perpendicular | Tangential | Circular @macro_mode=Manual
+ret_l #mm Length @macro_mode=Manual
+ret_rh #mm Ramp height @macro_mode=Manual
+ret_axd #mm Additional axial distance @macro_mode=Manual
+[Return macro]
+ret_ret * Return macro : Yes | No
+macro_sim ? Macro simultaneous
+%CLR5
+[Clearance mode]
+clear_mode5 * Clearance mode : Planar | Radial
+%SET5X
+=Setup
+[Linking movement]
+link_ang #° Distance angle limit
+link_straight #° Clearance straighten angle
+clear_f #mm/min Clearance feedrate
+[NC parameters]
+check_tol #mm Check tolerance
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+g0_min #mm Min. G0 distance
+ang_step #° Max. angle increment
+@Centering | ^centering | IMG 1–6
+&DMODE
+&DOPT
+=Parameters
+[Machining mode]
+cen_mode * Machining mode : Centering | Chamfer existing hole
+[Machining depth]
+cen_depth * Machining depth : Related to depth | Related to diameter | Related to hole diameter
+cen_dia #mm Diameter
+[Top offset mode]
+top_mode * Top offset mode : Relative offset | Absolute top
+top_off_opt v Top offset option : Offset top only
+top_off #mm Top offset
+&HOLESEC
+[Machining parameters]
+dwell #s Dwell time
+&RETSAFE
+@Simple drilling | ^simple drilling | IMG 7
+&DMODE
+&DOPT
+=Parameters
+&MAREA
+&HOLESEC
+[Machining parameters]
+dwell #s Dwell time
+&RETSAFE
+@Drilling with chip break / pecking | chip break|pecking | IMG 8 (chip break) and 9–11 (pecking)
+&DMODE
+&DOPT
+=Parameters
+&MAREA
+&HOLESEC
+[Machining parameters]
+dwell #s Dwell time
+retract #mm Retract value // chip break only
+peck_d $ Pecking depth // e.g. Dia*0.5
+reduce_v #mm Reduce value
+peck_min $ Min. infeed depth // default J:Red
+&RETSAFE
+@Optimized deep hole drilling | deep hole | IMG 12–16. The Process tab phase table is a table, not single fields — log it in Notes.
+&DMODE
+&DOPT
+=Process
+[Additional feedrate settings]
+step_feed ? Stepwise feedrate increase
+[Process: end of hole]
+dwell #s Dwell time
+inc_retract_end ? Incremental retract
+=Parameters
+&MAREA
+&HOLESEC
+[Cross hole safety]
+cross_safe #mm Safety distance
+[Machining parameters]
+chipbreak ? Chip break
+peck1 #mm Initial pecking depth
+peck_min $ Min. pecking depth // default J:Red
+peck_d #mm Pecking depth
+reduce_v #mm Reduce value
+retract_type * Retract : Incremental retract | Complete retract
+retract #mm Retract value
+retract_f $ Retract feedrate // e.g. J:Fa
+leadin_f $ Lead in feedrate // e.g. J:Fa
+[Lead in]
+spot ? Spot / pilot hole
+pilot_depth #mm Depth
+guide ? Guide sleeve
+guide_len #mm Length
+&RETSAFE
+@Reaming | ^reaming | IMG 17–19
+&DMODE
+&DOPT
+=Parameters
+&MAREA
+&HOLESEC
+[Machining parameters]
+dwell #s Dwell time
+f_retract #mm/min Feedrate retract
+&RETSAFE
+@Tapping | ^tapping | IMG 20–23. Pitch is greyed out (taken from the tool).
+&DMODE
+&DOPT
+=Parameters
+&MAREA
+&HOLESEC
+[Machining parameters]
+dwell #s Dwell time
+peck_d #mm Pecking depth
+pitch #mm Pitch // from the tool
+&RETSAFE
+@Boring | ^(back )?boring | IMG 24–26 (Boring). Back Boring uses the same page.
+&DMODE
+&DOPT
+=Parameters
+&MAREA
+&HOLESEC
+[Machining parameters]
+dwell #s Dwell time
+&RETSAFE
+@Helical drilling | helical drilling | IMG 27–31 (Helical Drilling); 5X Helical Drilling uses the same page.
+=Tool
+[Tool chamfer]
+tool_chamfer #mm Chamfer height
+[Spindle speed]
+rpm_r $ Roughing // e.g. J:Rpm
+rpm_f $ Finishing
+rpm_g $ Grooving // e.g. Rpm*0.8
+[Feedrate]
+f_r $ Roughing // e.g. J:F
+f_f $ Finishing
+f_g $ Grooving // e.g. J:F*0.8
+edge_ctl ? Edge control
+=Contours
+[Drilling mode]
+drill_mode * Drilling mode : 2D drilling | 2D multi index drilling | 5X Drilling
+=Optimization
+[5X]
+opt5x * 5X : Frame view | 5X grouping
+[Sorting strategy]
+sort * Sorting strategy : Off | Shortest distance | Circular | X parallel | Y parallel | Contour parallel
+[Start]
+start_ref ? Use start reference
+[Z optimization]
+max_z #mm Max. Z depth
+=Parameters
+[Machining area]
+top_off #mm Top offset
+off_bot #mm Offset bottom
+break_through ? Break through length
+&HOLESEC
+[Machining parameters]
+hd_mode v Machining parameters : Roughing and finishing // only this value was visible in the screenshot — add the others here
+plunge_ang_r #° Plunge angle roughing
+pitch_r #mm Max. pitch roughing
+plunge_ang_f $ Plunge angle finishing // default I:PAngR
+pitch_f #mm Max. pitch finishing
+fin_dir v Finishing direction : Top to bottom // only this value was visible in the screenshot
+[Allowance]
+allow_rough_xy #mm Roughing allowance XY
+allow_fin_xy #mm Finishing allowance XY
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Groove]
+groove_d #mm Groove depth
+[Chamfer]
+chamfer_h #mm Chamfer height
+chamfer_a #° Chamfer angle
+chamfer_step #mm Stepdown chamfering
+chamfer_dir v Direction : Top to bottom // only this value was visible in the screenshot
+prefer_spiral ? Prefer spiral
+[Path compensation]
+path_comp * Path compensation : Center path | Path compensation
+[Retract mode]
+ret_mode * Retract mode : Clearance plane | Clearance distance
+retract_plane v Plane : Plane on global highest point
+[Relative safety]
+auto_clear #mm Auto clearance
+safe_dist #mm Clearance distance
+move_clear #mm Movement clearance
+=Setup
+[NC parameters]
+ang_step #° Max. angle increment
+@Thread milling | ^thread milling | IMG 32–37
+=Tool
+[Feedrate]
+edge_ctl ? Edge control
+=Contours
+[Drilling mode]
+drill_mode * Drilling mode : 2D drilling | 2D multi index drilling
+=Parameters
+[Machining area]
+top_off #mm Top offset
+abs_top ? Absolute top
+off_bot #mm Offset bottom
+abs_bot ? Absolute bottom
+allow_wall #mm Allowance XY
+break_through ? Break through length
+&HOLESEC
+[Thread]
+thread_type v Thread : Internal thread right hand | Internal thread left hand | External thread right hand | External thread left hand
+pitch_mode * Pitch / Thread per inch : Pitch | Thread/inch
+pitch $ Pitch // default T:Pt
+conic #° Conic angle
+starts # Number of thread starts
+[Cutting mode]
+thr_dir * Cutting mode : Climb milling (upward) | Conventional milling (downward)
+&RETSAFE
+repos_f $ Reposition feedrate // e.g. J:F*4
+=Roughing / Finishing
+[Lateral infeed]
+lat_infeed * Lateral infeed : Constant chip section | Constant lateral infeed
+thr_passes # Roughing passes
+fin_allow #mm Finish allowance
+spring # Number of spring passes
+[Axial infeed]
+thread_step # Thread/step
+[Path compensation]
+path_comp * Path compensation : Center path | Compensated path
+[Additional options]
+start_center ? Start at center
+start_ang #° Start angle
+incomplete_rev ? Allow incomplete revolution
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Macros]
+macro * Macros : Quarter circle | Half circle | Perpendicular
+[Feedrate macros]
+f_macro $ Feedrate approach // e.g. J:F
+@Circular pocket | ^circular pocket | IMG 38–40
+&DMODE
+=Parameters
+[Machining area]
+top_off #mm Top offset
+abs_top ? Absolute top
+off_bot #mm Offset bottom
+abs_bot ? Absolute bottom
+allow_wall #mm Stock allowance XY
+premach ? Pre-machined pocket
+&HOLESEC
+[Infeed]
+zstep #mm Vertical stepdown
+stepover_f # Stepover (factor of diameter)
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Machining start]
+start_ang #° Start angle
+[Circular macro]
+circ_r #mm Radius
+&RETSAFE
+@Gun drilling | ^gun drilling | IMG 41–44
+=Tool
+[Approach / retract]
+entryrpm #rpm Spindle RPM approach
+f_approach #mm/min Feedrate approach
+f_retract #mm/min Feedrate retract
+&DMODE
+=Parameters
+&MAREA
+&HOLESEC
+[Machining parameters]
+dwell #s Dwell time
+inter_depth #mm Intermediate depth
+&RETSAFE
+@Pocket milling | ^pocket milling | IMG 45–51
+=Contours
+[Plunge points]
+plunge_pt ? Use plunge point
+plunge_1st ? Plunge 1st level only
+[Optimization]
+sort_contours ? Sort contours
+=Strategy
+[Machining mode]
+pm_mode * Machining mode : 2D mode | 3D mode | Stock mode
+[Path direction]
+direction * Path direction : Climb milling | Conventional milling
+[Adaptive pocket]
+adaptive ? Use adaptive pocket
+=Parameters
+[Infeed]
+zstep #mm Vertical stepdown
+step_by * Horizontal infeed : Horizontal stepover | Stepover (factor of diameter)
+scallop $ Horizontal stepover // default T:Dia*0.5
+stepover_f # Stepover (factor of diameter)
+[Allowance]
+allow_wall #mm Allowance XY
+allow_floor #mm Allowance Z
+[Path compensation]
+comp_fin ? Compensated finish path
+[Toolpath fillets]
+fin_corner $ Fillet radius // default Dia*0.05
+fillet_h $ Radius horizontal infeed // default T:Dia*0.1
+fillet_all ? Fillet all toolpaths
+[Retract mode]
+ret_mode * Retract mode : Clearance plane | Lead-in keep position | Lead-in reposition
+[Safety]
+safe_plane #mm Clearance plane
+safe_dist #mm Clearance distance
+=High Performance
+[High Performance Roughing]
+hp_mode ? High Performance Mode
+open_cut ? Opening cut
+hp_zigzag ? Zigzag
+[Feedrate limit]
+min_feed $ Min. feedrate // tick + value in hyperMILL (e.g. J:F*0.5) — leave blank when unticked
+[Reposition]
+repos_clear $ Clearance // e.g. J:Sd*0.1
+repos_f #mm/min Feedrate
+[Infeed]
+dense_step # Dense area stepover (factor)
+plunge_f $ Plunge feedrate // e.g. J:Fr
+infeed_min_feed ? Min. feedrate
+[Entry feedrate]
+side_entry # Factor side entry
+=Macros
+[Retract macro]
+ret_macro * Retract macro : None | Perpendicular | Circular
+ret_r #mm Radius
+[Plunge macro]
+entry * Plunge macro : None | Ramp | Helical
+ramp_angle $ Angle // default J:PAng
+helix_r #mm Helix radius
+[Output mode]
+g2g3 ? G2/G3
+=Setup
+[NC parameters]
+tol #mm Machining tolerance
+@Contour milling | ^contour milling$ | IMG 52–56
+=Contours
+[Global depth]
+global_depth v Global depth : Global depth off // only this value was visible in the screenshot
+[Options]
+ovl v Overlap : Overlap off // only this value was visible in the screenshot
+=Parameters
+[Tool position]
+tool_pos * Tool position : On contour | Left | Right
+[Path compensation]
+path_comp * Path compensation : Center path | Compensated path
+max_comp $ Max. compensation value // default Rad*0.01
+[Infeed]
+zstep #mm Vertical stepdown
+infeed_dir * Infeed : Oneway | Zigzag
+[Allowance]
+allow_wall #mm Allowance XY
+allow_floor #mm Allowance Z
+[Lateral infeed area]
+stepover_f # Stepover (factor of diameter)
+lat_offset #mm Offset
+[Machining priority]
+priority * Machining priority : Depth | Plane
+&RETSAFE
+[Interior corners]
+fillet_int ? Fillet interior corners
+[Options]
+end_plunge ? End with plunge point
+bottom_up ? Bottom to top milling
+prefer_spiral ? Prefer spiral
+=Macros
+[Approach macro]
+app_macro v Approach macro : Quarter circle // only this value was visible in the screenshot
+app_r #mm Radius
+app_h #mm Height
+app_ext #mm Macro extension
+[Retract macro]
+ret_macro v Retract macro : Quarter circle // only this value was visible in the screenshot
+ret_r #mm Radius
+ret_h #mm Height
+ret_ext #mm Macro extension
+[Contour extension (open contours only)]
+ext_start #mm Start
+ext_end #mm End
+[Macro position]
+macro_pos * Macro position : Left | Right
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+=Setup
+[NC parameters]
+tol #mm Machining tolerance
+@Contour milling on 3D model | ^contour milling on 3d | IMG 57–65
+=Contours
+[Mode]
+cm_mode v Mode : Contour | Surface
+[Global depth]
+global_depth v Global depth : Global depth off // only this value was visible in the screenshot
+[Options]
+ovl v Overlap : Overlap off // only this value was visible in the screenshot
+[Feedrate options]
+feed_opt * Feedrate options : Center | Edge control
+=Strategy
+[Tool position]
+tool_pos * Tool position : Left | Right
+tool_pos_auto ? Auto
+[Infeed]
+infeed_dir * Infeed : Oneway | Zigzag
+[Machining priority]
+priority * Machining priority : Depth | Plane | Global plane
+[Interior corners]
+fillet_int ? Fillet interior corners
+[Edge behavior]
+edge_beh v Edge behavior : Roll (standard) // only this value was visible in the screenshot
+=Parameters
+[Path compensation]
+path_comp * Path compensation : Center path | Compensated path
+max_comp $ Max. compensation value // default Rad*0.01
+[Allowance]
+allow_wall #mm Allowance XY
+allow_floor #mm Allowance Z
+[Vertical infeed mode]
+v_infeed_mode * Vertical infeed mode : Fixed step | Fit step
+[Infeed]
+zstep #mm Vertical stepdown
+[Horizontal infeed mode]
+h_infeed_mode * Horizontal infeed mode : Fixed step | Fit step
+[Lateral infeed area]
+total_infeed #mm Total infeed
+scallop $ Horizontal stepover // default T:Rad
+finish_path #mm Finish path
+[Additional options]
+last_level ? Finish only last level
+spring_pass ? Spring path
+&RETSAFE3D
+&MACRO3D
+=Setup
+[NC parameters]
+check_tol #mm Check tolerance
+tol #mm Machining tolerance
+@T-slot milling on 3D model | t-?slot milling | IMG 66–72
+=Contours
+[Global depth]
+global_depth v Global depth : Global depth off // only this value was visible in the screenshot
+=Strategy
+[Tool position]
+tool_pos * Tool position : On contour | Left | Right
+tool_pos_auto ? Auto
+[Infeed]
+infeed_dir * Infeed : Oneway | Zigzag
+[Machining priority]
+priority * Machining priority : Depth | Plane
+[Interior corners]
+fillet_int ? Fillet interior corners
+corner_feed_red ? Reduce corner feedrate
+[Axial infeed]
+axial_infeed v Axial infeed : Auto // only this value was visible in the screenshot
+=Parameters
+[Allowance]
+allow_wall #mm Allowance XY
+allow_top #mm Allowance top
+allow_bottom #mm Allowance bottom
+[Axial infeed]
+max_ax_step $ Max. axial step // default T:DiscHt
+fin_allow_top #mm Finish allowance top
+fin_allow_bottom #mm Finish allowance bottom
+[Lateral infeed area]
+max_lat_step $ Max. lateral step // default T:Rad
+fin_allow #mm Finish allowance
+[Path compensation]
+path_comp * Path compensation : Center path | Compensated path
+[Additional options]
+prefer_spiral ? Prefer spiral
+spring_pass ? Spring path
+break_through ? Break through length
+[Retract mode]
+ret_mode * Retract mode : Clearance plane | Clearance distance
+[Safety]
+safe_plane #mm Clearance plane
+axial_clear #mm Axial clearance
+side_clear $ Side clearance // e.g. 0.15*T:Rad
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Approach macro]
+app_macro * Approach macro : Perpendicular | Tangential | Quarter circle | Half circle | None
+app_r #mm Radius
+app_ext #mm Macro extension
+[Retract macro]
+ret_macro * Retract macro : Perpendicular | Tangential | Quarter circle | Half circle | None
+ret_r #mm Radius
+ret_ext #mm Macro extension
+[Contour extension (open contours only)]
+ext_start #mm Start
+ext_end #mm End
+[Macro position]
+macro_pos * Macro position : Left | Right
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+=Setup
+[NC parameters]
+check_tol #mm Check tolerance
+tol #mm Machining tolerance
+@Chamfer milling on 3D model | chamfer milling on 3d | IMG 73–80
+=Contours
+[Options]
+ovl v Overlap : Overlap off // only this value was visible in the screenshot
+=Strategy
+[Chamfer mode]
+chamfer_mode * Chamfer mode : Modelled chamfer | Deburr / chamfer sharp edges
+[Tool position]
+tool_pos * Tool position : Left | Right
+tool_pos_auto ? Auto
+[Toolpath fillets]
+fillet_int ? Fillet interior corners
+[Edge behavior]
+break_edge ? Break edge
+=Parameters
+[Path compensation]
+path_comp * Path compensation : Center path | Compensated path
+[Allowance]
+allow_wall #mm Allowance XY
+allow_floor #mm Allowance Z
+[Cutting diameter]
+nom_dia $ Nominal diameter // default T:Ndia
+[Infeed mode]
+infeed_mode * Infeed mode : Single path | Stepdown | Lateral increments
+[Infeed]
+infeed_step #mm Infeed step
+fin_allow #mm Finish allowance
+[Additional options]
+spring_pass ? Spring path
+prefer_spiral ? Prefer spiral
+&RETSAFE3D
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Auto macro]
+macro_len $ Macro length @macro_mode=Auto // e.g. 0.5*T:Rad
+side_dist $ Side distance @macro_mode=Auto // e.g. 0.2*T:Rad
+[Approach macro]
+app_macro * Approach macro : Perpendicular | Tangential | Quarter circle | Half circle | None | Ramp @macro_mode=Manual
+app_r #mm Radius @macro_mode=Manual
+app_ext #mm Macro extension @macro_mode=Manual
+[Retract macro]
+ret_macro * Retract macro : Perpendicular | Tangential | Quarter circle | Half circle | None @macro_mode=Manual
+ret_r #mm Radius @macro_mode=Manual
+ret_ext #mm Macro extension @macro_mode=Manual
+[Contour extension (open contours only)]
+ext_start #mm Start @macro_mode=Manual
+ext_end #mm End @macro_mode=Manual
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+=Setup
+[NC parameters]
+tol #mm Machining tolerance
+shank_off #mm Shank offset
+@Face milling | ^face milling | IMG 81–84
+=Contours
+[Mode]
+face_src * Mode : Contour | Stock mode
+[Global depth]
+global_depth v Global depth : Global depth off // only this value was visible in the screenshot
+=Parameters
+[Machining mode]
+face_dir * Machining mode : X parallel | Y parallel
+face_ang #° Machining angle
+[Infeed mode]
+infeed_mode * Infeed mode : Zigzag direct | Zigzag smooth | Oneway
+[Vertical infeed]
+v_mode v Mode : Adjust stepdown to bottom // only this value was visible in the screenshot
+zstep #mm Vertical stepdown
+[Horizontal infeed]
+step_by * Horizontal infeed : Horizontal stepover | Stepover (factor of diameter)
+scallop $ Horizontal stepover // default Dia*0.5
+stepover_f # Stepover (factor of diameter)
+corner_cons ? Consider corner radius
+fit_steps ? Fit steps
+[Allowance]
+allow_floor #mm Allowance Z
+[Stock]
+stock_xy #mm Stock offset XY
+stock_z #mm Stock offset Z
+[Macros]
+approach_fac # Approach factor
+retract_fac # Retract factor
+return_macro ? Return macro
+&RETSAFE
+=Setup
+[NC parameters]
+tol #mm Machining tolerance
+@3D optimized roughing | ^3d optimi[sz]ed roughing|arbitrary stock roughing|optimi[sz]ed rest roughing | IMG 85–92 (3D Optimized Roughing); 3D Arbitrary Stock Roughing and 5X Optimized Rest Roughing use the same page.
+=Tool
+[Tool]
+corner_cons ? Consider corner radius
+=Strategy
+[Machining mode]
+or_mode * Machining mode : Roughing | Rest roughing | Finish pass
+new_ver ? New version
+[Machining priority]
+priority * Machining priority : Plane | Pocket
+[Toolpath fillets]
+corner_r $ Contour radius // default Dia*0.05
+path_r $ Path radius // default Dia*0.1
+[Adaptive pocket]
+adaptive ? Use adaptive pocket
+adaptive_only ? Adaptive pocket only
+normal_feed $ Normal feedrate // e.g. J:F
+full_feed $ Fullcut feedrate // e.g. J:Fr
+[Full cut behavior]
+full_red ? Reduce feedrate during full cut
+=Parameters
+&MAN
+[Infeed]
+step_by * Horizontal infeed : Horizontal stepover | Stepover (factor of diameter)
+scallop $ Horizontal stepover
+stepover_f # Stepover (factor of diameter)
+zstep #mm Vertical stepdown
+max_step_h ? Max. step height
+[Allowance]
+allow #mm Allowance
+allow_add_xy #mm Additional allowance XY
+[Stock removal tolerance]
+add_chip $ Additional chip thickness // default Rad*0.15
+add_depth $ Additional chip depth // default VStep*2
+[Plane level detection]
+plane_det * Plane level detection : Off | Auto | Optimized - complete
+&RETSAFE
+&HPC
+=Macros
+[Plunge macro]
+entry * Plunge macro : Ramp | Helical
+ramp_angle $ Angle // default J:PAng
+plunge_rpm $ Spindle speed // e.g. J:Rpm
+plunge_dwell #s Dwell time
+[Plunge points]
+drill_dia $ Drill diameter // e.g. Dia*1.25
+drill_ang #° Drill angle
+=Setup
+[Model]
+multi_allow ? Multiple allowances
+[Stockmodel]
+undercut_trim ? Undercut trimming
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Avoid collision | Skip
+[NC parameters]
+tol #mm Machining tolerance
+min_pocket $ Min. pocket size // default 5*T:Rad
+g2g3 ? G2/G3 output
+@3D profile finishing | ^(3d|5x) profile finishing | IMG 93–98 (3D Profile Finishing); 5X Profile Finishing uses the same page.
+=Strategy
+[Infeed strategy]
+infeed_strat v Infeed strategy : Pocket // only this value was visible in the screenshot
+cut_type v Type of cut : Ascending and descending // only this value was visible in the screenshot
+fillet_opt v Corners : Fillet interior corners // only this value was visible in the screenshot
+fin_corner $ Fillet radius // default Dia*0.025
+connect # Connect factor
+[Pre-machined contour]
+premach_off #mm Offset
+[Stepover direction]
+step_dir * Stepover direction : Inside-out | Outside-in
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Machining mode]
+slope_mode ? Slope mode
+grouping ? Grouping toolpaths
+=Parameters
+&MAN
+[Allowance]
+allow #mm Allowance
+allow_add_xy #mm Additional allowance XY
+[Vertical infeed mode]
+v_infeed * Vertical infeed mode : Only finishing | Constant stepdown | Parallel stepdown
+[Horizontal infeed mode]
+h_infeed * Horizontal infeed mode : Constant stepover | Scallop height | Constant on curve projection
+scallop $ Horizontal stepover
+&RETSAFE
+&BND3D
+=Macros
+[Approach macro]
+app_macro * Approach macro : Vertical | Tangential | Circular | Ramp
+app_r #mm Radius
+[Retract macro]
+ret_macro * Retract macro : Vertical | Tangential | Circular
+ret_r #mm Radius
+[Return macro]
+ret_ret * Return macro : Yes | No
+macro_normal ? Macros normal to surfaces
+[Advanced infeed strategy]
+adv_infeed * Advanced infeed strategy : Retract | Trim | Modify macro
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+=Setup
+[Model]
+multi_allow ? Multiple allowances
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip
+&TOL3D
+path_comp3d ? 3D path compensation
+hps ? High precision surface mode
+@3D Z-level shape finishing | ^3d z.?level | IMG 99–104 (3D Z Level Shape Finishing); 3D Z-Level Finishing uses the same page.
+=Strategy
+[Machining options]
+zl_opt * Machining options : Side walls // only this value was visible in the screenshot
+[Machining priority]
+axial_sort ? Axial sorting
+prefer_spiral ? Prefer spiral
+allow_zigzag ? Allow zigzag
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Mode]
+zl_mode * Mode : Z level | Shape offset
+[Toolpath fillets]
+fillet_int ? Fillet interior corners
+fin_corner $ Fillet radius // default Dia*0.025
+[Machining mode]
+slope_mode ? Slope mode
+[Options]
+bottom_up ? Bottom to top milling
+=Parameters
+&MAN
+[Allowance]
+allow #mm Allowance
+allow_add_xy #mm Additional allowance XY
+[Vertical infeed mode]
+v_infeed * Vertical infeed mode : Constant stepdown | Scallop height
+zstep #mm Vertical stepdown
+[Plane level detection]
+plane_det * Plane level detection : Off | Auto | Only planar faces
+&RETSAFE3D
+&BND3D
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Approach macro]
+app_smooth ? Smooth
+app_len $ Length // e.g. Dia*0.35
+app_side $ Side clearance // e.g. Rad*0.25
+app_axial $ Axial clearance // e.g. Rad*0.1
+app_lift $ Max. axial lift // e.g. Rad*0.5
+[Retract macro]
+ret_smooth ? Smooth
+ret_len $ Length
+ret_side $ Side clearance
+ret_axial $ Axial clearance
+ret_lift $ Max. axial lift
+[Return macro]
+ret_ret * Return macro : No | Yes | Optimized
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+[Start points]
+start_pt ? Use start point
+=Setup
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip | Avoid collision
+&TOL3D
+hps ? High precision surface mode
+@3D ISO machining | ^(3d|5x) iso machining | IMG 105–111 (3D ISO Machining); 5X ISO Machining uses the same page.
+=Strategy
+[Strategy]
+iso_strat * Strategy : Iso orientation | Global orientation
+[Machining direction]
+mach_dir * Machining direction : Crossway | Flow | U parameter | V parameter // Crossway / Flow with Global orientation; U / V parameter with Iso orientation
+surf_normals ? Use surface normals
+use_frame ? Use frame
+[Infeed mode]
+infeed_mode * Infeed mode : Zigzag direct | Zigzag smooth | Diagonal | Parallel
+prefer_spiral ? Prefer spiral
+f_infeed $ Feedrate infeed // e.g. J:F
+[Reverse direction]
+rev_step ? Stepover
+rev_path ? Path
+[Grouping toolpaths]
+group_mode * Grouping toolpaths : Symmetric | Uniform
+=Parameters
+[Allowance]
+allow #mm Allowance
+[Type of cut]
+cut_type * Type of cut : Ascending | Descending | Ascending and descending
+[Infeed mode]
+step_mode * Infeed mode : 3D stepover | Scallop height
+scallop #mm Stepover
+&RETSAFE
+=Boundary
+[Tool reference]
+tool_ref * Tool reference : On | Contact
+bnd_off #mm Offset
+[Stop surfaces]
+stop_off #mm Offset
+=Macros
+[Approach macro]
+app_macro * Approach macro : Vertical | Tangential | Circular
+app_r #mm Radius
+[Retract macro]
+ret_macro * Retract macro : Vertical | Tangential | Circular
+ret_r #mm Radius
+[Return macro]
+ret_ret * Return macro : Yes | No
+macro_normal ? Macros normal to surfaces
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+=Setup
+[Model]
+check_model ? Check model
+multi_allow ? Multiple allowances
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip
+&TOL3D
+@3D free path milling | ^(3d|5x) free path | IMG 112–117 (3D Free Path Milling); 5X Free Path Milling uses the same page.
+=Parameters
+[Tool position]
+tool_pos * Tool position : On contour | Left | Right
+[Allowance]
+z_off #mm Z offset contour
+allow #mm Allowance
+[Trochoids]
+troch ? Trochoidal stepover
+[Infeed]
+mach_depth #mm Machining depth
+zstep #mm Vertical stepdown
+infeed_dir * Infeed : Oneway | Zigzag | Ramp
+&RETSAFE
+=Boundary
+[Stop surfaces]
+stop_off #mm Offset
+[Trim]
+trim_stock ? Trim to Stock
+=Macros
+[Approach macro]
+app_macro * Approach macro : Vertical | Tangential | Circular | Ramp
+app_r #mm Radius
+[Retract macro]
+ret_macro * Retract macro : Vertical | Tangential | Circular
+ret_r #mm Radius
+[Return macro]
+ret_ret * Return macro : Yes | No
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+macro_normal ? Macros normal to surfaces
+=Setup
+[Model]
+check_model ? Check model
+multi_allow ? Multiple allowances
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip
+[NC parameters]
+check_tol $ Check tolerance // e.g. J:MTol
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+@3D plane machining | ^3d plane machining | IMG 118–123 (+ your Strategy-tab example: Infeed direction / Infeed mode show in Axis parallel mode)
+=Strategy
+[Machining mode]
+pl_mode * Machining mode : High feed mode | Standard mode | Axis parallel mode
+[Toolpath fillets]
+corner_r $ Contour radius // default Dia*0.025
+path_r $ Path radius // default Dia*0.1
+[Infeed direction]
+infeed_auto ? Automatic @pl_mode=Axis parallel mode
+[Infeed mode]
+infeed_mode * Infeed mode : Zigzag direct | Zigzag smooth @pl_mode=Axis parallel mode
+=Parameters
+[Vertical machining area]
+man_top ? Manual top
+man_bot ? Manual bottom
+mat_h #mm Material height
+[Vertical infeed mode]
+zstep #mm Vertical stepdown
+fin_allow #mm Finish allowance
+[Horizontal infeed mode]
+step_by * Horizontal infeed : Horizontal stepover | Stepover (factor of diameter)
+scallop $ Horizontal stepover
+stepover_f # Stepover (factor of diameter)
+[Allowance]
+allow #mm Allowance
+allow_add_xy #mm Additional allowance XY
+&RETSAFE
+=Boundary
+[Strategy]
+bnd_strat * Boundary strategy : Boundary | Plane selection
+[Trim to Stock]
+trim_stock ? Trim to Stock
+=Macros
+[Plunge macro]
+entry * Plunge macro : None | Ramp | Helical
+ramp_angle $ Angle // default J:PAng
+helix_r $ Helix radius // default Rad*0.8
+=Setup
+[Stockmodel]
+enable_stock ? Enable stock
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Avoid collision
+[NC parameters]
+tol #mm Machining tolerance
+min_pocket $ Min. pocket size
+clear_f #mm/min Clearance feedrate
+@3D complete finishing | ^3d complete finishing | IMG 124–129
+=Strategy
+[Slope dependent machining]
+slope_dep * Slope dependent machining : Off | All areas | Steep areas | Flat areas
+slope_ang #° Slope angle
+smooth_ov ? Smooth overlap
+[Steep areas]
+steep_mode * Steep areas : Oneway | Zigzag
+steep_connect # Connect factor
+[Flat areas]
+flat_mode * Flat areas : Pocket | Zigzag
+connect # Connect factor
+flat_dir * Flat areas direction : Outside-in | Inside-out
+[Toolpath fillets]
+fin_corner $ Fillet radius // default Dia*0.025
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+=Parameters
+[Machining area]
+top_z #mm Top
+bot_z #mm Bottom
+[Allowance]
+allow #mm Allowance
+allow_add_xy #mm Additional allowance XY
+[Infeed]
+zstep #mm Vertical stepdown
+scallop $ Horizontal stepover // default J:VStep
+[Plane level detection]
+plane_det_on ? Plane level detection
+&RETSAFE
+=Boundary
+[Boundaries]
+bnd_off #mm Offset
+[Trim]
+trim_mill ? Trim to milling area
+=Macros
+[Approach macro]
+app_smooth ? Smooth
+app_len $ Length
+app_side $ Side clearance
+app_axial $ Axial clearance
+app_lift $ Max. axial lift
+[Retract macro]
+ret_smooth ? Smooth
+ret_len $ Length
+ret_side $ Side clearance
+ret_axial $ Axial clearance
+ret_lift $ Max. axial lift
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+=Setup
+[Model]
+multi_allow ? Multiple allowances
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+g0_use ? Use min. distance G0
+@3D equidistant finishing | ^(3d|5x) equidistant | IMG 130–135 (3D Equidistant Finishing); 5X Equidistant Finishing uses the same page.
+=Strategy
+[Infeed strategy]
+infeed_strat * Infeed strategy : Equidistant | Flow
+[Profiles]
+prof_off #mm Offset
+use3d ? Use as 3D curve
+[Path direction]
+path_dir * Path direction : Clockwise | Counterclockwise
+[Stepover direction]
+step_dir * Stepover direction : Inside-out | Outside-in
+[Toolpath connection]
+skip_first ? Skip first path
+connect # Connect factor
+=Parameters
+[Machining area]
+man_bot ? Manual bottom
+bot_z #mm Bottom
+[Infeed]
+scallop #mm 3D stepover
+allow #mm Allowance
+allow_add_xy #mm Additional allowance XY
+&RETSAFE
+=Boundary
+&TOOLREF
+[Smooth overlap at boundary]
+smooth_ov ? Use smooth overlap
+&MACVTC
+=Setup
+[Model]
+multi_allow ? Multiple allowances
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+g0_min #mm Min. G0 distance
+hps ? High precision surface mode
+@3D automatic rest machining | ^3d automatic rest | IMG 136–142, 145
+&REFTOOL
+=Strategy
+[Restmaterial optimization]
+rest_opt v Restmaterial optimization : Cavities and open areas | Standard
+[Machining mode]
+ar_mode v Machining mode : Slope dependent machining - all areas | Slope dependent machining – off
+slope_ang #° Slope angle
+cavity_d $ Cavity depth // default T:Rad
+[Flat areas]
+flat_mode * Flat areas : Normal | Parallel
+[Steep areas]
+steep_mode * Steep areas : Z level | Parallel | Normal
+[Infeed mode]
+infeed_mode * Infeed mode : Direct | Smooth
+[Toolpath fillets]
+fin_corner $ Fillet radius // default Dia*0.025
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Blending]
+smooth_ov ? Smooth overlap
+=Parameters
+&MAN
+[Flat areas]
+scallop #mm Horizontal stepover
+allow #mm Allowance
+[Steep areas]
+zstep #mm Vertical stepdown
+&RETSAFE
+=Roughing
+[Roughing mode]
+ar_rough_on ? Activate
+ar_rough * Roughing mode : Roughing and finishing | Roughing only
+rough_cav $ Cavity depth // default Rad*0.75
+[Roughing infeed]
+rough_zstep $ Vertical stepdown // default Rad*0.25
+rough_hstep $ Horizontal stepover // default Rad*0.4
+[Roughing allowances]
+rough_allow $ Allowance // default Rad*0.1
+rough_allow_xy #mm Additional XY allowance
+[Collision avoidance mode]
+coll_mode * Collision avoidance mode : Global | By level
+=Boundary
+[Strategy]
+bnd_strat * Boundary strategy : Boundary curve | Milling surfaces
+&TOOLREF
+[Stop surfaces]
+stop_mode * Stop surfaces : Use all other surfaces | Manual selection
+=Setup
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+@3D corner rest machining | ^(3d|5x) corner rest | IMG 143–147 (3D Corner Rest Machining); 5X Corner Rest Machining uses the same page.
+&REFTOOL
+=Strategy
+[Selection mode]
+sel_mode * Selection mode : Vertical corner surface | Vertical corner edge | Bottom plane
+[Strategy]
+cr_strat v Strategy : All // only this value was visible in the screenshot
+rest_h $ Rest material height // default J:RefDia
+[Limit parallel strategy]
+min_clear_ang #° Min. clearance angle
+[Toolpath fillets]
+fin_corner $ Fillet radius
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional
+[Blending]
+smooth_ov ? Smooth overlap
+[Milling surface extension]
+surf_ext ? Auto
+ext_len $ Length // default Dia*0.25
+=Parameters
+[Parallel strategy infeed]
+scallop #mm Stepover
+[Corner rest infeed]
+zstep #mm Stepdown
+[Bottom side step]
+side_step #mm Side stepover
+[Allowance]
+allow #mm Allowance
+[Surfaces with add. allowance]
+add_allow #mm Additional allowance
+&RETSAFE
+=Setup
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+[Calculation]
+rest_offset $ Min. rest material height // default J:MTol
+@3D cutting edge machining | ^3d cutting edge | IMG 148–154
+=Contours
+[Selection mode]
+ce_sel * Selection mode : Curve | Surface | Reference job
+[Depth mode]
+depth_mode * Depth mode : Distance | Curve
+depth_dist #mm Distance
+=Strategy
+[Machining mode]
+ce_mode * Machining mode : Swarf | Plunge
+[Tool position]
+tool_pos * Tool position : On contour | Left | Right
+tool_pos_auto ? Auto
+[Cutting mode]
+ce_cut * Cutting mode : Oneway | Zigzag
+[Interior corners]
+fillet_int ? Fillet interior corners
+fin_corner $ Fillet radius // default Dia*0.025
+corner_feed_red ? Reduce corner feedrate
+[Smooth overlap]
+smooth_ov ? Use smooth overlap
+=Parameters
+[Path compensation]
+path_comp * Path compensation : Center path | Compensated center path
+[Allowance]
+allow_wall #mm Allowance XY
+allow #mm Allowance
+[Additional options]
+spring_pass ? Spring path
+[Infeed]
+zstep #mm Vertical stepdown
+z_smooth #mm Z smoothing
+[Horizontal infeed mode]
+h_infeed_mode * Horizontal infeed mode : Fixed step | Fit step
+[Lateral infeed area]
+total_infeed #mm Total infeed
+scallop #mm Horizontal stepover
+[Retract mode]
+retract_sel v Retract mode : Clearance plane | Clearance distance
+[Safety]
+safe_plane #mm Clearance plane
+axial_clear #mm Axial clearance
+=Boundary
+[Stop surfaces]
+stop_off #mm Offset
+[Trim to Stock]
+trim_stock ? Trim to Stock
+=Macros
+[Approach macro]
+app_macro * Approach macro : Perpendicular | Tangential | Circular | Ramp
+app_r #mm Radius
+[Retract macro]
+ret_macro * Retract macro : Perpendicular | Tangential | Circular
+ret_r #mm Radius
+[Return macro]
+ret_ret * Return macro : Yes | No
+[Curve extension]
+ext_start #mm Start
+ext_end #mm End
+[Feedrate macros]
+f_app $ Feedrate approach // e.g. J:F
+f_ret $ Feedrate retract // e.g. J:F
+macro_normal ? Macros normal to surfaces
+=Setup
+[Model]
+check_model ? Check model
+multi_allow ? Multiple allowances
+[NC parameters]
+check_tol $ Check tolerance // e.g. J:MTol
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+@3D rib / groove machining | rib.*groove | IMG 155–160
+&REFTOOL
+=Strategy
+[Machining mode]
+rg_mode * Machining mode : Steep only | Bottom only
+slope_ang #° Slope angle
+[Machining priority]
+priority * Machining priority : Plane | Pocket
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Toolpath fillets]
+fin_corner $ Fillet radius // default Dia*0.025
+fillet_h $ Radius horizontal infeed // default Dia*0.1
+fillet_all ? Fillet all toolpaths
+=Parameters
+&MAN
+[Infeed]
+zstep #mm Vertical stepdown
+scallop #mm Horizontal stepover
+allow #mm Allowance
+[Additional parameters]
+rg_add * Additional parameters : Minimal stock removal | Finish pass all levels
+min_stock #mm Minimal stock removal
+&RETSAFE
+=Boundary
+[Tool reference]
+tool_ref * Tool reference : To | On | Past
+=Macros
+[Plunge macro]
+entry * Plunge macro : Ramp | Helical
+ramp_angle #° Angle
+=Setup
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Avoid collision
+[NC parameters]
+tol #mm Machining tolerance
+min_pocket $ Min. pocket size // default 5*T:Rad
+small_grooves ? Small grooves more precise
+g0_use ? Use min. distance G0
+[Calculation]
+rest_offset #mm Min. rest material height
+resolution # Resolution value
+[Shank]
+shank_coll ? Avoid shank collision
+@3D pencil milling | ^3d pencil | IMG 161–166
+=Tool
+[Reference tool]
+ref_tool_d #mm Diameter
+=Strategy
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Machining mode]
+pen_mode * Machining mode : Off | All areas | Steep areas | Flat areas
+=Parameters
+[Machining area]
+top_z #mm Top
+bot_z #mm Bottom
+[Infeed]
+mach_depth #mm Machining depth
+zstep #mm Vertical stepdown
+allow #mm Allowance
+[Restmaterial]
+perp_rest ? Perpendicular restmaterial areas
+&RETSAFE
+=Boundary
+[Tool reference]
+tool_ref * Tool reference : On | Contact
+bnd_off #mm Offset
+&MACVTC
+=Setup
+[For unresolvable collision]
+unres * For unresolvable collision : Stop | Clip
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+[Pencil milling tolerance]
+rest_offset #mm Minimum stock height
+@5X Z-level finishing | ^5x z.?level | IMG 167–175
+=Strategy
+[Machining priority]
+priority * Machining priority : Plane | Pocket | Prefer spiral | Zigzag
+[Connect strategy]
+ramp_conn ? Ramp connect
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Options]
+bottom_up ? Bottom to top milling
+=Parameters
+[Machining area]
+top_z #mm Top
+bot_z #mm Bottom
+[Allowance]
+allow #mm Allowance
+[Vertical infeed mode]
+v_infeed * Vertical infeed mode : Constant stepdown | Scallop height
+zstep #mm Vertical stepdown
+&RETSAFE
+&AX5
+=Boundary
+[Strategy]
+bnd_strat * Boundary strategy : Boundary curve | Milling surfaces
+[Stop surfaces]
+stop_mode * Stop surfaces : Use all other surfaces | Manual selection
+stop_off #mm Offset
+[Trim]
+trim_mill ? Trim to milling area
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Approach macro]
+app_smooth ? Smooth @macro_mode=Auto
+app_len $ Length @macro_mode=Auto // e.g. Dia*0.35
+app_side $ Side clearance @macro_mode=Auto
+app_axial $ Axial clearance @macro_mode=Auto
+app_lift $ Max. axial lift @macro_mode=Auto
+app_macro * Approach macro : Axial | Tangential | Circular | Ramp @macro_mode=Manual
+app_r #mm Radius @macro_mode=Manual
+app_axd #mm Additional axial distance @macro_mode=Manual
+[Retract macro]
+ret_smooth ? Smooth @macro_mode=Auto
+ret_len $ Length @macro_mode=Auto
+ret_side $ Side clearance @macro_mode=Auto
+ret_axial $ Axial clearance @macro_mode=Auto
+ret_lift $ Max. axial lift @macro_mode=Auto
+ret_macro * Retract macro : Axial | Tangential | Circular @macro_mode=Manual
+ret_r #mm Radius @macro_mode=Manual
+ret_axd #mm Additional axial distance @macro_mode=Manual
+[Return macro]
+ret_ret * Return macro : Yes | No
+macro_sim ? Macro simultaneous
+=Setup
+[Model]
+undercut ? Undercut machining
+[Linking movement]
+link_ang #° Distance angle limit
+link_straight #° Clearance straighten angle
+clear_f #mm/min Clearance feedrate
+[NC parameters]
+tol #mm Machining tolerance
+ang_step #° Max. angle increment
+g1_max #mm Max. G1 length
+g0_use ? Use min. distance G0
+@5X rest machining | ^5x rest machining | IMG 176–182
+&REFTOOL
+=Strategy
+[Restmaterial optimization]
+rest_opt v Restmaterial optimization : Standard | Cavities and open areas
+[Machining mode]
+ar_mode v Machining mode : Slope dependent machining - all areas | Slope dependent machining – off
+slope_ang #° Slope angle
+[Flat areas]
+flat_mode * Flat areas : Normal | Parallel
+[Steep areas]
+steep_mode * Steep areas : Z level | Parallel | Normal
+[Infeed mode]
+infeed_mode * Infeed mode : Direct | Smooth
+[Toolpath fillets]
+fin_corner $ Fillet radius // default Dia*0.025
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Blending]
+smooth_ov ? Smooth overlap
+=Parameters
+&MAN
+[Flat areas]
+scallop #mm Horizontal stepover
+max_cut_flat $ Max. cutting depth // default T:Dia
+allow #mm Allowance
+[Steep areas]
+zstep #mm Vertical stepdown
+max_cut_steep $ Max. cutting depth // default T:Dia
+allow_steep #mm Allowance
+&RETSAFE
+=5 Axes
+[Tilt strategy]
+incl_mode * Tilt strategy : Fixed | Automatic | Radial Z | Manual curve | Offset curve
+[Setup: A / B axis]
+pref_tilt ? Preferred tilt angle
+[Min. clearance angle]
+clear_ang_on ? Clearance angle
+min_clear_ang #° Clearance angle
+clear_mode v Mode : Steep areas // only this value was visible in the screenshot
+[Machine limitation]
+max_ang_z #° Max. angle to Z
+[Automatic indexing]
+split_seg ? Split into segments
+=Boundary
+[Strategy]
+bnd_strat * Boundary strategy : Boundary curve | Milling surfaces
+&TOOLREF
+[Stop surfaces]
+stop_off #mm Offset
+[Boundary projection]
+user_proj ? User defined projection direction
+=Setup
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+ang_step #° Max. angle increment
+@5X halfpipe machining | halfpipe | IMG 183–188
+=Strategy
+[Geometry type]
+geo_type v Geometry type : No open end // only this value was visible in the screenshot
+[Strategy]
+hp_strat * Strategy : Across | Along
+hp_dir v Direction : Oneway outside-in // only this value was visible in the screenshot
+[Boundaries]
+rev_dir ? Reverse direction
+contact ? Contact mode
+=Parameters
+[Infeed]
+lat_inf #mm Lateral infeed
+[Max. distance from central curve]
+max_dist #mm Max. distance
+[Allowance]
+allow #mm Allowance
+[Technology: extend machining outwards]
+start_off #mm Start offset
+&CLR5
+[Retract mode]
+ret_mode * Retract mode : Clearance plane
+[Safety]
+safe_plane #mm Clearance plane
+safe_dist #mm Clearance distance
+=5 Axes
+[Tilt strategy]
+incl_mode v Tilt strategy : Prefer vertical // only this value was visible in the screenshot
+des_tilt #° Desired tilt angle
+[Tilt angle]
+tilt_max #° Max. tilt angle
+=Macros
+[Approach macro]
+app_r #mm Radius
+app_axo #mm Axial offset
+[Retract macro]
+ret_r #mm Radius
+ret_axo #mm Axial offset
+[Return macro]
+retm_r #mm Radius
+[Linking movement]
+link_f $ Feedrate // e.g. J:F
+=Setup
+[Check tool]
+avoid_coll ? Avoid collision
+[Linking movement]
+link_ang #° Distance angle limit
+link_straight #° Clearance straighten angle
+clear_f #mm/min Clearance feedrate
+[NC parameters]
+tip_tol ? Tip check tolerance
+tol #mm Machining tolerance
+g0_min #mm Min. G0 distance
+ang_step #° Max. angle increment
+hps ? High precision surface mode
+@5X swarf cutting one curve | swarf cutting one curve | IMG 189–197
+=Strategy
+[Mode]
+sw_mode * Mode : Curve on surfaces | Base surfaces
+[Geometry]
+drive ? Use drive surfaces
+[Reverse direction]
+rev_auto ? Auto
+rev_profile ? Profile
+rev_infeed ? Infeed direction
+cut_side ? Cutting side
+isect #mm Intersect offset
+stripe #mm Stripe height
+inv_off ? Invert offset
+[Infeed mode]
+sw_infeed * Infeed mode : Zigzag | Oneway
+[Additional surfaces]
+add_allow #mm Additional allowance
+[Axial toolpath fillets]
+fillet_ax ? Fillet interior axial corners
+[Toolpath fillets]
+rad_fillet $ Radial fillet // e.g. Rad*0.1
+ax_fillet $ Axial fillet // e.g. Rad*0.1
+=Parameters
+[Infeed]
+lat_inf #mm Lateral infeed
+ax_inf #mm Axial infeed
+add_ax #mm Additional axial distance
+trim_ax ? Trim axial infeed
+[Allowance]
+allow #mm Allowance
+allow_side #mm Additional side allowance
+[Machining area]
+tot_lat #mm Total lateral infeed
+tot_ax #mm Total axial infeed
+&CLR5
+&RETSAFE
+=Boundary
+[Stop surfaces]
+stop_off #mm Offset
+[Stock]
+trim_stock ? Trim to Stock
+[Model]
+trim_mill ? Trim to milling area
+mill_off #mm Offset
+=5 Axes
+[Tilt strategy]
+incl_mode * Tilt strategy : Iso | Normal to curve | Radial Z
+[Tilt parameters]
+side #° Tilt angle
+lead #° Lead angle
+[Toolpath smoothing]
+tilt_smooth ? Tilt smoothing
+[Fanning]
+fan #mm Fan distance
+&MAC5SW
+=Setup
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+ang_step #° Max. angle increment
+comp5x ? 5X path compensation
+@5X swarf cutting two curves | swarf cutting two curves | IMG 198–203
+=Strategy
+[Reverse direction]
+rev_top ? Top curve
+rev_bot ? Bottom curve
+rev_path ? Path
+cut_side ? Cutting side
+[Synchronize toolpaths]
+sync * Synchronize toolpaths : Equal | Distance
+[Infeed mode]
+sw_infeed * Infeed mode : Zigzag | Oneway
+=Parameters
+[Infeed]
+lat_inf #mm Lateral infeed
+ax_inf #mm Axial infeed
+add_ax #mm Additional axial distance
+[Allowance]
+allow #mm Allowance
+allow_side #mm Additional side allowance
+[Machining area]
+tot_lat #mm Total lateral infeed
+tot_ax #mm Total axial infeed
+&CLR5
+&RETSAFE
+=5 Axes
+[Toolpath smoothing]
+tilt_smooth ? Tilt smoothing
+[Fanning]
+fan #mm Fan distance
+[Tilt angle]
+side #° Tilt angle
+=Macros
+[Approach macro]
+app_macro * Approach macro : Perpendicular | Tangential | Circular | Ramp
+app_r #mm Radius
+app_rh #mm Ramp height
+app_axd #mm Additional axial distance
+[Retract macro]
+ret_macro * Retract macro : Perpendicular | Tangential | Circular
+ret_r #mm Radius
+ret_rh #mm Ramp height
+ret_axd #mm Additional axial distance
+[Return macro]
+ret_ret * Return macro : Yes | No
+&SET5X
+@5X shape offset roughing | shape offset roughing | IMG 204–211
+=Strategy
+[Machining options]
+so_opt * Machining options : Pocket inside out // only this option was visible in the screenshot
+axial_sort ? Axial sorting
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Mode]
+so_mode * Mode : Part surface mode | Drive surface mode
+use_frame ? Use frame
+[Toolpath fillets]
+fin_corner $ Fillet radius // default Dia*0.05
+=Parameters
+[Infeed]
+lat_inf $ Lateral infeed // e.g. Dia*0.5
+ax_inf #mm Axial infeed
+[Allowance]
+allow #mm Allowance
+allow_side #mm Additional side allowance
+[Machining area]
+top_z #mm Top
+bot_z #mm Bottom
+&CLR5
+&RETSAFE
+=5 Axes
+[Tilt strategy]
+incl_mode * Tilt strategy : Normal to drive surfaces // only this option was visible in the screenshot
+&HPC
+=Boundary
+[Tool reference]
+tool_ref * Tool reference : On
+bnd_off #mm Offset
+=Macros
+[Approach macro]
+entry * Approach macro : Ramp | Helical
+ramp_angle $ Angle // default J:PAng
+&SET5X
+@5X shape offset finishing | shape offset finishing | IMG 213–220
+=Tool
+[Reference]
+corner_rest ? Corner rest mode
+=Strategy
+[Machining options]
+so_opt * Machining options : Edge only | Bottom only | Side walls | Side walls and bottom
+[Cutting mode]
+direction * Cutting mode : Climb milling | Conventional milling
+[Mode]
+so_mode * Mode : Part surface mode | Drive surface mode
+use_frame ? Use frame
+[Toolpath fillets]
+fin_corner $ Fillet radius // default Dia*0.025
+=Parameters
+[Allowance]
+allow #mm Allowance
+allow_side #mm Additional side allowance
+[Machining area]
+top_z #mm Top
+bot_z #mm Bottom
+&CLR5
+&RETSAFE
+=5 Axes
+[Tilt strategy]
+incl_mode * Tilt strategy : Normal to drive surfaces // only this option was visible in the screenshot
+=Boundary
+[Stop surfaces]
+stop_off #mm Offset
+[Tool reference]
+tool_ref * Tool reference : On
+bnd_off #mm Offset
+=Macros
+[Macro mode]
+macro_mode * Macro mode : Auto | Manual
+[Approach macro]
+app_smooth ? Smooth @macro_mode=Auto
+app_len $ Length @macro_mode=Auto // e.g. Dia*0.35
+app_side $ Side clearance @macro_mode=Auto
+app_axial $ Axial clearance @macro_mode=Auto
+app_lift $ Max. axial lift @macro_mode=Auto
+app_macro * Approach macro : Axial | Tangential | Circular | Ramp @macro_mode=Manual
+app_r #mm Radius @macro_mode=Manual
+app_axd #mm Additional axial distance @macro_mode=Manual
+[Retract macro]
+ret_smooth ? Smooth @macro_mode=Auto
+ret_len $ Length @macro_mode=Auto
+ret_side $ Side clearance @macro_mode=Auto
+ret_axial $ Axial clearance @macro_mode=Auto
+ret_lift $ Max. axial lift @macro_mode=Auto
+ret_macro * Retract macro : Axial | Tangential | Circular @macro_mode=Manual
+ret_r #mm Radius @macro_mode=Manual
+ret_axd #mm Additional axial distance @macro_mode=Manual
+[Return macro]
+macro_sim ? Macro simultaneous
+ret_ret * Return macro : Off | Full | Yes | No
+&SET5X
+@5X tube finishing | tube finishing | IMG 221–226
+=Strategy
+[Strategy]
+tube_strat * Strategy : Spiral | Parallel
+[Central curve]
+tube_rev ? Reverse
+[Include bottom]
+incl_bottom ? Include bottom
+=Parameters
+[Infeed]
+ax_inf #mm Axial infeed
+inf_at * Infeed measured : At surface | At curve
+[Max. distance from central curve]
+max_dist #mm Max. distance
+[Allowance]
+allow #mm Allowance
+shank_cl #mm Add. shank clearance
+[Smooth overlap: above start plane]
+ov_start #mm Length
+[Smooth overlap: below end plane]
+ov_end #mm Length
+[Technology: non-contact paths]
+side_dist #mm Additional side distance
+nc_feed $ Feedrate // e.g. J:F
+[Safety]
+safe_plane #mm Clearance plane
+safe_dist #mm Clearance distance
+=5 Axes
+[Tilt strategy]
+incl_mode * Tilt strategy : 5X simultaneous | Fixed 3D
+[Tilt angle]
+des_tilt #° Desired tilt angle
+tilt_max #° Max. tilt angle
+=Macros
+[Approach macro]
+app_macro * Approach macro : Perpendicular | Circular
+app_r #mm Radius
+app_rh #mm Ramp height
+[Retract macro]
+ret_macro * Retract macro : Perpendicular | Circular
+ret_r #mm Radius
+[Return macro]
+ret_ret * Return macro : Yes | No
+=Setup
+[Check tool]
+avoid_coll ? Avoid collision
+[NC parameters]
+tol #mm Machining tolerance
+g1_max #mm Max. G1 length
+g0_min #mm Min. G0 distance
+ang_step #° Max. angle increment
+@5 axes | ^5x (profile finishing|iso machining|free path|equidistant|corner rest|optimi[sz]ed rest roughing) | No screenshot of the 5 Axes tab for these cycles — taken from 5X Z-level finishing (IMG 170–171). Matches together with the cycle's 3D page.
+&AX5
+=Setup
+[NC parameters]
+ang_step #° Max. angle increment
+`;
+const HM_TABS=['Tool','Contours','Strategy','Optimization','Process','Parameters','Roughing / Finishing','Roughing','High Performance','5 Axes','Boundary','Macros','Setup','Settings','Other settings'];
+function cplBuild(txt){const mac={},out=[];let cur=null,name=null;
+ String(txt).split(/\r?\n/).forEach(l=>{const m=l.match(/^%(\w+)\s*$/);if(m){name=m[1];mac[name]=[];return}if(/^@/.test(l))name=null;if(name){mac[name].push(l);return}out.push(l)});
+ const lines=[];const exp=(l,d)=>{const m=l.match(/^&(\w+)\s*$/);if(m&&mac[m[1]]&&d<4)mac[m[1]].forEach(x=>exp(x,d+1));else lines.push(l)};out.forEach(l=>exp(l,0));
+ const G=[];let tab='Settings',box='';
+ lines.forEach(raw=>{const l=raw.trim();if(!l)return;
+  if(l[0]==='@'){const [g,mt,...nt]=l.slice(1).split(' | ');cur={Group:g.trim(),Match:(mt||'').trim(),Note:nt.join(' | ').trim(),Params:[]};G.push(cur);tab='Settings';box='';return}
+  if(!cur)return;if(l[0]==='='){tab=l.slice(1).trim();box='';return}if(l[0]==='['){box=l.replace(/^\[|\]$/g,'').trim();return}
+  let body=l,hint='',when='';const hi=body.indexOf(' // ');if(hi>=0){hint=body.slice(hi+4).trim();body=body.slice(0,hi)}
+  const wm=body.match(/\s@(\w+)=(.+)$/);if(wm){when=wm[1]+'='+wm[2].trim();body=body.slice(0,wm.index)}
+  const m=body.match(/^(\w+)\s+(\*|v|\?|\$|#\S*)\s+(.+)$/);if(!m)return;const key=m[1],t=m[2];let label=m[3],opts=null;
+  const oi=label.indexOf(' : ');if(oi>=0){opts=label.slice(oi+3).split('|').map(x=>x.trim()).filter(Boolean);label=label.slice(0,oi)}
+  const p={key,label:label.trim(),tab};if(box)p.sec=box;if(hint)p.hint=hint;if(when)p.when=when;
+  if(t==='*'||t==='v'){p.type='select';p.ctl=t==='*'?'radio':'dropdown';p.options=['',...(opts||[])]}
+  else if(t==='?'){p.type='select';p.ctl='check';p.options=['','On','Off']}
+  else if(t==='$')p.type='text';else{p.type='number';const u=t.slice(1);if(u)p.unit=u}
+  if(!cur.Params.some(x=>x.key===key))cur.Params.push(p)});
+ return G}
+const CPD=(()=>{const g=cplBuild(CPL),names=new Set(g.map(x=>x.Group));return g.concat(CPD0.filter(x=>!names.has(x.Group)))})();
 /* renamed keys (old → new): both old keys described the same hyperMILL field as the new one. Applied when a logged cut is read back. */
 const CP_RENAME={ap_max:'zstep',rest_ref:'ref_tool_d'};
 /* old option values → the wording printed in hyperMILL */
@@ -2460,7 +4338,9 @@ const HMB=[
 ['^5x mb ','Impeller / blisk: conventional or plunge roughing, hub and edge machining, blade finishing by flank, point (spiral) or tangential swarf with barrel cutters.'],
 ['probing|alignment','Probing: workpiece set-up before milling, in-process measuring, and after-milling target/actual comparison; BEST FIT adapts the NC code to the real clamped position.']];
 const hmbFor=cyc=>HMB.filter(([r])=>{try{return new RegExp(r,'i').test(cyc||'')}catch(e){return false}}).map(x=>x[1]);
-const CP=()=>L.cycleparams&&L.cycleparams.length?L.cycleparams:CPD;
+/* a saved set made before the hyperMILL page layout (no tab on any field) is ignored — the built-in pages are used */
+const cpHasLayout=a=>Array.isArray(a)&&a.some(g=>(g.Params||[]).some(p=>p&&p.tab));
+const CP=()=>cpHasLayout(L.cycleparams)?L.cycleparams:CPD;
 function groupsFor(cycle){if(!cycle)return[];return CP().filter(g=>{try{return new RegExp(g.Match||'a^','i').test(cycle)}catch(e){return false}})}
 function paramsFor(cycle){const seen=new Set(),out=[];groupsFor(cycle).forEach(g=>{const ps=(g.Params||[]).filter(p=>p&&p.key&&!seen.has(p.key)&&seen.add(p.key));if(ps.length)out.push({Group:g.Group,Params:ps})});return out}
 const allParamDefs=()=>{const m={};[...CPD,...CP()].forEach(g=>(g.Params||[]).forEach(p=>{if(p&&p.key)m[p.key]=p}));return m};
@@ -2970,7 +4850,7 @@ async function loadSheets(id,tabs){
         let g=byG.get(gk);
         if(!g){g={Group:gk,Match:o.match||'',Note:o.group_note||'',Params:[]};byG.set(gk,g);groups.push(g)}
         const p={};
-        ['key','label','type','unit','hint','status'].forEach(k=>{if(o[k]!==''&&o[k]!=null)p[k]=o[k]});
+        ['key','label','type','unit','hint','status','tab','ctl','when'].forEach(k=>{if(o[k]!==''&&o[k]!=null)p[k]=o[k]});
         if(o.section!==''&&o.section!=null)p.sec=o.section;
         if(Array.isArray(o.options))p.options=o.options;
         if(p.key)g.Params.push(p);
@@ -3288,23 +5168,39 @@ function renderLog(){const sp0=$('.tp[data-tp="log"]');if(sp0)LOGTAG=tpRead(sp0)
   $('#log').oninput=$('#log').onchange=calc;$('#save').onclick=saveCut;$('#dup').onclick=dupLast;$('#cpl').onclick=()=>copy(setupLine(currentCut(true)));fillQB();calc();cpRestore(kp)}
 function cpValues(){const o={};$$('#cp [data-pk]').forEach(e=>{if(e.value!=='')o[e.dataset.pk]=e.value});return o}
 /* old keys / option wording are mapped first (cpCanon); a select value that is no longer in the list is kept as an extra option, never blanked */
-function cpRestore(o){Object.entries(cpCanon(o)).forEach(([k,v])=>{const e=$(`#cp [data-pk="${k}"]`);if(!e)return;if(e.tagName==='SELECT'&&v!==''&&v!=null&&![...e.options].some(x=>x.value===String(v))){const op=document.createElement('option');op.textContent=String(v);op.title='Logged before this option list changed';e.appendChild(op)}e.value=v})}
+function cpRestore(o){Object.entries(cpCanon(o)).forEach(([k,v])=>{const e=$(`#cp [data-pk="${k}"]`);if(!e)return;if(e.tagName==='SELECT'&&v!==''&&v!=null&&![...e.options].some(x=>x.value===String(v))){const op=document.createElement('option');op.textContent=String(v);op.title='Logged before this option list changed';e.appendChild(op)}e.value=v});hmSync($('#cp'))}
 function drawCP(){const h=$('#cp');if(!h)return;const cyc=$('#f_cycle').value,lt=logTag(),sub=lt.subcycleKey?CTREE().find(x=>x.key===lt.subcycleKey):null,sp=sub&&Array.isArray(sub.params)?sub.params.filter(p=>p&&p.key):[],sk=cyc+'|'+(sub?sub.key+':'+sp.length:'');if(h.dataset.k===sk&&h.dataset.n===String(CP().length))return;const keep=cpValues();h.dataset.k=sk;h.dataset.n=String(CP().length);
   const gs=paramsFor(cyc);if(sp.length)gs.unshift({Group:'Sub-cycle — '+sub.name,Params:sp});if(!cyc&&!sp.length){h.innerHTML='<p class="mu">Pick a hyperMILL cycle to log its cycle-specific settings (MAXX engagement, 5-axis tilt, peck depths…).</p>';return}
   const hn=hmbFor(cyc).map(t=>`<div class="note">${esc(t)}</div>`).join('');h.innerHTML=gs.length?`<h3>Cycle settings${cyc?' — '+esc(cyc):''}</h3>${hn}`+renderParams(gs,false):'<p class="mu">No extra settings defined for this cycle — add them in Library → Cycle parameters.</p>';
-  cpRestore(keep)}
+  hmBind(h);cpRestore(keep)}
 /* Phase 3: cycle settings as hyperMILL-style tab groups — grouped by the parameter's section (p.sec) if it has one, else by its
    group; each group is a <details>, collapsed except the first. readonly=false → inputs (Log cut, data-pk kept exactly);
    readonly=true → params is a logged cut's {key: value} object, shown as plain text (Cut database modal). */
-function renderParams(params,readonly){const sections=new Map(),add=(name,item)=>{if(!sections.has(name))sections.set(name,[]);sections.get(name).push(item)};
- if(readonly){const defs=allParamDefs(),grp={};[...CPD,...CP()].forEach(g=>(g.Params||[]).forEach(p=>{if(p&&p.key&&!grp[p.key])grp[p.key]=g.Group}));
-  Object.entries(cpCanon(params||{})).forEach(([k,v])=>{if(v===''||v==null)return;const p=defs[k]||{key:k,label:k};add(p.sec||grp[k]||'Other settings',{p,v})})}
- else (params||[]).forEach(g=>(g.Params||[]).forEach(p=>{if(p&&p.key)add(p.sec||g.Group,{p})}));
- if(!sections.size)return readonly?'<p class="mu">No cycle settings were logged with this cut.</p>':'';
- const lab=p=>`${esc(p.label||p.key)}${p.unit&&!String(p.label||'').includes('('+p.unit)?` <small class="mu">(${esc(p.unit)})</small>`:''}`;
- const field=({p,v})=>readonly?`<div title="${esc(p.hint||'')}"><label>${lab(p)}</label><div><b>${esc(String(v))}</b></div></div>`
-  :`<div title="${esc(p.hint||'')}"><label>${lab(p)}</label>${p.type==='select'?`<select data-pk="${esc(p.key)}">${opt(p.options||[''])}</select>`:`<input data-pk="${esc(p.key)}" data-t="${p.type==='text'?'text':'number'}" ${p.type==='text'?'':'type="number" step="any" inputmode="decimal"'}>`}</div>`;
- return [...sections].map(([name,items],i)=>`<details class="cpsec"${i===0?' open':''}><summary><h5 style="display:inline;margin:0">${esc(name)}</h5> <small class="mu">${items.length}</small></summary><div class="g">${items.map(field).join('')}</div></details>`).join('')}
+function renderParams(params,readonly){const tabs=new Map(),put=(it)=>{const p=it.p,t=p.tab||(readonly?'Other settings':'Settings'),b=p.sec||it.g||'Settings';if(!tabs.has(t))tabs.set(t,new Map());const bx=tabs.get(t);if(!bx.has(b))bx.set(b,[]);bx.get(b).push(it)};
+ if(readonly){const defs=allParamDefs();Object.entries(cpCanon(params||{})).forEach(([k,v])=>{if(v===''||v==null)return;put({p:defs[k]||{key:k,label:k},v})})}
+ else (params||[]).forEach(g=>(g.Params||[]).forEach(p=>{if(p&&p.key)put({p,g:g.Group})}));
+ if(!tabs.size)return readonly?'<p class="mu">No cycle settings were logged with this cut.</p>':'';
+ const order=[...tabs.keys()].sort((a,b)=>{const i=HM_TABS.indexOf(a),j=HM_TABS.indexOf(b);return (i<0?50:i)-(j<0?50:j)});
+ const unit=p=>p.unit&&!String(p.label||'').includes('('+p.unit)?` <small class="mu">${esc(p.unit)}</small>`:'';
+ const ek=k=>esc(k),hid=p=>`<input type="hidden" data-pk="${ek(p.key)}" data-t="text">`;
+ const field=({p,v},box)=>{const tip=p.hint?` title="${esc(p.hint)}"`:'',w=p.when?` data-when="${esc(p.when)}"`:'',lb=esc(p.label||p.key);
+  if(readonly)return `<div class="hmf"${tip}><span class="hml">${lb}${unit(p)}</span><b>${esc(String(v))}</b></div>`;
+  if(p.ctl==='radio')return `<div class="hmf hmrf"${tip}${w}>${p.label&&p.label!==box?`<span class="hml">${lb}</span>`:''}<div class="hmr">${(p.options||[]).filter(Boolean).map(o=>`<label><input type="radio" name="cpr_${ek(p.key)}" value="${esc(o)}" data-rk="${ek(p.key)}"> ${esc(o)}</label>`).join('')}</div>${hid(p)}</div>`;
+  if(p.ctl==='check'||(p.type==='select'&&!p.ctl&&(p.options||[]).filter(Boolean).join()==='On,Off'))return `<div class="hmf"${tip}${w}><label class="hmc"><input type="checkbox" data-ck="${ek(p.key)}"> ${lb}</label>${hid(p)}</div>`;
+  if(p.type==='select')return `<div class="hmf hmv"${tip}${w}><span class="hml">${lb}</span><select data-pk="${ek(p.key)}">${opt(p.options||[''])}</select></div>`;
+  return `<div class="hmf hmv"${tip}${w}><span class="hml">${lb}${unit(p)}</span><input data-pk="${ek(p.key)}" data-t="${p.type==='text'?'text':'number'}" inputmode="${p.type==='text'?'text':'decimal'}" autocomplete="off"></div>`};
+ return `<div class="hmp"><div class="hmtabs noprint" role="tablist">${order.map((t,i)=>`<button type="button" role="tab" data-hmt="${i}" class="${i?'':'on'}" aria-selected="${i?'false':'true'}">${esc(t)}<small>${[...tabs.get(t).values()].reduce((a,x)=>a+x.length,0)}</small></button>`).join('')}</div>
+ ${order.map((t,i)=>`<div class="hmpanel" data-hmp="${i}"${i?' hidden':''}><div class="hmprint">${esc(t)}</div><div class="hmboxes">${[...tabs.get(t)].map(([b,items])=>`<fieldset class="hmbox"><legend>${esc(b)}</legend>${items.map(it=>field(it,b)).join('')}</fieldset>`).join('')}</div></div>`).join('')}</div>`}
+/* tabs, radio / tick boxes → their hidden value field, and the fields hyperMILL only shows in one mode */
+function hmWhen(root){if(!root)return;$$('[data-when]',root).forEach(el=>{const[k,v]=el.dataset.when.split('=');const c=root.querySelector(`[data-pk="${k}"]`),cv=c?c.value:'';el.hidden=!!(cv&&cv!==v)});
+ $$('.hmbox',root).forEach(b=>{const fs=$$('.hmf',b);b.hidden=fs.length>0&&fs.every(x=>x.hidden)})}
+function hmSync(root){if(!root)return;$$('input[type=hidden][data-pk]',root).forEach(h=>{const k=h.dataset.pk,v=h.value;$$(`[data-rk="${k}"]`,root).forEach(r=>r.checked=r.value===v);const c=root.querySelector(`[data-ck="${k}"]`);if(c)c.checked=v==='On'});hmWhen(root)}
+function hmBind(root){if(!root||root.dataset.hmb)return;root.dataset.hmb='1';
+ root.addEventListener('click',e=>{const t=e.target.closest('[data-hmt]');if(!t)return;const p=t.closest('.hmp');$$('[data-hmt]',p).forEach(b=>{const on=b===t;b.classList.toggle('on',on);b.setAttribute('aria-selected',on?'true':'false')});$$('[data-hmp]',p).forEach(x=>x.hidden=x.dataset.hmp!==t.dataset.hmt)});
+ root.addEventListener('change',e=>{const t=e.target,d=t.dataset;let h=null;
+  if(d.rk){h=root.querySelector(`input[type=hidden][data-pk="${d.rk}"]`);if(h)h.value=t.value}
+  else if(d.ck){h=root.querySelector(`input[type=hidden][data-pk="${d.ck}"]`);if(h)h.value=t.checked?'On':'Off'}
+  hmWhen(root);if(h)h.dispatchEvent(new Event('input',{bubbles:true}))})}
 function currentCut(forCopy){const c={};F.forEach(([k,,t])=>{const v=$('#f_'+k).value;if(v!=='')c[k]=t==='number'?+v:v});const n=$('#f_notes').value;if(n)c.notes=n;
   const p={};$$('#cp [data-pk]').forEach(e=>{if(e.value!=='')p[e.dataset.pk]=e.dataset.t==='text'||e.tagName==='SELECT'||isNaN(e.value)?e.value:+e.value});if(Object.keys(p).length)c.params=p;
   const lt=logTag();if(lt.subcycleKey&&!forCopy){c._tag=lt}
@@ -3459,7 +5355,7 @@ function openCutModal(id){const c=CUTS.find(x=>x.id===id);if(!c)return;let m=$('
   <p class="mu" style="margin:4px 0 10px">${esc(c.date||'')}${res?' · '+res:''}${g?' · '+esc(g):''}${c.cycle?' · '+esc(c.cycle):''}${TAGS.isTagged(c)?' · '+esc(tagLabel(c)):''}</p>
   <p style="margin:0 0 10px">Vc <b>${esc(c.vc??'–')}</b> · Fz <b>${esc(c.fz??'–')}</b> · ap <b>${esc(c.doc??'–')}</b> · ae <b>${esc(c.woc??'–')}</b> · RPM <b>${esc(c.rpm??'–')}</b> · Feed <b>${esc(c.feed??'–')}</b></p>
   <h3>Cycle settings</h3>${renderParams(cutParamsOf(c),true)}${c.notes?`<h3>Notes</h3><p>${esc(c.notes)}</p>`:''}</div>`;
- m.hidden=false;const b=m.querySelector('[data-cmx]');if(b)b.focus()}
+ hmBind(m);m.hidden=false;const b=m.querySelector('[data-cmx]');if(b)b.focus()}
 function closeCutModal(){const m=$('#cutModal');if(m)m.hidden=true}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){const m=$('#cutModal');if(m&&!m.hidden)closeCutModal()}});
 document.addEventListener('click',e=>{const tr=e.target.closest&&e.target.closest('#cbody tbody tr[data-cid]');if(!tr||!tr.dataset.cid)return;
@@ -4551,13 +6447,13 @@ function drawFxList(){const all=FXL();
   if(e.target.id==='fxnew'){if(OFFLINE||!db)return toast('Offline — not saved');const key=(()=>{let k='my-formula',i=2;while(FXL().some(x=>x.key===k))k='my-formula-'+(i++);return k})();
    const F={key,name:'New formula',group:'Milling & speeds/feeds',inputs:[{k:'D',label:'Cutter Ø mm',dflt:10},{k:'n',label:'RPM',dflt:4000}],out:[{k:'vc',label:'Vc m/min',expr:'pi*D*n/1000',dp:1}],doc:''};
    await fxSaveAll(FXL().concat([F]),'added',key,'',F.name);FXED={key,F:cloneF(F)};show('form');renderForm();const c=document.querySelector('[data-fxf="name"]');if(c)c.closest('.card').scrollIntoView({block:'start'})}}}
-function drawParamGroups(){if(!CPW)CPW=clone(CP());const using=L.cycleparams.length?'saved in your database':'built-in starter set (not saved yet)';
+function drawParamGroups(){if(!CPW)CPW=clone(CP());const using=cpHasLayout(L.cycleparams)?'saved in your database':L.cycleparams.length?'built-in hyperMILL pages (your earlier saved set has no tab layout, so it is not used — Save here to keep edits)':'built-in hyperMILL pages (not saved yet)';
   const rx=g=>{try{return new RegExp(g.Match||'a^','i')}catch(e){return null}};
-  $('#pbody').innerHTML=`<div class="card"><h2>Cycle parameters</h2><p class="mu">Extra settings that appear in <b>Log cut</b> (and are logged with each cut and read by <b>Ask AI</b>) depending on which hyperMILL cycle is chosen. A group applies to every cycle whose name matches its <i>Match</i> pattern (a regular expression, case-insensitive). Currently: <b>${using}</b>. The built-in set is read from your hyperMILL dialog screenshots (2026-10-13): labels and options exactly as printed; a dropdown where only the selected value was visible lists just that value, so add the rest here. If you saved your own set earlier, it still wins — use <i>Reset to starter set</i> to load the screenshot set.</p>
-  <p class="row noprint"><button class="b" id="cp_save">Save to database</button><button class="b s" id="cp_add">Add group</button><button class="b s" id="cp_reset">Reset to starter set</button><span id="cp_msg" class="mu"></span></p></div>
+  $('#pbody').innerHTML=`<div class="card"><h2>Cycle parameters</h2><p class="mu">Extra settings that appear in <b>Log cut</b> (and are logged with each cut and read by <b>Ask AI</b>) depending on which hyperMILL cycle is chosen. A group applies to every cycle whose name matches its <i>Match</i> pattern (a regular expression, case-insensitive). Currently: <b>${using}</b>. Each cycle is laid out like its hyperMILL dialog: <b>Tab</b> › <b>Box</b> › field, with radio buttons, tick boxes, dropdowns and value boxes as in hyperMILL (re-read from your 226 screenshots, 2026-10-14). <b>Show when</b> (e.g. <code>macro_mode=Manual</code>) hides a field unless that setting is chosen, like hyperMILL's Auto / Manual macro modes. Labels and options exactly as printed; a dropdown where only the selected value was visible lists just that value, so add the rest here. If you saved your own set earlier, it still wins — use <i>Reset to starter set</i> to load the screenshot set.</p>
+  <datalist id="hmtablist">${HM_TABS.map(t=>`<option>${esc(t)}</option>`).join('')}</datalist><p class="row noprint"><button class="b" id="cp_save">Save to database</button><button class="b s" id="cp_add">Add group</button><button class="b s" id="cp_reset">Reset to starter set</button><span id="cp_msg" class="mu"></span></p></div>
   ${CPW.map((g,gi)=>{const r=rx(g),ms=r?HMC().filter(c=>r.test(c.Cycle)):[];return`<div class="card"><div class="g" style="grid-template-columns:2fr 2fr"><div><label>Group name</label><input data-gi="${gi}" data-gk="Group" value="${esc(g.Group)}"></div><div><label>Match pattern (regex on cycle name) ${r?'':'<span class="bad">invalid</span>'}</label><input data-gi="${gi}" data-gk="Match" value="${esc(g.Match)}"></div></div>
   <p class="mu" style="margin:6px 0">Matches ${ms.length} cycle${ms.length===1?'':'s'}: ${esc(ms.slice(0,6).map(c=>c.Cycle).join(', '))}${ms.length>6?' …':''}</p>
-  <div class="tw"><table><thead><tr><th>Key</th><th>Label</th><th>Type</th><th>Unit</th><th>Options (comma separated)</th><th>Hint</th><th></th></tr></thead><tbody>${(g.Params||[]).map((p,pi)=>`<tr>${['key','label'].map(k=>`<td><input data-gi="${gi}" data-pi="${pi}" data-pk="${k}" value="${esc(p[k])}"></td>`).join('')}<td><select data-gi="${gi}" data-pi="${pi}" data-pk="type">${['number','text','select'].map(t=>`<option${(p.type||'number')===t?' selected':''}>${t}</option>`).join('')}</select></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="unit" value="${esc(p.unit||'')}" style="min-width:60px"></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="options" value="${esc((p.options||[]).filter(Boolean).join(', '))}" ${p.type==='select'?'':'disabled'}></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="hint" value="${esc(p.hint||'')}"></td><td><button class="b s sm" data-cpdp="${gi}:${pi}">✕</button></td></tr>`).join('')}</tbody></table></div>
+  <div class="tw"><table><thead><tr><th>Tab</th><th>Box</th><th>Key</th><th>Label</th><th>Type</th><th>Control</th><th>Unit</th><th>Options (comma separated)</th><th>Show when</th><th>Hint</th><th></th></tr></thead><tbody>${(g.Params||[]).map((p,pi)=>`<tr><td><input data-gi="${gi}" data-pi="${pi}" data-pk="tab" value="${esc(p.tab||'')}" list="hmtablist" style="min-width:110px"></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="sec" value="${esc(p.sec||'')}" style="min-width:130px"></td>${['key','label'].map(k=>`<td><input data-gi="${gi}" data-pi="${pi}" data-pk="${k}" value="${esc(p[k])}"></td>`).join('')}<td><select data-gi="${gi}" data-pi="${pi}" data-pk="type">${['number','text','select'].map(t=>`<option${(p.type||'number')===t?' selected':''}>${t}</option>`).join('')}</select></td><td><select data-gi="${gi}" data-pi="${pi}" data-pk="ctl"${p.type==='select'?'':' disabled'}>${[['','auto'],['radio','radio buttons'],['dropdown','dropdown'],['check','tick box']].map(([v,l])=>`<option value="${v}"${(p.ctl||'')===v?' selected':''}>${l}</option>`).join('')}</select></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="unit" value="${esc(p.unit||'')}" style="min-width:60px"></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="options" value="${esc((p.options||[]).filter(Boolean).join(', '))}" ${p.type==='select'?'':'disabled'}></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="when" value="${esc(p.when||'')}" placeholder="key=Value" style="min-width:120px"></td><td><input data-gi="${gi}" data-pi="${pi}" data-pk="hint" value="${esc(p.hint||'')}"></td><td><button class="b s sm" data-cpdp="${gi}:${pi}">✕</button></td></tr>`).join('')}</tbody></table></div>
   <p class="row"><button class="b s sm" data-cpap="${gi}">Add parameter</button><button class="b s sm" data-cpdg="${gi}">Delete group</button></p></div>`}).join('')}
   <div class="card"><h3 style="margin-top:0">Which cycles get which groups</h3><div class="tw"><table><thead><tr><th>Cycle</th><th>Groups applied</th></tr></thead><tbody>${HMC().map(c=>`<tr><td>${esc(c.Cycle)}</td><td class="tx">${esc(CPW.filter(g=>{const r=rx(g);return r&&r.test(c.Cycle)}).map(g=>g.Group).join(' · '))||'<span class="mu">none</span>'}</td></tr>`).join('')}</tbody></table></div>${(()=>{const un=HMC().map(c=>c.Cycle).filter(n=>n&&!CPW.some(g=>{const r=rx(g);return r&&r.test(n)}));return un.length?`<div class="note e">These cycles will show no extra settings in the Log form: ${esc(un.join(', '))}. Add a group or adjust a Match pattern.</div>`:''})()}</div>`;
   const cpEl=$('#pbody');cpEl.onchange=e=>{const d=e.target.dataset;if(d.gi==null)return;const g=CPW[+d.gi];if(d.gk){g[d.gk]=e.target.value;drawParams();return}if(d.pi!=null){const p=g.Params[+d.pi],k=d.pk;if(k==='options')p.options=['',...e.target.value.split(',').map(s=>s.trim()).filter(Boolean)];else if(k==='type'){p.type=e.target.value;if(p.type==='select'&&!p.options)p.options=['','Yes','No'];drawParams()}else p[k]=e.target.value}};
@@ -4763,7 +6659,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-14.6';
+const APP_V='2026-10-14.7';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
@@ -4816,7 +6712,10 @@ function selfTest(){const R=[],ok=(name,c,info)=>{R.push([name,!!c]);console[c?'
    const defs=allParamDefs();ok('CPD: starter keys still defined (rmode, ap_max, entry, ramp_angle, tol, probe_feed)',['rmode','ap_max','entry','ramp_angle','tol','probe_feed','pilot','hand'].every(k=>defs[k]));
    ok('CPD: hidden group never matches a cycle',!groupsFor('3D Optimized Roughing').some(g=>/^Earlier/.test(g.Group))&&!groupsFor('Simple Drilling').some(g=>/^Earlier/.test(g.Group)));
    ok('CPD: 3D Optimized Roughing gets its screenshot group with High Performance Mode',paramsFor('3D Optimized Roughing').some(g=>g.Params.some(p=>p.key==='hp_mode')));
-   ok('CPD: Simple Drilling shows Dwell time only',JSON.stringify(paramsFor('Simple Drilling').flatMap(g=>g.Params.map(p=>p.key)))==='["dwell"]',JSON.stringify(paramsFor('Simple Drilling')));
+   {const sd=paramsFor('Simple Drilling').flatMap(g=>g.Params),dw=sd.find(p=>p.key==='dwell');ok('CPD: Simple Drilling page — Dwell time on Parameters › Machining parameters, Retract mode as radios',dw&&dw.tab==='Parameters'&&dw.sec==='Machining parameters'&&sd.some(p=>p.key==='ret_mode'&&p.ctl==='radio'),JSON.stringify(dw));}
+  {const pl=paramsFor('3D Plane Machining').flatMap(g=>g.Params),im=pl.find(p=>p.key==='infeed_mode');ok('CPD: 3D Plane Machining Strategy tab — Infeed mode radios shown in Axis parallel mode',im&&im.tab==='Strategy'&&im.ctl==='radio'&&im.when==='pl_mode=Axis parallel mode'&&im.options.includes('Zigzag smooth'));
+   const h=document.createElement('div');h.innerHTML=renderParams(paramsFor('3D Plane Machining'),false);hmBind(h);const hd=h.querySelector('input[type=hidden][data-pk=pl_mode]');hd.value='Standard mode';hmSync(h);const f=h.querySelector('[data-when^="pl_mode"]');const hid1=f.hidden;hd.value='Axis parallel mode';hmSync(h);ok('cycle page: Axis parallel fields hide / show with the machining mode',hid1&&!f.hidden);}
+  ok('CPD: every page parsed (no group without fields)',CPD.every(g=>(g.Params||[]).length>0),CPD.filter(g=>!(g.Params||[]).length).map(g=>g.Group).join());
    const cc=cpCanon({ap_max:3,entry:'Helix',direction:'Climb',spot:'Yes',zz:1});ok('cpCanon: ap_max → zstep and old wording mapped',cc.zstep===3&&cc.ap_max===undefined&&cc.entry==='Helical'&&cc.direction==='Climb milling'&&cc.spot==='On'&&cc.zz===1,JSON.stringify(cc));
    ok('cpCanon: keeps ap_max when zstep is already set',cpCanon({ap_max:3,zstep:2}).ap_max===3)}
   const keep={t:L.tools,m:L.materials};L.tools=lib;L.materials=[mat];
