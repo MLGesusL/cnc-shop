@@ -2471,7 +2471,12 @@ const setupLine=c=>`${c.material} | Tool: ${c.tool} | Vc: ${c.vc??''} | RPM: ${c
 
 /* ---------- speeds-and-feeds engine context ---------- */
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
-let SET={ra:1.6,pref:'balanced',raK:1,tiers:null};/* lib/settings (raK is stored as ra_cusp_k) */
+let SET={ra:1.6,pref:'balanced',raK:1,tiers:null,engage:null};
+/* 2026-10-14 calculator engagement adjustment (lib/settings.engage): Vc boost at light ae, fz ease at deep ap */
+const ENG_DEF={vcMax:1.3,vcExp:0.15,apFrom:1,apPer:0.15,apMin:0.7};
+const engCfg=()=>{const e=SET.engage||{},o={};Object.keys(ENG_DEF).forEach(k=>{const v=+e[k];o[k]=isFinite(v)&&e[k]!==''&&e[k]!=null?v:ENG_DEF[k]});return o};
+const engKv=(ae,D,E)=>{const x=ae/D;return !(x>0)||x>=.5?1:Math.max(1,Math.min(E.vcMax,Math.pow(.5/x,E.vcExp)))};
+const engKa=(ap,D,E)=>{const x=ap/D;return !(x>E.apFrom)?1:Math.max(E.apMin,1-E.apPer*(x-E.apFrom))};/* lib/settings (raK is stored as ra_cusp_k) */
 let SETDOC={};/* the whole lib/settings document (Phase 3b: formulaGroupOrder) */
 function sfctx(matName,machine,coolant){const m=L.materials.find(x=>x.Material===matName)||L.materials[0];const k=(m&&m.Material)+'|'+(machine||'')+'|'+(coolant||'');const mc=L.machines.find(x=>x.Machine===machine)||{};const c=SFC[k]||(SFC[k]={});if(c.mat!==m||c.tools!==L.tools||c.cuts!==CUTS||c.materials!==L.materials||c.machines!==L.machines||c.baseline!==L.baseline||c.bands!==L.bands||c.matbands!==L.matbands||c.rules!==L.rules||c.raK!==SET.raK||c.tiers!==SET.tiers)SF.invalidate(c);return Object.assign(c,{tools:L.tools,cuts:CUTS,materials:L.materials,machines:L.machines,baseline:L.baseline,bands:L.bands,matbands:L.matbands,rules:L.rules,mat:m,cap:capOf(machine),sfxOf:AUD.sfxOf,parse:AUD.parseDesc,tree:CTREE(),coolant:coolant||'Flood',ra:+SET.ra||1.6,raK:+SET.raK||1,tiers:SET.tiers||null,pref:SET.pref||'balanced',kw:+mc['Spindle Power (kW)']||0})}
 function sfLookup(matName,code,op,machine){const t=tool(code);if(!t||!matName||!L.materials.length)return null;const ctx=sfctx(matName,machine),sfx=AUD.sfxOf(code),d=+t['Diameter (mm)'];
@@ -3010,7 +3015,7 @@ async function load(){
       /* Phase 3b: the Sheet has no order column — keep the card order saved in lib/formulas */
       if(k==='formulas'){const om={};(RAW[k].rows||[]).forEach(x=>{if(x&&x.key&&x.order!=null&&x.order!=='')om[x.key]=x.order});L[k]=(L[k]||[]).map(x=>x&&om[x.key]!=null&&(x.order==null||x.order==='')?Object.assign({},x,{order:om[x.key]}):x)}
       RAW[k]={rows:L[k],v:LIB_V,exists:true}}else{L[k]=RAW[k].rows}}catch(e){RAW[k]={rows:L[k]||[],v:LIB_V,exists:false}}}
-    try{const s=await db.doc('lib/settings').get();if(s.exists){const d=dat(s);SETDOC=d||{};SET={ra:+d.ra>0?+d.ra:1.6,pref:['balanced','life','cycle'].includes(d.pref)?d.pref:'balanced',raK:+d.ra_cusp_k>0?+d.ra_cusp_k:1,tiers:d.tiers&&typeof d.tiers==='object'?d.tiers:null}}}catch(e){}
+    try{const s=await db.doc('lib/settings').get();if(s.exists){const d=dat(s);SETDOC=d||{};SET={ra:+d.ra>0?+d.ra:1.6,pref:['balanced','life','cycle'].includes(d.pref)?d.pref:'balanced',raK:+d.ra_cusp_k>0?+d.ra_cusp_k:1,tiers:d.tiers&&typeof d.tiers==='object'?d.tiers:null,engage:d.engage&&typeof d.engage==='object'?d.engage:null}}}catch(e){}
     try{const s=await db.doc('lib/auditmeta').get();AM=s.exists?{dismissed:[],resolved:{},...dat(s)}:{dismissed:[],resolved:{}}}catch(e){}
     try{const q=await db.collection('changelog').get();CLOGDOCS={};q.docs.forEach(d=>CLOGDOCS[d.id]=(dat(d).entries||[]));CLOG={entries:Object.values(CLOGDOCS).flat().sort((a,b)=>String(a.at).localeCompare(String(b.at)))}}catch(e){}
     /* v2 seed documents: created once, on first run, from the code defaults; edited in Library → Data afterwards */
@@ -3802,15 +3807,27 @@ function c6Back(k,hold,depth){if(depth>4)return;const lk=k.toLowerCase(),r=calcF
 function c6Set(k,val){const r=c6Row(k);if(!r)return;const v=gn(val);
  if(!isFinite(v)){C6.locked.delete(r.key);c6Reset2(r.key);return}
  C6.st[r.key]=v;C6.locked.add(r.key);C6.src[r.key]='manual';c6Partners(r.key).forEach(p=>{if(C6.locked.has(p)&&p!==r.key)C6.locked.delete(p)});
- const hold=new Set([r.key]);if(r.solve==='formula')c6Back(r.key,hold,0);c6Forward(hold);c6Settle(hold)}
+ const hold=new Set([r.key]);if(r.solve==='formula')c6Back(r.key,hold,0);c6Forward(hold);if(C6_ENG.includes(r.key.toLowerCase())){c6Engage();c6Forward(hold)}c6Settle(hold)}
 /* a typed (locked) result such as Vf stays as typed: if its formula no longer gives it, move the first free input upstream of it (fz) */
 function c6Settle(hold){for(let pass=0;pass<3;pass++){let moved=false;
  calcFields().forEach(r=>{if(!C6.locked.has(r.key)||!r.formula||r.solve!=='formula'||hold.has(r.key)&&pass===0&&false)return;const x=c6Eval(r.formula,c6Scope()),cur=C6.st[r.key];
   if(x.err||!isFinite(x.v)||!isFinite(cur)||Math.abs(x.v-cur)<=1e-9*Math.max(1,Math.abs(cur)))return;const h=new Set(hold);c6Back(r.key,h,0);if(h.size>hold.size){h.forEach(k=>hold.add(k));moved=true}});
  if(!moved)break;c6Forward(hold)}}
+/* 2026-10-14: ae / ap changed → Vc and fz follow, relative to the engine's own engagement (so the baseline values stand at
+   the default ae / ap). fz: radial (+ axial for ball / bull-nose) chip thinning and an ease-off past apFrom×Ø; Vc: a capped
+   boost below ½Ø. A Vc or fz you typed yourself is left alone. */
+function c6Engage(){const d=C6.def;C6.adj=null;if(!d||!d.vals)return;const g=c6Geo(),D=g.D;if(!(D>0))return;
+ const rA=c6Row('ae'),rP=c6Row('ap'),rV=c6Row('Vc'),rF=c6Row('fz');if(!rA||!rP)return;
+ const ae=C6.st[rA.key],ap=C6.st[rP.key],ae0=d.vals.ae,ap0=d.vals.ap,E=engCfg(),ball=!!d.ball,R=g.R||0;if(!(ae>0)||!(ae0>0))return;
+ const thin=(a,p)=>{const de=ball&&p>0?SF.deffOf(p,D):D;return Math.max(1/3,(p>0?(ball?SF.sAx(p,D/2):SF.sAx(p,R)):1)*SF.sRad(a,de))};
+ const vk=engKv(ae,D,E)/engKv(ae0,D,E),fk=thin(ae0,ap0)/thin(ae,ap)*(ap>0&&ap0>0?engKa(ap,D,E)/engKa(ap0,D,E):1),same=x=>Math.abs(x-1)<1e-6;
+ if(rV&&!C6.locked.has(rV.key)&&isFinite(d.vals.Vc)){const base=d.capped?d.capped.vcT:d.vals.Vc,capV=capOf(CALCV.mach)*Math.PI*D/1000;C6.st[rV.key]=Math.min(base*vk,capV);C6.src[rV.key]=same(vk)?d.src.Vc:'ae adj'}
+ if(rF&&!C6.locked.has(rF.key)&&isFinite(d.vals.fz)){C6.st[rF.key]=d.vals.fz*fk;C6.src[rF.key]=same(fk)?d.src.fz:'ae/ap adj'}
+ if(!same(vk)||!same(fk))C6.adj={vk,fk,ae,ae0,ap,ap0}}
+const C6_ENG=['ae','ap','ra'];
 /* clearing a field gives it back to the engine / its formula */
 function c6Reset2(k){const d=C6.def||{vals:{},src:{}},dv=Object.keys(d.vals).find(x=>x.toLowerCase()===k.toLowerCase()),r=c6Row(k);
- if(dv!=null){C6.st[k]=d.vals[dv];C6.src[k]=d.src[dv]}else if(r&&r.default!==undefined){C6.st[k]=+r.default;C6.src[k]='default'}else delete C6.st[k];c6Forward()}
+ if(dv!=null){C6.st[k]=d.vals[dv];C6.src[k]=d.src[dv]}else if(r&&r.default!==undefined){C6.st[k]=+r.default;C6.src[k]='default'}else delete C6.st[k];c6Forward();c6Engage();c6Forward()}
 /* necked tool + the brief's refusals: ap beyond the reach or the cutting length, or reach over 3×Ø */
 /* necked tool: the neck length (else the reach) is its stickout from the collet */
 function neckStick(t){const n=gn(t&&t['Neck Length (mm)']),r=gn(t&&t['Reach (mm)']);return n>0?{mm:n,from:'neck length'}:r>0?{mm:r,from:'reach (no neck length in the library)'}:{mm:NaN,from:''}}
@@ -3841,8 +3858,10 @@ function c6Geo(){const t=(C6.def&&C6.def.t)||tool(CALCV.tool)||{},o=C6.tdef||{},
  return {D:isFinite(o.D)?o.D:n('Diameter (mm)'),L2:isFinite(o.L2)?o.L2:(isFinite(n('Flute Length (mm)'))?n('Flute Length (mm)'):n('Cutting Length (mm)')),R:isFinite(o.R)?o.R:(n('Corner Radius (mm)')||0),Z:isFinite(o.Z)?o.Z:n('Flutes'),cl:isFinite(o.L2)?o.L2:n('Cutting Length (mm)'),reach:n('Reach (mm)')}}
 /* ap / ae beyond what the tool or the band allows → red (as M.A. Ford shows it) */
 function c6Over(){const g=c6Geo(),st=C6.st,ae=st[(c6Row('ae')||{}).key],ap=st[(c6Row('ap')||{}).key],op=(C6.def&&C6.def.op)||'rough',b=isFinite(g.D)?SF.bandOf(g.D,L.bands):null;
- const apLim=Math.min(isFinite(g.cl)&&g.cl>0?g.cl:Infinity,isFinite(g.reach)&&g.reach>0?g.reach:Infinity,op!=='finish'&&b&&b.apDmax>0?b.apDmax*g.D:Infinity);
- return {ap:isFinite(ap)&&ap>apLim+1e-9,ae:isFinite(ae)&&isFinite(g.D)&&ae>g.D+1e-9,apLim}}
+ const r=C6.def&&C6.def.r,e=r&&r.val&&r.val.why&&r.val.why.eng,apS=e&&e.apDmax>0?e.apDmax:null,aeS=e&&e.aeDmax>0?e.aeDmax:null;
+ const apLim=Math.min(isFinite(g.cl)&&g.cl>0?g.cl:Infinity,isFinite(g.reach)&&g.reach>0?g.reach:Infinity,op!=='finish'&&b&&b.apDmax>0?b.apDmax*g.D:Infinity,apS?apS*g.D:Infinity);
+ const aeSub=aeS&&isFinite(ae)&&ae>aeS*g.D+1e-9?aeS:null,apSub=apS&&isFinite(ap)&&ap>apS*g.D+1e-9?apS:null;
+ return {ap:isFinite(ap)&&ap>apLim+1e-9,ae:(isFinite(ae)&&isFinite(g.D)&&ae>g.D+1e-9)||!!aeSub,apLim,aeSub,apSub}}
 function c6Svg(){const g=c6Geo();if(!isFinite(g.D))return '';const st=C6.st,ae=Math.max(0,st[(c6Row('ae')||{}).key]??st.ae_ball??0),ap=Math.max(0,st[(c6Row('ap')||{}).key]||0),ov=c6Over(),ck=c6Checks();
  const tw=34,aeP=Math.min(ae/g.D*tw,96),apP=Math.min(ap/g.D*tw,118),hot=ov.ap||ov.ae,col=hot?'#e53935':'#5cc63a',cold=hot?'#b71c1c':'#3e9a22';
  /* block: front face (30..130 × 132..250), right face and top face drawn in isometric */
@@ -3920,7 +3939,9 @@ function c6Refresh(skip){const ck=c6Checks();calcFields().forEach(r=>{const el=d
  const sv=$('.c6svg');if(sv)sv.innerHTML=c6Svg()}
 /* typing in a number: every other box, the ×D lines, the picture and the warnings update — the box being typed in is left alone */
 document.addEventListener('input',e=>{const k=e.target.dataset&&e.target.dataset.c6;if(!k)return;c6Set(k,e.target.value);c6Refresh(e.target);const n=$('#c6notes');if(n)n.innerHTML=c6NotesHtml()});
-function c6NotesHtml(){const d=C6.def||{},ck=c6Checks();return `${ck.warn.length?`<div class="note e" style="margin:8px">Not computed — ${esc(ck.warn.join('; '))}.</div>`:''}${ck.soft&&ck.soft.length?`<div class="note w" style="margin:8px">${esc(ck.soft.join('; '))}</div>`:''}${d.warn?`<div class="note w" style="margin:8px">${esc(d.warn)}</div>`:''}`}
+function c6NotesHtml(){const d=C6.def||{},ck=c6Checks(),a=C6.adj,ov=c6Over(),lim=[ov.apSub?`ap is over the sub-cycle limit (${ov.apSub}×Ø)`:'',ov.aeSub?`ae is over the sub-cycle limit (${ov.aeSub}×Ø)`:''].filter(Boolean);
+ const adj=a?`<div class="note" style="margin:8px">ae ${f(a.ae,2)} mm${a.ap>0?' · ap '+f(a.ap,2)+' mm':''} (recommended ${f(a.ae0,2)}${a.ap0>0?' / '+f(a.ap0,2):''} mm): Vc ×${f(a.vk,2)}, fz ×${f(a.fk,2)} — chip thinning${a.vk!==1?', Vc boost at light ae':''}${a.ap>0&&a.ap/(c6Geo().D||1)>engCfg().apFrom?', fz eased for the deep ap':''}. Factors: Library → Cycle parameters → Baselines.</div>`:'';
+ return `${adj}${lim.length?`<div class="note e" style="margin:8px">${esc(lim.join('; '))} — Library → Cycle parameters → Baselines.</div>`:''}${ck.warn.length?`<div class="note e" style="margin:8px">Not computed — ${esc(ck.warn.join('; '))}.</div>`:''}${ck.soft&&ck.soft.length?`<div class="note w" style="margin:8px">${esc(ck.soft.join('; '))}</div>`:''}${d.warn?`<div class="note w" style="margin:8px">${esc(d.warn)}</div>`:''}`}
 document.addEventListener('change',e=>{const id=e.target.id;
  if(id&&id.startsWith('c6a_')){const k=id.slice(4);C6.adv[k]=e.target.value;drawCalc6();return}
  if(id==='c6pre'&&e.target.value!==''){const p=(C6.presets||[])[+e.target.value];if(!p)return;Object.assign(CALCV,{tool:p.tool||'',mat:p.mat||CALCV.mat,tag:p.tag||{},mach:p.mach||''});C6.op=p.op||'';C6.adv=Object.assign({},C6.adv,p.adv||{});
@@ -4499,12 +4520,18 @@ function drawBLEd(){const fams=famRows(),names=fams.map(([f])=>f.Cycle);if(BLF&&
   const rows=subs.map(([r,i])=>(fixed?[fixed]:(r.usableAs||[])).map((op,k)=>{const v=blVals(r,op,fixed),fo=!fixed&&r.opDefaults&&r.opDefaults[op]?fod(op):null,ph=f=>fo&&fo[f]!=null?fo[f]:null,eff=Object.assign({},fo||{},Object.fromEntries(Object.entries(v).filter(([,x])=>x!=null&&x!=='')));
    return `<tr${k?'':' class="blfirst"'}><td>${k?'':`<b>${esc(r.Cycle)}</b>`}</td><td>${esc(op)}</td>${BL_F.map(([f])=>`<td class="n">${num(i,fixed?'':op,f,v[f],ph(f))}</td>`).join('')}<td>${txt(i,fixed?'':op,'coolant',v.coolant,80,ph('coolant'))}</td><td class="blx">${blFormula(eff,op)}</td><td>${txt(i,fixed?'':op,'note',v.note,160,ph('note'))}</td></tr>`}).join('')).join('');
   return `<tr class="blhd"><td colspan="11">${esc(fam.Cycle)}${fixed?` <small class="mu">fixed operation: ${esc(fixed)}</small>`:''}</td></tr>`+famRow+(rows||'<tr><td colspan="11" class="empty">No sub-cycles.</td></tr>')}).join('');
- $('#pbody').innerHTML=`<div class="card"><h2>Baselines</h2><p class="mu">The formula every sub-cycle puts the <b>band</b> values through, so speed and feed ratios stay the same across materials and tools. <b>Vc ×</b> and <b>f/edge ×</b> scale the band's Vc and f/edge; <b>ap / ae ×Ø</b> set the default engagement and <b>ap max / ae max</b> are hard limits (Speeds &amp; Feeds and the calculator never go past them). When ae is below ½Ø the programmed fz is raised by radial chip thinning. Empty = no change / no extra limit; a grey value is inherited from the family default.</p>
+ $('#pbody').innerHTML=`<div class="card"><h2>Baselines</h2><p class="mu">The formula every sub-cycle puts the <b>band</b> values through, so speed and feed ratios stay the same across materials and tools. <b>Vc ×</b> and <b>f/edge ×</b> scale the band's Vc and f/edge; <b>ap / ae ×Ø</b> set the default engagement and <b>ap max / ae max</b> are hard limits (Speeds &amp; Feeds never goes past them; the calculator turns red when you type past them). When ae is below ½Ø the programmed fz is raised by radial chip thinning. Empty = no change / no extra limit; a grey value is inherited from the family default.</p>
  <div class="row noprint"><select id="blf" style="max-width:280px"><option value="">All families</option>${opt(names,BLF)}</select><button class="b s sm" id="blcsv">Download cycles CSV for the Sheet</button><span class="mu" id="blmsg">${fromSheet?'Your cycles tab loads from the Google Sheet — after editing here, import this CSV into the Sheet’s <i>cycles</i> tab or the Sheet will put the old values back at the next start-up.':''}</span></div>
+ <details class="card" style="margin:10px 0 0;padding:10px 14px"${SET.engage?' open':''}><summary style="cursor:pointer;font-weight:600">Calculator: how Vc and fz follow ae / ap</summary>
+ <p class="mu" style="margin:6px 0">When you change ae or ap in the calculator, fz is re-derived by chip thinning (radial below ½Ø; axial for ball and bull-nose tools) and these factors apply, relative to the recommended engagement. A Vc or fz you typed yourself is never changed.</p>
+ <div class="g">${[['vcMax','Vc boost at light ae — max ×','1.3 = up to +30 %'],['vcExp','Vc boost exponent','Vc × (0.5 ÷ (ae/Ø))^x, 0 = off'],['apFrom','fz eases off past ap ×Ø',''],['apPer','fz reduction per extra ×Ø','0.15 = −15 % per 1×Ø'],['apMin','fz never below ×','']].map(([k,l,h])=>`<div><label>${l}</label><input type="number" step="any" min="0" data-eng="${k}" value="${esc(engCfg()[k])}"${h?` title="${esc(h)}"`:''}></div>`).join('')}</div>
+ <p class="row" style="margin:8px 0 0"><button class="b s sm" id="engdef">Reset to defaults</button><span class="mu" id="engmsg"></span></p></details>
  <div class="tw bltab"><table><thead><tr><th>Sub-cycle</th><th>Op</th>${BL_F.map(([,l])=>`<th class="n">${l}</th>`).join('')}<th>Coolant</th><th>Formula</th><th>Comment</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
  $('#blf').onchange=e=>{BLF=e.target.value;drawBLEd()};
- $('#pbody').onclick=e=>{if(e.target.id==='blcsv')sheetDownload('cycles')};
- $('#pbody').onchange=async e=>{const d=e.target.dataset;if(d.bl==null)return;const r=L.cycles[+d.bl],k=d.blk,op=d.blop,isNum=BL_F.some(([f])=>f===k);let v=e.target.value.trim();
+ const engSave=async()=>{SETDOC=Object.assign(SETDOC||{},{engage:SET.engage});if(OFFLINE||!db)return $('#engmsg').textContent='Offline — applied for this session';try{await db.doc('lib/settings').update({v:LIB_V,engage:SET.engage});$('#engmsg').textContent='Saved ✓'}catch(x){$('#engmsg').textContent='Save failed: '+(x.message||x)}};
+ $('#pbody').onclick=async e=>{if(e.target.id==='blcsv')sheetDownload('cycles');if(e.target.id==='engdef'){SET.engage=null;await engSave();drawBLEd()}};
+ $('#pbody').onchange=async e=>{const d=e.target.dataset;if(d.eng){const v=e.target.value.trim(),n=+v;if(v===''||!isFinite(n)||n<0){e.target.value=engCfg()[d.eng];return}SET.engage=Object.assign({},engCfg(),{[d.eng]:n});return engSave()}
+  if(d.bl==null)return;const r=L.cycles[+d.bl],k=d.blk,op=d.blop,isNum=BL_F.some(([f])=>f===k);let v=e.target.value.trim();
   if(isNum){if(v==='')v=null;else{v=+v;if(!isFinite(v)||v<0){e.target.value='';return $('#blmsg').textContent='Numbers only (0 or more).'}}}else if(v==='')v=null;
   let from;
   if(op){const od=r.opDefaults=r.opDefaults||{},o=od[op]=od[op]||{};from=o[k];if(v==null)delete o[k];else o[k]=v;
@@ -4736,7 +4763,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-14.5';
+const APP_V='2026-10-14.6';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
@@ -4769,6 +4796,7 @@ function selfTest(){const R=[],ok=(name,c,info)=>{R.push([name,!!c]);console[c?'
    ok('band seed: level capped at 2× typical, f/edge rises with Ø',sm[0].Vc<=200&&sm[1].fz>sm[0].fz&&/capped/.test(sm[0].src),JSON.stringify(sm.map(x=>[x.Vc,x.fz,x.src])));
    {const tr=[{key:'fam',Cycle:'F',name:'F',parent:'',fixedOp:null},{key:'s1',Cycle:'S1',name:'S1',parent:'F',usableAs:['rough'],opDefaults:{rough:{apD:1,aeD:.5,vcMult:1.1,fzMult:1.2,aeDmax:.3}}}];
    const rb=SF.resolveBaseline({material:'X',iso:'P1',tool:'BX',subcycle:'s1',op:'rough',band:null,rows:[],tree:tr});ok('baseline formula: f/edge × and ae max come from the sub-cycle',rb.fzMult===1.2&&rb.subAeDmax===.3&&rb.vcMult===1.1,JSON.stringify([rb.fzMult,rb.subAeDmax]));}
+   {const E=ENG_DEF;ok('calculator: Vc boost only below ½Ø and capped',engKv(5,10,E)===1&&engKv(1,10,E)>1&&engKv(.01,10,E)===E.vcMax);ok('calculator: fz eases past 1×Ø ap, not below the floor',engKa(10,10,E)===1&&Math.abs(engKa(20,10,E)-.85)<1e-9&&engKa(100,10,E)===E.apMin);}
    ok('pick ladder: BAND beats catalogue',SF.pick({band:{src:'BAND',vc:1,fz:.01},mfr:{src:'MFR',vc:1,fz:.01}}).src==='BAND');}
    ok('pick ladder: MFR≈ › GEM › CAL › BASE',SF.pick({mfr:m,gem:g,cal:c,typ:t}).src==='MFR≈'&&SF.pick({gem:g,cal:c,typ:t}).src==='GEM'&&SF.pick({cal:c,typ:t}).src==='CAL'&&SF.pick({typ:t}).src==='BASE')}
   if(GEMD.baselines.length){
