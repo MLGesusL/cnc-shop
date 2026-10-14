@@ -129,6 +129,7 @@ ul{margin:4px 0 0 18px;padding:0}li{margin:3px 0;max-width:80ch}
 .seecuts{border:0;background:none;padding:0;color:var(--info);text-decoration:underline;cursor:pointer;font:inherit}
 .src.MFR{background:var(--okbg);color:var(--ok)}
 .src.GEM{background:var(--sub);color:var(--ink);border:1px solid var(--ink);cursor:help}
+.src.BAND{background:var(--rfbg);color:var(--rf);border:1px solid var(--rf)}
 .gemw{cursor:help;color:var(--warn);font-weight:600}
 .sev{display:inline-block;font-size:12px;font-weight:600;padding:0 7px;border-radius:3px;line-height:1.6}
 .sev.High{background:var(--badbg);color:var(--bad)}.sev.Med{background:var(--warnbg);color:var(--warn)}.sev.Low{background:var(--sub);color:var(--tx)}.sev.Info{color:var(--mu);border:1px solid var(--bd2)}
@@ -140,6 +141,22 @@ ul{margin:4px 0 0 18px;padding:0}li{margin:3px 0;max-width:80ch}
 .seg button{border:0;background:transparent;color:var(--tx);padding:5px 14px;cursor:pointer;font-size:15px;border-right:1px solid var(--bd2)}
 .seg button:last-child{border-right:0}.seg button:hover{background:var(--sub)}
 .seg button.on{background:var(--ink);color:var(--inktx);font-weight:600}
+/* Bands editor (2026-10-14): material list | cutter-type tables, like hyperMILL's Materials dialog */
+.mbw{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:14px;align-items:start}
+@media (max-width:900px){.mbw{grid-template-columns:1fr}}
+.mbl{border:1px solid var(--bd);border-radius:var(--r);background:var(--card);max-height:70vh;overflow:auto}
+.mbl button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--bd);background:transparent;color:var(--tx);padding:7px 10px;cursor:pointer;font:inherit;font-size:14px}
+.mbl button:hover{background:var(--sub)}.mbl button.on{background:var(--hibg);font-weight:600}
+.mbl small{color:var(--mu);white-space:nowrap}
+.mbt{border:1px solid var(--bd);border-radius:var(--r);margin:0 0 12px;background:var(--card)}
+.mbt>summary{cursor:pointer;padding:8px 12px;font-weight:600;display:flex;gap:10px;align-items:center;flex-wrap:wrap;list-style:none}
+.mbt>summary::-webkit-details-marker{display:none}.mbt>summary::before{content:'⊞';color:var(--mu)}.mbt[open]>summary::before{content:'⊟'}
+.mbt>summary .mu{font-weight:400}
+.mbt table{margin:0}.mbt .tw{margin:0 10px 8px;border-radius:3px}
+.mbt input[type=number]{width:92px;min-height:30px;padding:3px 8px}
+.mbt td{padding-top:3px;padding-bottom:3px;vertical-align:middle}
+.mbt td.mbs{white-space:normal;min-width:220px;max-width:380px;font-size:12px;color:var(--mu);line-height:1.35}
+.mbt td.mbs span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 fieldset{border:1px solid var(--bd);border-radius:var(--r);padding:10px 14px 14px;margin:12px 0;background:var(--sub)}
 legend{font-size:15px;font-weight:600;color:var(--tx);padding:0 6px}
 .tg{border-left:3px solid var(--hi)}
@@ -239,7 +256,7 @@ table.gt .l2{color:var(--mu)}
 
 
 /* Phase 4: one Recommended column; the value colour follows its source tag */
-table.gt td.s-DB .l1 .k b,table.gt td.s-DB-SUB .l1 .k b,table.gt td.s-DB-SUB-FAM .l1 .k b{color:var(--hi)}table.gt td.s-MFR .l1 .k b,table.gt td.s-MFR≈ .l1 .k b{color:var(--ok)}table.gt td.s-CAL .l1 .k b{color:var(--info)}
+table.gt td.s-DB .l1 .k b,table.gt td.s-DB-SUB .l1 .k b,table.gt td.s-DB-SUB-FAM .l1 .k b{color:var(--hi)}table.gt td.s-MFR .l1 .k b,table.gt td.s-MFR≈ .l1 .k b{color:var(--ok)}table.gt td.s-CAL .l1 .k b{color:var(--info)}table.gt td.s-BAND .l1 .k b{color:var(--rf)}
 table.gt{table-layout:fixed;width:100%;min-width:0}
 table.gt th.fx{width:118px}
 table.gt th.gh{min-width:0;width:auto}
@@ -1116,18 +1133,97 @@ const SF = (() => {
   }
   const minCut = (r, T) => Math.min(...(r.tc || []).map(c => T[c] ? (nz(T[c]['Cutting Length (mm)']) || nz(T[c]['Max DOC (mm)'])) : NaN).filter(isFinite));
   const minR = (r, T) => { const v = (r.tc || []).map(c => T[c] ? nz(T[c]['Corner Radius (mm)']) : NaN).filter(isFinite); return v.length ? Math.min(...v) : 0; };
+  /* ===================== BAND TABLES (2026-10-14) =====================
+     lib/matbands: one row per Material › Cutter type › Ø range → { material, cutter, lo, hi, Vc, fz, src, note }.
+     Laid out like hyperMILL's Materials dialog (cutting class › cutter material › up-to-Ø table), but with min AND max Ø.
+     Vc and fz are the ROUGHING reference for that cutter: fz = f/edge at full engagement (the chip thickness), so a
+     sub-cycle's ap / ae re-derive the programmed fz (chip thinning) and its multipliers scale Vc. */
+  const MB_TOL = .005;
+  function bandRowFor(rows, material, sfx, d) {
+    if (!Array.isArray(rows) || !rows.length || !material || !sfx || !(d > 0)) return null;
+    const m = String(material).trim().toLowerCase(), c = String(sfx).trim().toUpperCase();
+    return rows.find(r => r && String(r.material || '').trim().toLowerCase() === m && String(r.cutter || '').trim().toUpperCase() === c &&
+      +r.Vc > 0 && +r.fz > 0 && d >= +r.lo - MB_TOL && d <= +r.hi + MB_TOL) || null;
+  }
+  /* problems in one Material › Cutter table ([] = fine): min < max, no overlaps, Vc and f/edge filled */
+  function bandTableProblems(rows) {
+    const err = [], R = (rows || []).slice().sort((a, b) => +a.lo - +b.lo);
+    R.forEach(r => { if (!(isFinite(+r.lo) && isFinite(+r.hi)) || r.lo === '' || r.hi === '') err.push('a row has no min / max Ø'); else if (+r.lo >= +r.hi) err.push(`Ø${r.lo}–${r.hi}: min must be below max`);
+      if (!(+r.Vc > 0)) err.push(`Ø${r.lo}–${r.hi}: cutting speed missing`); if (!(+r.fz > 0)) err.push(`Ø${r.lo}–${r.hi}: f/edge missing`); });
+    for (let i = 1; i < R.length; i++) if (+R[i].lo <= +R[i - 1].hi) err.push(`Ø${R[i - 1].lo}–${R[i - 1].hi} overlaps Ø${R[i].lo}–${R[i].hi}`);
+    return [...new Set(err)];
+  }
+  /* one table from raw per-range seeds: level from the best source present (median), shape from the model —
+     Vc constant across Ø, f/edge ∝ Ø (smaller below Ø2, as hexBase). Keeps ratios consistent between materials and tools. */
+  const SEED_RANK = ['Catalogue', 'Catalogue (similar tool)', 'Catalogue (scaled)', 'Catalogue (similar tool, scaled)', 'Typical model'];
+  const hexShape = d => d * (d < 2 ? .7 + .15 * d : 1);
+  /* typ (optional): typical-model rows for the same ranges. The catalogue level may not exceed 2× the typical model
+     (a catalogue row scaled across material groups or stretched beyond its printed Ø can land far too high); lower is kept. */
+  function bandSmooth(raw, typ) {
+    const R = (raw || []).filter(x => x && x.Vc > 0 && x.fz > 0 && x.d > 0); if (!R.length) return [];
+    const best = SEED_RANK.find(k => R.some(x => x.src === k)), use = R.filter(x => x.src === best);
+    let vc = +med(use.map(x => +x.Vc)).toPrecision(3), k = med(use.map(x => x.fz / hexShape(x.d))); const capT = [];
+    const T = (typ || []).filter(x => x && x.Vc > 0 && x.fz > 0 && x.d > 0);
+    if (T.length && best !== 'Typical model') { const tv = med(T.map(x => +x.Vc)), tk = med(T.map(x => x.fz / hexShape(x.d)));
+      if (vc > 2 * tv) { capT.push(`Vc ${vc} was ${sig(vc / tv, 2)}× the typical model — limited to 2×`); vc = +(2 * tv).toPrecision(3); }
+      if (k > 2 * tk) { capT.push(`f/edge level was ${sig(k / tk, 2)}× the typical model — limited to 2×`); k = 2 * tk; } }
+    return R.map(x => { const fz = +(k * hexShape(x.d)).toPrecision(2), same = Math.abs(fz - x.fz) / x.fz < .03 && Math.abs(vc - x.Vc) / x.Vc < .03;
+      return { lo: x.lo, hi: x.hi, Vc: vc, fz, src: best + (capT.length ? ' (capped)' : ''), note: (capT.length ? capT.join('; ') + ' · ' : '') + `level = median of ${use.length} ${best.toLowerCase()} range${use.length > 1 ? 's' : ''}, Vc held, f/edge scaled with Ø (ref Ø${sig(x.d, 3)})` + (same ? '' : ` · raw for this range: Vc ${x.Vc}, f/edge ${x.fz} (${x.src})`) + ` · ${x.note}` }; });
+  }
+  /* soft checks: Vc / f/edge normally hold or rise with Ø — a drop of more than 25 % to the next range is worth a look */
+  function bandTableWarnings(rows) {
+    const w = [], R = (rows || []).filter(r => +r.Vc > 0 && +r.fz > 0).slice().sort((a, b) => +a.lo - +b.lo);
+    for (let i = 1; i < R.length; i++) { const a = R[i - 1], b = R[i];
+      if (+b.fz < +a.fz * .75) w.push(`f/edge drops from ${a.fz} (Ø${a.lo}–${a.hi}) to ${b.fz} (Ø${b.lo}–${b.hi})`);
+      if (+b.Vc < +a.Vc * .75) w.push(`Vc drops from ${a.Vc} (Ø${a.lo}–${a.hi}) to ${b.Vc} (Ø${b.lo}–${b.hi})`); }
+    return w;
+  }
+  /* starting values for one Material › Cutter › Ø range: manufacturer catalogue for a library tool of that type in the range
+     (or the similar-tool catalogue the app already uses), otherwise the typical model. Logged cuts are never used. */
+  function bandSeed(ctx0, sfx, lo, hi, typicalOnly) {
+    if (!TT[sfx]) return null;
+    const ctx = Object.assign({}, ctx0, { fam: famOf(ctx0.mat), k: matFactor(ctx0.mat), info: matInfo(ctx0.mat) }), info = ctx.info;
+    const f = (TF[sfx] || TF.BX)[isFerrousIso(info.iso) ? 0 : 1]; if (!f[0]) return null;
+    const ts = (ctx.tools || []).filter(t => ctx.sfxOf(t['Tool Code']) === sfx && nz(t['Diameter (mm)']) >= lo - MB_TOL && nz(t['Diameter (mm)']) <= hi + MB_TOL);
+    const ds = ts.map(t => nz(t['Diameter (mm)'])).filter(x => x > 0).sort((a, b) => a - b);
+    const d = ds.length ? ds[Math.floor(ds.length / 2)] : (lo + Math.min(hi, lo * 2)) / 2;
+    const round = (v, n) => +(+v).toPrecision(n);
+    const fromM = (m, t, kind) => { const R = nz(t['Corner Radius (mm)']) || 0, dd = nz(t['Diameter (mm)']) || d, ball = sfx === 'BN' || sfx === 'LP';
+      const thin = m.ap != null && m.ae != null ? (ball ? sAx(m.ap, dd / 2) * sRad(m.ae, deffOf(m.ap, dd)) : sAx(m.ap, R) * sRad(m.ae, dd)) : 1;
+      return { d, Vc: round(m.vc, 3), fz: round(m.fz * thin, 2), src: kind, note: `${t['Tool Code'] ? t['Tool Code'] + ' Ø' + dd + ' — ' : ''}${String(m.note || '').replace(/^Similar tool[^:]*: /, '').split(' · ap')[0]}${thin < .999 ? ` · printed fz ${sig(m.fz, 2)} at ae ${sig(m.ae, 2)} mm → f/edge at full engagement` : ''}` }; };
+    const near = ts.slice().sort((a, b) => Math.abs(nz(a['Diameter (mm)']) - d) - Math.abs(nz(b['Diameter (mm)']) - d));
+    if (typicalOnly) { const B = BASE[info.iso] || BASE.P1; return { d, Vc: round(B[0] * info.k * f[0], 3), fz: round(hexBase(info.iso, d) * f[1], 2), src: 'Typical model', note: '' }; }
+    /* order: printed for your own tool › printed for the similar tool (same material group) › your tool's catalogue scaled
+       from another material group › similar tool scaled › typical model */
+    const ok = m => m && !m.none && m.vc > 0 && m.fz > 0, own = near.map(t => [t, mfrFor(ctx, t, nz(t['Diameter (mm)']), 'R', nz(t.Flutes) || 2, false)]).filter(([, m]) => ok(m));
+    let sim = null;
+    if (SIM[sfx] && !(sfx === 'BN' && !isFerrousIso(info.iso))) { const t0 = near[0] || {}, dd = nz(t0['Diameter (mm)']) || d;
+      const m = mfrFor(ctx, { Description: SIM[sfx], Flutes: t0.Flutes, 'Cutting Length (mm)': t0['Cutting Length (mm)'], 'Max DOC (mm)': t0['Max DOC (mm)'] }, dd, 'R', nz(t0.Flutes) || 2, false);
+      if (ok(m)) sim = [Object.assign({}, t0, { 'Diameter (mm)': dd, 'Tool Code': '' }), m]; }
+    const o1 = own.find(([, m]) => !m.derived); if (o1) return fromM(o1[1], o1[0], 'Catalogue');
+    if (sim && !sim[1].derived) return fromM(sim[1], sim[0], 'Catalogue (similar tool)');
+    if (own.length) return fromM(own[0][1], own[0][0], 'Catalogue (scaled)');
+    if (sim) return fromM(sim[1], sim[0], 'Catalogue (similar tool, scaled)');
+    const B = BASE[info.iso] || BASE.P1;
+    return { d, Vc: round(B[0] * info.k * f[0], 3), fz: round(hexBase(info.iso, d) * f[1], 2), src: 'Typical model', note: `${ISO_NAME[info.iso] || info.iso} · coated carbide · Ø${sig(d, 3)} reference` };
+  }
   /* opt = {coolant, pref}; defaults to the context's. sub = sub-cycle key (optional). Baseline Vc (absolute) beats the model;
      otherwise model Vc × the sub-cycle's vcMult. */
   /* rdb = r/D band (computed once by the caller); gc = matching GEMD.cycles entry for the chosen sub-cycle (Part 3) */
-  function emTyp(ctx, info, sfx, op, d, z, cl, R, opt, sub, rdb, gc) {
+  function emTyp(ctx, info, sfx, op, d, z, cl, R, opt, sub, rdb, gc, useBand) {
     const B = BASE[info.iso] || BASE.P1, f = (TF[sfx] || TF.BX)[isFerrousIso(info.iso) ? 0 : 1];
-    if (!f[0]) return null; const adj = adjOf(info.iso, opt || { coolant: ctx.coolant, pref: ctx.pref });
+    /* 2026-10-14 band tables: useBand → Vc and f/edge come from the user's Material › Cutter type › Ø row (lib/matbands).
+       The row holds the roughing reference (f/edge = chip thickness at full engagement); semi / finish keep the model's ratios. */
+    const br = useBand ? bandRowFor(ctx.matbands, ctx.mat && ctx.mat.Material, sfx, d) : null;
+    if (useBand && !br) return null;
+    if (!f[0] && !br) return null; const adj = adjOf(info.iso, opt || { coolant: ctx.coolant, pref: ctx.pref });
     let eng = engagement(ctx, info, sfx, op, d, cl, sub, rdb);
-    const vc0 = (op === 'R' ? B[0] : op === 'F' ? B[1] : (B[0] + B[1]) / 2) * info.k * f[0];
+    const opV = op === 'R' ? 1 : op === 'F' ? B[1] / B[0] : (B[0] + B[1]) / 2 / B[0];
+    const vc0 = br ? +br.Vc * opV : (op === 'R' ? B[0] : op === 'F' ? B[1] : (B[0] + B[1]) / 2) * info.k * f[0];
     /* GEM cycle override: multiplies on top of what resolveBaseline returned (vcMult and the reference hex), never replaces it */
     const gvm = gc && +gc.vc_multiplier > 0 ? +gc.vc_multiplier : 1, ghm = gc && +gc.hex_multiplier > 0 ? +gc.hex_multiplier : 1;
     const vcT = (eng.Vc > 0 ? +eng.Vc : vc0 * (eng.vcMult || 1)) * gvm * adj.k * (eng.ruleVcMult > 0 ? eng.ruleVcMult : 1);
-    const hex = hexBase(info.iso, d) * f[1] * (op === 'S' ? .85 : op === 'F' ? .75 : 1) * ghm;
+    const hex = (br ? +br.fz : hexBase(info.iso, d) * f[1]) * (op === 'S' ? .85 : op === 'F' ? .75 : 1) * ghm;
     if (gc) {
       /* GEM engagement only where neither the sub-cycle's op-defaults nor a baseline row set ap / ae (the sub-cycle is more specific) */
       const ge = gc.engagement || {}, len = (a, m) => a == null ? null : m === 'nD' ? mid2(a) * d : mid2(a), e2 = Object.assign({}, eng), from = eng.from || {}, used = [];
@@ -1138,8 +1234,8 @@ const SF = (() => {
       e2.gemCycle = gc; eng = e2;
     }
     /* Phase 9: how the target Vc was built, for "Explain this value" */
-    const vcWhy = { from: eng.Vc > 0 ? 'baseline' : 'model', base: eng.Vc > 0 ? +eng.Vc : vc0, vcMult: eng.Vc > 0 ? 1 : (eng.vcMult || 1), gem: gvm, adj: adj.k, adjTxt: adj.txt || '', rule: eng.ruleVcMult > 0 ? eng.ruleVcMult : 1 };
-    return { vcT, hex, eng, R, adjTxt: adj.txt, vcWhy };
+    const vcWhy = { from: eng.Vc > 0 ? 'baseline' : br ? 'band' : 'model', base: eng.Vc > 0 ? +eng.Vc : vc0, bandRow: br || null, vcMult: eng.Vc > 0 ? 1 : (eng.vcMult || 1), gem: gvm, adj: adj.k, adjTxt: adj.txt || '', rule: eng.ruleVcMult > 0 ? eng.ruleVcMult : 1 };
+    return { vcT, hex, eng, R, adjTxt: adj.txt, vcWhy, bandRow: br };
   }
   /* other tool types: [Vc, fz] by ISO group */
   const SLOT = { N1: 300, N2: 200, PL: 200, C: 120, P1: 150, P2: 110, H1: 70, H2: 45, M: 80, K: 130, S1: 40, S2: 25 };
@@ -1386,6 +1482,8 @@ const SF = (() => {
         r.blocked = b && b.eng && b.eng.block ? 'Blocked by rule: ' + b.eng.blockNote : null;
         if (b) {
           typ = solve(ctx, d, z, b.vcT, b.hex, b.eng, R, 'TYP', b.adjTxt ? { adjTxt: b.adjTxt } : null); whyOn(typ, { eng: b.eng, vcWhy: b.vcWhy });
+          const bb = emTyp(ctx, info, sec.sfx, o.op, d, z, cl, R, undefined, undefined, rdb, undefined, true);
+          r.band = bb ? whyOn(solve(ctx, d, z, bb.vcT, bb.hex, bb.eng, R, 'BAND', { bandRow: bb.bandRow, adjTxt: bb.adjTxt || '' }), { eng: bb.eng, vcWhy: bb.vcWhy }) : null;
           const k = cal[((sec.sfx === 'BN' || sec.sfx === 'LP') ? 'emball' : 'em') + '|' + o.op];
           if (k) { const L = v => isFinite(cl) && cl > 0 ? Math.min(v, cl) : v;
             const ap0 = L(k.eng ? k.eng.apD * d : 0), aeMax = k.eng ? aeLim(ap0 / d, isFerrousIso(info.iso)) : 1, eng = k.eng && sec.sfx !== 'CH' ? { ap: ap0, ae: Math.min(aeMax, k.eng.aeD) * d, ball: b.eng.ball, txt: `your usual${k.eng.name ? ' ' + k.eng.name : ''} cut: ap ${sig(k.eng.apD, 2)}×Ø, ae ${sig(Math.min(aeMax, k.eng.aeD), 2)}×Ø${k.eng.aeD > aeMax + 1e-9 ? ' (your ' + sig(k.eng.aeD, 2) + '×Ø reduced to ' + sig(aeMax, 2) + '×Ø — realistic at this depth)' : ''}` } : b.eng;
@@ -1421,12 +1519,12 @@ const SF = (() => {
       } else r.mfr = null;
       r.mfrWhy = m ? '' : (miss || ((r.tc || []).length ? 'tool not in an uploaded catalogue with cutting data' : 'no library tool'));
       /* spindle power check (warning only): P = ap·ae·feed·kc1.1 / (60e6·0.8) against the selected machine's rating */
-      if (ctx.kw > 0) [r.mfr, r.own, r.cal, r.typ].forEach(x => { if (x && x.ap > 0 && x.ae > 0 && isFinite(x.feed) && x.feed > 0) { const kw = x.ap * x.ae * x.feed * (KC[info.iso] || 2000) / (60e6 * .8); x.pw = { kw, of: ctx.kw, pct: kw / ctx.kw * 100 }; } });
+      if (ctx.kw > 0) [r.mfr, r.own, r.cal, r.typ, r.band].forEach(x => { if (x && x.ap > 0 && x.ae > 0 && isFinite(x.feed) && x.feed > 0) { const kw = x.ap * x.ae * x.feed * (KC[info.iso] || 2000) / (60e6 * .8); x.pw = { kw, of: ctx.kw, pct: kw / ctx.kw * 100 }; } });
       /* GEM (Gemini-compiled baseline) */
       r.gem = sec.kind === 'blocked' ? null : gemVal(ctx, sec.kind, sec.sfx, o.op, d, z, cl, R, rdb);
       if (r.gem && ctx.kw > 0 && r.gem.ap > 0 && r.gem.ae > 0 && isFinite(r.gem.feed) && r.gem.feed > 0) { const kw = r.gem.ap * r.gem.ae * r.gem.feed * (KC[info.iso] || 2000) / (60e6 * .8); r.gem.pw = { kw, of: ctx.kw, pct: kw / ctx.kw * 100 }; }
       /* Phase 2: a rule with block=true leaves the row with no recommendation */
-      if (r.blocked) { r.mfr = r.gem = r.cal = r.typ = r.ownV = null; r.mfrWhy = r.blocked; }
+      if (r.blocked) { r.mfr = r.gem = r.cal = r.typ = r.ownV = r.band = null; r.mfrWhy = r.blocked; }
       /* best available value: see pick() for the ladder */
       { const p = pick(r, ctx.tiers); r.best = p ? p.val : null; r.bestSrc = p ? p.src : null; r.noRec = !p && !!pick(r); }
       /* 15 % disagreement between catalogue and GEM (flag only; the value is unchanged) */
@@ -1439,7 +1537,7 @@ const SF = (() => {
 
   /* ---------- top-level builder ---------- */
   const stampOf = ctx0 => GEN + ':' + (ctx0.tools || []).length + ':' + (ctx0.cuts || []).length + ':' +
-    (ctx0.materials || []).length + ':' + (ctx0.machines || []).length + ':' + (ctx0.baseline || []).length + ':' + (ctx0.bands || []).length + ':' +
+    (ctx0.materials || []).length + ':' + (ctx0.machines || []).length + ':' + (ctx0.baseline || []).length + ':' + (ctx0.bands || []).length + ':' + (ctx0.matbands || []).length + ':' +
     (ctx0.cuts || []).filter(c => c.verified).length + ':' + (ctx0.cuts || []).filter(c => c.subcycleKey).length + ':' + (ctx0.raK || 1) + ':' + JSON.stringify(ctx0.tiers || null) + ':' + (GD.baselines || []).length + ':' + (GD.cycles || []).length + ':' + (GD.adjustments || []).length + ':' + (ctx0.coolant || '');
   function build(ctx0) {
     const stamp = stampOf(ctx0);
@@ -1489,14 +1587,14 @@ const SF = (() => {
   /* Phase 9: attach the "Explain this value" trail without making it part of the value's JSON */
   const whyOn = (x, w) => { if (x && w) try { Object.defineProperty(x, 'why', { value: w, enumerable: false, configurable: true, writable: true }); } catch (e) {} return x; };
   /* the source tag a value carries in the single-column display (Phase 4) */
-  const srcOf = (r, x) => !x ? null : x === r.ownV ? 'DB' : x === r.mfr ? (x.derived || x.sim ? 'MFR≈' : 'MFR') : x === r.gem ? 'GEM' : x === r.cal ? 'CAL' : x === r.typ ? 'BASE' : x.src;
+  const srcOf = (r, x) => !x ? null : x === r.ownV ? 'DB' : x === r.mfr ? (x.derived || x.sim ? 'MFR≈' : 'MFR') : x === r.gem ? 'GEM' : x === r.cal ? 'CAL' : x === r.typ ? 'BASE' : x === r.band ? 'BAND' : x.src;
   /* Phase 6a: the recommendation sources, in ladder order; each can be switched off (lib/settings.tiers) */
-  const SFTIERS = ['DB-SUB', 'DB-SUB-FAM', 'DB', 'MFR', 'MFR≈', 'GEM', 'CAL', 'BASE'];
+  const SFTIERS = ['DB-SUB', 'DB-SUB-FAM', 'DB', 'BAND', 'MFR', 'MFR≈', 'GEM', 'CAL', 'BASE'];
   const tierOn = (enabled, t) => !enabled || enabled[t] !== false;
   /* Phase 4 ladder for one built row: first hit wins. enabled = { tier: false } skips that tier; undefined = all on */
   function pick(r, enabled) {
     const ok = x => x && isFinite(x.fz != null ? x.fz : x.f), on = t => tierOn(enabled, t);
-    const c = [on('DB') && r.ownV && r.ownV.exact && r.ownV, on('DB') && r.ownV && !r.ownV.exact && r.ownV, on('MFR') && ok(r.mfr) && !r.mfr.derived && !r.mfr.sim && r.mfr, on('MFR≈') && ok(r.mfr) && (r.mfr.derived || r.mfr.sim) && r.mfr, on('GEM') && ok(r.gem) && r.gem, on('CAL') && r.cal && r.cal.calTier === 'op' && r.cal, on('BASE') && r.typ].find(Boolean) || null;
+    const c = [on('DB') && r.ownV && r.ownV.exact && r.ownV, on('DB') && r.ownV && !r.ownV.exact && r.ownV, on('BAND') && ok(r.band) && r.band, on('MFR') && ok(r.mfr) && !r.mfr.derived && !r.mfr.sim && r.mfr, on('MFR≈') && ok(r.mfr) && (r.mfr.derived || r.mfr.sim) && r.mfr, on('GEM') && ok(r.gem) && r.gem, on('CAL') && r.cal && r.cal.calTier === 'op' && r.cal, on('BASE') && r.typ].find(Boolean) || null;
     return c ? { val: c, src: srcOf(r, c) } : null;
   }
   /* resolve(ctx, {tool, op: 'rough'|'semi'|'finish', subcycleKey}) → { src, n, vc, vcT, rpm, capped, fz, feed, z, ap, ae, basedOn, ids, row } */
@@ -1526,9 +1624,10 @@ const SF = (() => {
        row that does not print ap / ae (no hex) keeps its printed fz. DB keeps your logged engagement. */
     if (sub && TT[sfx] && o && (!p || !/^DB/.test(p.src))) {
       const ctx = Object.assign({}, cb, { fam: famOf(cb.mat), k: matFactor(cb.mat), info: matInfo(cb.mat) }), T = {}; ctx.tools.forEach(x => T[x['Tool Code']] = x);
-      const Rr = minR(row, T), gc = gemCycle(sub, ctx.info.iso, ctx.tree), b = emTyp(ctx, ctx.info, sfx, o, d, z, minCut(row, T), Rr, null, sub, rdBandOf(Rr, d), gc);
+      const Rr = minR(row, T), useB = !!(p && p.src === 'BAND'), gc = useB ? null : gemCycle(sub, ctx.info.iso, ctx.tree), b = emTyp(ctx, ctx.info, sfx, o, d, z, minCut(row, T), Rr, null, sub, rdBandOf(Rr, d), gc, useB);
       if (b) {
         if (!p && !tierOn(ctx0.tiers, 'BASE')) { /* every source with a value is switched off */ }
+        else if (useB) p = { val: whyOn(solve(ctx, d, z, b.vcT, b.hex, b.eng, Rr, 'BAND', { bandRow: b.bandRow, adjTxt: b.adjTxt || '' }), { eng: b.eng, vcWhy: b.vcWhy }), src: 'BAND', atSub: true };
         else if (!p || p.src === 'BASE') p = { val: whyOn(solve(ctx, d, z, b.vcT, b.hex, b.eng, Rr, 'BASE', b.adjTxt ? { adjTxt: b.adjTxt } : null), { eng: b.eng, vcWhy: b.vcWhy }), src: 'BASE' };
         else { const x = p.val, hx = isFinite(x.hex) && x.hex > 0 ? x.hex : null, eng = hx ? b.eng : Object.assign({}, b.eng, { noThin: true });
           /* the GEM cycle multipliers also apply to a GEM-sourced value (same data set); catalogue / calibrated values keep theirs */
@@ -1539,7 +1638,9 @@ const SF = (() => {
       }
     }
     if (!p) return row.noRec || (ctx0.tiers && pick(row)) ? { warn: 'No recommendation — the sources that have a value are switched off', noRec: true } : null; const v = p.val;
-    const basedOn = p.src === 'DB' ? `${v.n} verified logged cut${v.n > 1 ? 's' : ''}${v.exact ? '' : ' (same material family)'}${sub ? ' — none tagged ' + subName : ''}`
+    const bandTxt = x => { const br = x && x.bandRow; return br ? `your band table: ${br.material} › ${br.cutter} › Ø${br.lo}–${br.hi} (Vc ${br.Vc}, f/edge ${br.fz})` : 'your band table'; };
+    const basedOn = p.src === 'BAND' ? bandTxt(v) + (sub ? ` — applied at the ${subName} engagement` : '') + (v.engTxt ? ' · ' + v.engTxt : '')
+      : p.src === 'DB' ? `${v.n} verified logged cut${v.n > 1 ? 's' : ''}${v.exact ? '' : ' (same material family)'}${sub ? ' — none tagged ' + subName : ''}`
       : p.src === 'MFR' || p.src === 'MFR≈' ? (v.note || 'manufacturer catalogue') + (p.atSub ? ` — catalogue Vc and chip load, applied at the ${subName} engagement` : '')
       : p.src === 'GEM' ? `GEM baseline${v.gemRow && v.gemRow.name ? ' (' + v.gemRow.name + ')' : ''} — ${v.note || GEM_DEF_NOTE}` + (p.atSub ? ` — applied at the ${subName} engagement` : '') + (v.adjTxt ? ' · ' + v.adjTxt : '') : p.src === 'CAL' ? (v.calNote || 'calibrated on your verified cuts') + (p.atSub ? ` — applied at the ${subName} engagement` : '') : (sub ? `baseline for ${subName}` : 'baseline rules') + (v.engTxt ? ' · ' + v.engTxt : '');
     return { src: p.src, n: v.n || v.calN || 0, vc: v.vc, vcT: v.vcT || v.vc, rpm: v.rpm, capped: v.capped, fz: v.fz != null ? v.fz : v.f, feed: v.feed, z, ap: v.ap != null ? v.ap : null, ae: v.ae != null ? v.ae : null, band: band && band.label, basedOn, note: v.note, engTxt: v.engTxt, row, val: v };
@@ -1562,7 +1663,7 @@ const SF = (() => {
     ['CTE magazine — Thread milling machining parameters', 'https://www.ctemag.com/articles/thread-milling-machining-parameters']
   ];
   return { FAMS, famOf, matFactor, matInfo, build, suggest, invalidate, KC11: KC, TT, OPN, REFS, interp: lerp, sig, ISO_NAME, sRad, sAx, deffOf, aeLim,
-    trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, opDefaultsLayers, SFTIERS, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
+    trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, bandRowFor, bandTableProblems, bandTableWarnings, bandSeed, bandSmooth, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, opDefaultsLayers, SFTIERS, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
 })();
 if (typeof module !== 'undefined') module.exports = SF;
 /* @end sf.js */
@@ -2061,10 +2162,11 @@ const DEFAULT_LIB = {
   ],
   cycleparams: [],
   baseline: SF.DEFAULT_BASELINE.map(r=>({...r})),
-  bands: SF.BANDS.map(b=>({...b}))
+  bands: SF.BANDS.map(b=>({...b})),
+  matbands: []
 };
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)],esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],formulas:[],prompts:[],rules:[],calc_fields:[]};
+const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],matbands:[],formulas:[],prompts:[],rules:[],calc_fields:[]};
 let SHEET_CFG={id:'',tabs:[]};let SHEET_HEAD={};let SHEET_SYNC={tried:false,got:[],missing:[]};/* Phase 9: each Sheet tab's header row, so exports keep the Sheet's column order */let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
 const TABS=[['ask','Ask AI','A'],['log','Log cut','+'],['cuts','Cut database','D'],['cheat','Speeds & Feeds','C'],['form','Formulas','ƒ'],['learn','Learn AI','K'],['lib','Library','L'],['setup','Setup sheet','S'],['todo','To-do','✓'],['guide','User Guide','?']];
 $('#nav').innerHTML=TABS.map(t=>`<button data-t="${t[0]}"><i>${t[2]}</i>${t[1]}</button>`).join('');
@@ -2364,7 +2466,7 @@ const setupLine=c=>`${c.material} | Tool: ${c.tool} | Vc: ${c.vc??''} | RPM: ${c
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
 let SET={ra:1.6,pref:'balanced',raK:1,tiers:null};/* lib/settings (raK is stored as ra_cusp_k) */
 let SETDOC={};/* the whole lib/settings document (Phase 3b: formulaGroupOrder) */
-function sfctx(matName,machine,coolant){const m=L.materials.find(x=>x.Material===matName)||L.materials[0];const k=(m&&m.Material)+'|'+(machine||'')+'|'+(coolant||'');const mc=L.machines.find(x=>x.Machine===machine)||{};const c=SFC[k]||(SFC[k]={});if(c.mat!==m||c.tools!==L.tools||c.cuts!==CUTS||c.materials!==L.materials||c.machines!==L.machines||c.baseline!==L.baseline||c.bands!==L.bands||c.rules!==L.rules||c.raK!==SET.raK||c.tiers!==SET.tiers)SF.invalidate(c);return Object.assign(c,{tools:L.tools,cuts:CUTS,materials:L.materials,machines:L.machines,baseline:L.baseline,bands:L.bands,rules:L.rules,mat:m,cap:capOf(machine),sfxOf:AUD.sfxOf,parse:AUD.parseDesc,tree:CTREE(),coolant:coolant||'Flood',ra:+SET.ra||1.6,raK:+SET.raK||1,tiers:SET.tiers||null,pref:SET.pref||'balanced',kw:+mc['Spindle Power (kW)']||0})}
+function sfctx(matName,machine,coolant){const m=L.materials.find(x=>x.Material===matName)||L.materials[0];const k=(m&&m.Material)+'|'+(machine||'')+'|'+(coolant||'');const mc=L.machines.find(x=>x.Machine===machine)||{};const c=SFC[k]||(SFC[k]={});if(c.mat!==m||c.tools!==L.tools||c.cuts!==CUTS||c.materials!==L.materials||c.machines!==L.machines||c.baseline!==L.baseline||c.bands!==L.bands||c.matbands!==L.matbands||c.rules!==L.rules||c.raK!==SET.raK||c.tiers!==SET.tiers)SF.invalidate(c);return Object.assign(c,{tools:L.tools,cuts:CUTS,materials:L.materials,machines:L.machines,baseline:L.baseline,bands:L.bands,matbands:L.matbands,rules:L.rules,mat:m,cap:capOf(machine),sfxOf:AUD.sfxOf,parse:AUD.parseDesc,tree:CTREE(),coolant:coolant||'Flood',ra:+SET.ra||1.6,raK:+SET.raK||1,tiers:SET.tiers||null,pref:SET.pref||'balanced',kw:+mc['Spindle Power (kW)']||0})}
 function sfLookup(matName,code,op,machine){const t=tool(code);if(!t||!matName||!L.materials.length)return null;const ctx=sfctx(matName,machine),sfx=AUD.sfxOf(code),d=+t['Diameter (mm)'];
  const secs=SF.build(ctx).filter(s=>s.sfx===sfx||(sfx==='HSS'&&s.sfx==='HSS'));const s=secs[0];if(!s)return null;if(s.kind==='blocked')return{warn:s.note};
  const want=/finish|face|chamfer/i.test(op||'')?'F':/semi/i.test(op||'')?'S':/drill|tap|thread|ream|bor/i.test(op||'')?null:'R';
@@ -2906,6 +3008,8 @@ async function load(){
     try{const q=await db.collection('changelog').get();CLOGDOCS={};q.docs.forEach(d=>CLOGDOCS[d.id]=(dat(d).entries||[]));CLOG={entries:Object.values(CLOGDOCS).flat().sort((a,b)=>String(a.at).localeCompare(String(b.at)))}}catch(e){}
     /* v2 seed documents: created once, on first run, from the code defaults; edited in Library → Data afterwards */
     for(const[k,seed]of[['baseline',SF.DEFAULT_BASELINE],['bands',SF.BANDS]])if(RAW[k]&&!RAW[k].exists){L[k]=seed.map(r=>({...r}));try{await writeLib(k,L[k]);logChange(k,'(seed)','created','',L[k].length+' rows','first run','v2 baseline seed')}catch(e){}}
+    /* 2026-10-14: Material › Cutter type › Ø band tables, seeded once from catalogue / typical model (never logged cuts) */
+    if(RAW.matbands&&!RAW.matbands.exists&&L.tools.length&&L.materials.length){try{L.matbands=mbFillMissing();await writeLib('matbands',L.matbands);logChange('matbands','(seed)','created','',L.matbands.length+' rows','first run','band tables seeded from manufacturer catalogue, else typical model');await saveCLOG()}catch(e){console.error('matbands seed',e)}}
     let mig=0;for(const k of Object.keys(RAW)){if(RAW[k].exists&&RAW[k].v<LIB_V){try{L[k]=await migrateLib(k,RAW[k]);mig++}catch(e){console.error('migrate',k,e)}}}if(mig)await saveCLOG();
     try{if(await seedTree())toast('Cycle tree added to Library → cycles (your hyperMILL cycles are unchanged)',4000)}catch(e){console.error('cycle tree',e)}
     /* 2026-10-13.1: cycle parameters rebuilt from the hyperMILL screenshots — record the key renames in the change log once */
@@ -3209,7 +3313,7 @@ function drawSG(){const mob=MQ.matches,h=mob?$('#sgm'):$('#sg'),o=mob?$('#sg'):$
   const html=`<div class="note o"><b>Suggested start</b> ${srcB(s.src,s.meta)} — Vc <b>${f(s.vc)}</b> m/min · ${s.isRev?'f':'Fz'} <b>${f(s.fz,3)}</b> ${s.isRev?'mm/rev':'mm/tooth'}${s.rpm?` · RPM ${f(s.rpm)}`:''}${s.capped?' <span class="cap" title="Limited by the machine spindle speed">⚠ RPM-capped</span>':''} ${s.text?`<span class="mu">${esc(s.text)}</span>`:''}${s.basedOn?`<br><span class="mu">Based on: ${esc(s.basedOn)}</span>${s.ids&&s.ids.length?` <button class="seecuts" data-seecuts="${esc(s.ids.join(','))}">see them</button>`:''}`:''} <button class="b s sm" id="usesg" data-vc="${s.vc}" data-fz="${s.fz}" data-ap="${s.ap!=null&&isFinite(s.ap)?+(+s.ap).toFixed(3):''}" data-ae="${s.ae!=null&&isFinite(s.ae)?+(+s.ae).toFixed(3):''}" ${s.isRev?'disabled title="Feed per rev — enter manually"':''}>Use these</button><span id="sgc"></span></div>`;
   /* unchanged → leave the DOM alone, so a click on Use these is not lost to a redraw (e.g. the tool box's change on blur) */
   if(h.dataset.sg!==html){h.dataset.sg=html;h.innerHTML=html}}
-const SRCT={"DB-SUB":"Median of your VERIFIED Good/Stable cuts with this exact tool, material, sub-cycle, operation and Ø band","DB-SUB-FAM":"Median of your VERIFIED Good/Stable cuts with the same tool suffix (any size in this Ø band), material, sub-cycle and operation",BASE:"Baseline rules (Library → baseline table and the sub-cycle defaults) — independent of your logs",REFLOG:"Your logged cut(s) — reference only. Not used for the recommendation until you tick Verified in the Cut database","MFR≈":"Derived from the same tool's catalogue data for another material group, scaled by material ratios from all uploaded catalogues",MFR:"Manufacturer catalogue recommendation for that tool (maker, page and conditions on hover)",GEM:"Gemini-compiled baseline for the material and tool family — starting values, below your catalogue and calibrated data.",DB:"Taken from your own VERIFIED Good/Stable cuts for this exact tool Ø and material",CAL:"Model calibrated on your Verified cuts (same material family, other sizes)",REF:"Published generic reference data, not for your specific tool (see References)",TYP:"Typical shop practice — NOT looked up or manufacturer-verified"};
+const SRCT={"BAND":"Your band table (Library → Cycle parameters → Bands): Vc and f/edge for this material, cutter type and Ø range, run through the sub-cycle's ap / ae (chip thinning)","DB-SUB":"Median of your VERIFIED Good/Stable cuts with this exact tool, material, sub-cycle, operation and Ø band","DB-SUB-FAM":"Median of your VERIFIED Good/Stable cuts with the same tool suffix (any size in this Ø band), material, sub-cycle and operation",BASE:"Baseline rules (Library → baseline table and the sub-cycle defaults) — independent of your logs",REFLOG:"Your logged cut(s) — reference only. Not used for the recommendation until you tick Verified in the Cut database","MFR≈":"Derived from the same tool's catalogue data for another material group, scaled by material ratios from all uploaded catalogues",MFR:"Manufacturer catalogue recommendation for that tool (maker, page and conditions on hover)",GEM:"Gemini-compiled baseline for the material and tool family — starting values, below your catalogue and calibrated data.",DB:"Taken from your own VERIFIED Good/Stable cuts for this exact tool Ø and material",CAL:"Model calibrated on your Verified cuts (same material family, other sizes)",REF:"Published generic reference data, not for your specific tool (see References)",TYP:"Typical shop practice — NOT looked up or manufacturer-verified"};
 document.addEventListener('click',e=>{const t=e.target;
  if(t.id==='usesg'){const d=t.dataset,ap=d.ap,ae=d.ae,doc=$('#f_doc'),woc=$('#f_woc');$('#f_vc').value=+(+d.vc).toFixed(1);$('#f_fz').value=+(+d.fz).toFixed(4);
   /* ap / ae: fill empty fields straight away; ask before replacing values already typed */
@@ -3500,7 +3604,7 @@ function csData(){const m=CSM||(L.materials[0]||{}).Material;if(!m||!L.tools.len
 /* meta: DB {n,res,mats} → "DB" with the cut count as superscript when ≥ 2; CAL {n,tier,mats} → tooltip names the cuts and tier */
 const TIERN={op:'op — this tool type and operation',group:'group — your overall style in this material group',class:'class — other materials of the same class'};
 /* one-character glyph so colour is not the only signal */
-const SRCG={'DB-SUB':'●','DB-SUB-FAM':'◐',BASE:'○',DB:'●',MFR:'◆','MFR≈':'◆',GEM:'◆',CAL:'▲',REF:'■',TYP:'○'};
+const SRCG={BAND:'▣','DB-SUB':'●','DB-SUB-FAM':'◐',BASE:'○',DB:'●',MFR:'◆','MFR≈':'◆',GEM:'◆',CAL:'▲',REF:'■',TYP:'○'};
 const srcB=(s,meta)=>{if(!s)return'';let t=SRCT[s]||'',lab=(SRCG[s]?SRCG[s]+' ':'')+esc(s);
  if(meta&&/^DB/.test(s)&&meta.n){t=`${meta.n} logged cut${meta.n>1?'s':''} · results: ${meta.res||'–'} · materials: ${(meta.mats||[]).join(', ')||'–'}`;if(meta.n>=2)lab+=`<sup>${meta.n}</sup>`}
  if(s==='GEM'&&meta)t=meta.note||'typical European mould-shop practice';
@@ -3511,14 +3615,14 @@ const vcCell=r=>`${vcF(r.vc)}${r.capped?` <span class="cap" title="${r.vcT?'Idea
 const tab=(heads,rows,nums)=>`<div class="tw"><table><thead><tr>${heads.map((h,i)=>`<th class="${nums&&nums.includes(i)?'n':''}${/^(Your|Δ)/.test(h)?' own':''}">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
 const RF=r=>r.ref||{vc:r.vc,vcT:r.vcT,capped:r.capped,rpm:r.rpm,fz:r.fz!=null?r.fz:r.f,feed:r.feed,src:r.src};
 /* Phase 4 — one recommended value per row with a source tag (first hit wins, see SF.pick):
-   DB-SUB › DB-SUB-FAM › DB (verified, same Ø) › DB (verified, family) › MFR › MFR≈ › GEM › CAL (tier op) › BASE */
+   DB-SUB › DB-SUB-FAM › DB (verified, same Ø) › DB (verified, family) › BAND › MFR › MFR≈ › GEM › CAL (tier op) › BASE */
 try{localStorage.removeItem('cgo');localStorage.removeItem('csg')}catch(e){}
 const nf=(v,d=0)=>isFinite(v)&&v!==null?(+v).toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g,' '):'–';
 /* full origin for the hover tooltip */
 function originTxt(r,x,s){const ex=[x.hex?'max chip '+(+x.hex).toFixed(3)+' mm':'',x.deff?'effective Ø '+(+x.deff).toFixed(1):'',x.adjTxt||''].filter(Boolean).join(' · ');
  const head=s==='MFR'||s==='MFR≈'?(x.note||'')+(x.vtx?' · printed Vc '+x.vtx:'')+(x.ftx?' · printed fz '+x.ftx:'')+(x.apTxt?' · ap '+x.apTxt:'')+(x.aeTxt?' · ae '+x.aeTxt:'')
   :s==='DB'?`${x.n} verified cut${x.n>1?'s':''}${x.exact?' with this Ø':' (same material family)'} · results ${x.res||'–'} · materials ${(x.mats||[]).join(', ')}`
-  :s==='CAL'?(x.calNote||''):s==='GEM'?`${x.gemRow&&x.gemRow.name?x.gemRow.name+' · ':''}${x.note||'typical European mould-shop practice'}${x.conf?' · confidence '+x.conf:''}${x.engTxt?' · '+x.engTxt:''}`:(SRCT.BASE+(x.src==='REF'?' · from published reference data (Formulas → References)':x.src==='TYP'?' · typical shop practice':'')+(x.engTxt?' · '+x.engTxt:''));
+  :s==='BAND'?(x.bandRow?`${x.bandRow.material} › ${x.bandRow.cutter} › Ø${x.bandRow.lo}–${x.bandRow.hi}: Vc ${x.bandRow.Vc}, f/edge ${x.bandRow.fz}${x.bandRow.src?' ('+x.bandRow.src+')':''}`:'')+(x.engTxt?' · '+x.engTxt:''):s==='CAL'?(x.calNote||''):s==='GEM'?`${x.gemRow&&x.gemRow.name?x.gemRow.name+' · ':''}${x.note||'typical European mould-shop practice'}${x.conf?' · confidence '+x.conf:''}${x.engTxt?' · '+x.engTxt:''}`:(SRCT.BASE+(x.src==='REF'?' · from published reference data (Formulas → References)':x.src==='TYP'?' · typical shop practice':'')+(x.engTxt?' · '+x.engTxt:''));
  return [SRCT[s]||'',head,ex].filter(Boolean).join('\n')}
 /* ---------- Phase 9: "Explain this value" — which source won (the ladder), and for baseline values which rows matched,
    in what order, and which field came from which row / sub-cycle / family default / rule / code default. ---------- */
@@ -3543,10 +3647,10 @@ function xplEng(w){const e=w&&w.eng;if(!e)return '';const src=e.src||{},od=e.odF
   ${rows.length?`<div class="tw"><table><thead><tr><th>Field</th><th class="n">Value</th><th>From</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`:'<p class="mu">No baseline row, sub-cycle default or rule set any field — the code default was used.</p>'}
   <p class="mu" style="margin:6px 0 0">${['ap','ae'].map(k=>e.from&&e.from[k]?`${k}: <b>${esc(e.from[k])}</b>`:'').filter(Boolean).join(' · ')}${e.txt?' · '+esc(e.txt):''}</p>
   <h3>Baseline rows that matched, in order</h3>${chain?`<ol>${chain}</ol>`:'<p class="mu">None.</p>'}${rules?`<h3>Rules applied</h3><ul>${rules}</ul>`:''}`}
-function xplVc(w){const v=w&&w.vcWhy;if(!v)return '';const p=[`${v.from==='baseline'?'baseline row Vc':'material model Vc'} ${f(v.base,1)}`];if(v.vcMult!==1)p.push(`× ${v.vcMult} (sub-cycle Vc multiplier)`);if(v.gem!==1)p.push(`× ${v.gem} (GEM cycle)`);if(v.adj!==1)p.push(`× ${f(v.adj,2)} (${esc(v.adjTxt||'coolant / preference')})`);if(v.rule!==1)p.push(`× ${v.rule} (rule vc_mult)`);
+function xplVc(w){const v=w&&w.vcWhy;if(!v)return '';const br=v.bandRow,p=[`${v.from==='baseline'?'baseline row Vc':v.from==='band'?`band table Vc ${esc(br?br.material+' › '+br.cutter+' › Ø'+br.lo+'–'+br.hi+' = '+br.Vc:'')}${br&&f(v.base,1)!==f(+br.Vc,1)?' → for this operation':''}`:'material model Vc'} ${f(v.base,1)}`];if(v.vcMult!==1)p.push(`× ${v.vcMult} (sub-cycle Vc multiplier)`);if(v.gem!==1)p.push(`× ${v.gem} (GEM cycle)`);if(v.adj!==1)p.push(`× ${f(v.adj,2)} (${esc(v.adjTxt||'coolant / preference')})`);if(v.rule!==1)p.push(`× ${v.rule} (rule vc_mult)`);
  return `<h3>Target Vc</h3><p>${p.join(' ')} = <b>${f(v.base*v.vcMult*v.gem*v.adj*v.rule,1)} m/min</b> (before the spindle limit)</p>`}
 function explainHtml(o){const r=o.row||{},x=o.best,s=o.src;
- const L1=[['DB-SUB / DB-SUB-FAM','Your verified cuts tagged with this sub-cycle',o.dbsub||null],['DB','Your verified cuts, same Ø',r.ownV&&r.ownV.exact?r.ownV:null],['DB','Your verified cuts, same material family',r.ownV&&!r.ownV.exact?r.ownV:null],['MFR','Manufacturer catalogue',r.mfr&&!r.mfr.derived&&!r.mfr.sim?r.mfr:null],['MFR≈','Catalogue, scaled or similar tool',r.mfr&&(r.mfr.derived||r.mfr.sim)?r.mfr:null],['GEM','Gemini baseline',r.gem||null],['CAL','Calibrated on your verified cuts (tool type + op)',r.cal&&r.cal.calTier==='op'?r.cal:null],['BASE','Baseline rules',r.typ||null]];
+ const L1=[['DB-SUB / DB-SUB-FAM','Your verified cuts tagged with this sub-cycle',o.dbsub||null],['DB','Your verified cuts, same Ø',r.ownV&&r.ownV.exact?r.ownV:null],['DB','Your verified cuts, same material family',r.ownV&&!r.ownV.exact?r.ownV:null],['BAND','Your band table (material › cutter type › Ø)',r.band||null],['MFR','Manufacturer catalogue',r.mfr&&!r.mfr.derived&&!r.mfr.sim?r.mfr:null],['MFR≈','Catalogue, scaled or similar tool',r.mfr&&(r.mfr.derived||r.mfr.sim)?r.mfr:null],['GEM','Gemini baseline',r.gem||null],['CAL','Calibrated on your verified cuts (tool type + op)',r.cal&&r.cal.calTier==='op'?r.cal:null],['BASE','Baseline rules',r.typ||null]];
  let hit=false;const lad=L1.filter(([k])=>k!=='DB-SUB / DB-SUB-FAM'||o.sub).map(([k,l,v0])=>{const off=SET.tiers&&(k.startsWith('DB-SUB')?(SET.tiers['DB-SUB']===false&&SET.tiers['DB-SUB-FAM']===false):SET.tiers[k]===false);const win=!off&&!hit&&!!v0&&(v0===x||k===s||(k.startsWith('DB-SUB')&&/^DB-SUB/.test(s||'')));if(win)hit=true;const v=win&&x?x:v0,ok=v&&isFinite(v.fz!=null?v.fz:v.f);
   return `<tr${win?' style="font-weight:700"':''}><td>${win?'▶ ':''}${esc(k)}</td><td>${esc(l)}</td><td>${v?`Vc ${vcF(v.vc)} · fz ${fzF(v.fz!=null?v.fz:v.f)}${v.ap!=null&&isFinite(v.ap)?' · ap '+f(v.ap,2):''}${v.ae!=null&&isFinite(v.ae)?' · ae '+f(v.ae,2):''}`:'<span class="mu">—</span>'}</td><td>${win?'used':off?'switched off':v?(ok?'available, lower priority':'no fz'):'not available'}</td></tr>`}).join('');
  const w=x&&x.why||(s==='BASE'&&r.typ&&r.typ.why)||null,base=(r.typ&&r.typ.why)||null;
@@ -3570,10 +3674,10 @@ function oneCell(r,perRev){const x=r.best,s=r.bestSrc,d=r.dia!=null?r.dia:r.d;
  const eng=perRev?'':`<span class="k"><i>Stepdown ap</i><b>${mm(x.ap)}</b></span><span class="k"><i>Stepover ae</i><b>${mm(x.ae)}${pc(x.ae)}</b></span>`;
  const pw=x.pw&&x.pw.pct>70?` <span class="${x.pw.pct>90?'cap':'dl'}" title="~${x.pw.kw.toFixed(1)} kW of a ${x.pw.of} kW spindle (${Math.round(x.pw.pct)}%)">⚡</span>`:'';
  const gw=(r.gemWarn?` <span class="gemw" title="${esc(r.gemWarn)}">⚠</span>`:'')+(r.gemFlags&&r.gemFlags.length?` <span class="gemw" title="${esc('GEM red flag (advisory): '+r.gemFlags.join(' · '))}">⚠</span>`:'');
- const who=s==='MFR'||s==='MFR≈'?`${x.sim?'similar tool: ':x.derived?'scaled: ':''}${esc(x.maker||'')}`:s==='DB'?`${x.n} verified cut${x.n>1?'s':''}${x.exact?'':' (family)'}`:s==='CAL'?`${x.calN||''} verified cuts`:'';
+ const who=s==='MFR'||s==='MFR≈'?`${x.sim?'similar tool: ':x.derived?'scaled: ':''}${esc(x.maker||'')}`:s==='DB'?`${x.n} verified cut${x.n>1?'s':''}${x.exact?'':' (family)'}`:s==='CAL'?`${x.calN||''} verified cuts`:s==='BAND'&&x.bandRow?`band Ø${esc(x.bandRow.lo)}–${esc(x.bandRow.hi)}`:'';
  return `<td class="gc g1 s-${esc(s)}" title="${esc(originTxt(r,x,s))}"><div class="l1"><span class="k"><i>Vc m/min</i><b>${vcF(x.vc)}</b></span><span class="k"><i>${fl} ${perRev?'mm/rev':'mm/t'}</i><b>${fzv}</b></span>${eng}</div><div class="l2">${feedV} · ${nf(x.rpm)} rpm${cap}${pw}${x.engTxt&&!perRev?` · <span class="mu">${esc(x.engTxt)}</span>`:''}</div><div class="l3">${srcB(s,s==='DB'?x:s==='CAL'?{n:x.calN,tier:x.calTier,mats:x.calMats}:s==='GEM'?{note:x.note}:null)}${gw} ${who}${ref?' · '+ref:''} ${xb}</div></td>`}
 function gTable(fixed,tail,rows,fixedCells,tailCells,perRev){
- const top=fixed.map(h=>`<th class="fx">${h}</th>`).join('')+`<th class="gh" title="First available: your verified tagged cuts (DB-SUB, DB-SUB-FAM) › your verified cuts (DB) › manufacturer (MFR, MFR≈) › Gemini baseline (GEM) › calibrated (CAL) › baseline (BASE). Hover a value for its full origin.">Recommended</th>`+tail.map(h=>`<th>${h}</th>`).join('');
+ const top=fixed.map(h=>`<th class="fx">${h}</th>`).join('')+`<th class="gh" title="First available: your verified tagged cuts (DB-SUB, DB-SUB-FAM) › your verified cuts (DB) › your band table (BAND) › manufacturer (MFR, MFR≈) › Gemini baseline (GEM) › calibrated (CAL) › baseline (BASE). Hover a value for its full origin.">Recommended</th>`+tail.map(h=>`<th>${h}</th>`).join('');
  const body=rows.map(r=>`<tr>${fixedCells(r)}${oneCell(r,perRev)}${tailCells(r)}</tr>`).join('');
  return `<div class="tw"><table class="gt"><thead><tr>${top}</tr></thead><tbody>${body}</tbody></table></div>`}
 const idCell=(big,sub)=>`<td class="fx id"><div class="big">${big}</div>${sub?`<div class="sub">${sub}</div>`:''}</td>`;
@@ -3874,7 +3978,7 @@ document.addEventListener('change',e=>{const id=e.target.id,v=CALCV;
 document.addEventListener('click',e=>{const i=e.target.dataset&&e.target.dataset.calclog;if(i==null)return;const row=CALCROWS[+i];if(!row||!row.r)return;const v=CALCV,r=row.r,rd=(x,n)=>x==null||!isFinite(x)?'':+(+x).toFixed(n);
  openLog({material:v.mat,tool:v.tool,machine:v.mach,holder:v.holder,stickout:v.so,operation:legacyOp(row.op),cycle:cycleNameFor(row.x.key),vc:rd(r.vcT,1),fz:rd(r.fz,4),doc:rd(r.ap,3),woc:rd(r.ae,3),cycleFamily:v.tag.cycleFamily,subcycleKey:row.x.key,subOp:row.op})});
 /* Phase 6a: switch recommendation sources on / off (lib/settings.tiers); all on by default */
-const TIERL={'DB-SUB':'Your cuts, this sub-cycle + tool','DB-SUB-FAM':'Your cuts, this sub-cycle + tool type','DB':'Your verified cuts','MFR':'Catalogue','MFR≈':'Catalogue, scaled / similar','GEM':'Gemini baseline','CAL':'Calibrated','BASE':'Baseline rules'};
+const TIERL={'DB-SUB':'Your cuts, this sub-cycle + tool','DB-SUB-FAM':'Your cuts, this sub-cycle + tool type','DB':'Your verified cuts','BAND':'Your band table','MFR':'Catalogue','MFR≈':'Catalogue, scaled / similar','GEM':'Gemini baseline','CAL':'Calibrated','BASE':'Baseline rules'};
 const tierNote=()=>{const off=SF.SFTIERS.filter(t=>SET.tiers&&SET.tiers[t]===false);return off.length?`${off.length} source${off.length>1?'s':''} off — rows that only had those show “no recommendation”`:'All sources on'};
 function tierBarHtml(){return `<div class="card noprint" style="padding:10px 14px"><div class="row" id="tiers" style="gap:6px 14px;align-items:center"><b style="margin-right:4px">Sources</b>${SF.SFTIERS.map(t=>`<label style="display:flex;gap:5px;align-items:center;margin:0" title="${esc(TIERL[t]||t)}"><input type="checkbox" data-tier="${esc(t)}"${SET.tiers&&SET.tiers[t]===false?'':' checked'}>${srcB(t)}</label>`).join('')}<span class="mu" id="tiers_n">${esc(tierNote())}</span></div></div>`}
 function renderCheat(){if(!L.materials.length){$('#cheat').innerHTML='<div class="card empty">Loading library…</div>';return}if(!CSM||!mats().includes(CSM))CSM=mats().includes('SS 17-4PH H1025')?'SS 17-4PH H1025':mats()[0];
@@ -3978,7 +4082,7 @@ async function doRestore(lib){if(OFFLINE||!db)return toast('Offline — not save
  if(!lib){let n=0;try{n=await addCuts(R.fresh)}catch(e){toast(`Stopped after ${n} cuts: `+(e.message||e.code))}
   logChange('cuts','(restore)','added',0,n,`Restore from ${R.name} — cuts only`);await saveCLOG();SF.invalidate();await load();return toast(`Added ${n} cut${n===1?'':'s'} — library unchanged`)}
  try{await db.doc('lib/backup-'+ts).set({v:1,at:new Date().toISOString(),L,AM,TD})}catch(e){return toast('Safety copy failed — nothing was restored: '+(e.message||e.code))}
- let n=0;try{for(const k of Object.keys(L))await writeLib(k,Array.isArray(b.L[k])?b.L[k]:[]);
+ let n=0;try{for(const k of Object.keys(L)){if(k==='matbands'&&!Array.isArray(b.L[k]))continue;/* a backup made before band tables existed leaves them alone */await writeLib(k,Array.isArray(b.L[k])?b.L[k]:[])}
   if(b.AM)await db.doc('lib/auditmeta').set({dismissed:[],resolved:{},...b.AM,v:LIB_V});if(b.TD)await db.doc('lib/todo').set({items:[],...b.TD,v:LIB_V});
   n=await addCuts(R.fresh);
   logChange('library','(all)','restore','',b.at||'',`Restore (safety copy lib/backup-${ts})${n?`; ${n} cuts added`:''}`);await saveCLOG()}
@@ -4212,10 +4316,10 @@ const clone=o=>JSON.parse(JSON.stringify(o));
    Tree editor + Sub-cycles → lib/cycles · Baselines (+ Bands) → lib/baseline, lib/bands · Formulas → lib/formulas.
    Every change is logged; nothing a logged cut depends on can be renamed, moved or removed from under it. ---------- */
 let PS='groups';
-function drawParams(){const tabs=[['groups','Cycle settings groups'],['tree','Tree editor'],['subs','Sub-cycles'],['base','Baselines'],['fx','Formulas']];
+function drawParams(){const tabs=[['groups','Cycle settings groups'],['tree','Tree editor'],['subs','Sub-cycles'],['bands','Bands'],['base','Baselines'],['fx','Formulas']];
  $('#lbody').innerHTML=`<div class="seg noprint" id="psub" style="margin-bottom:12px">${tabs.map(([k,l])=>`<button data-ps="${k}" class="${k===PS?'on':''}">${l}</button>`).join('')}</div><div id="pbody"></div>`;
  $('#psub').onclick=e=>{const k=e.target.dataset.ps;if(k){PS=k;drawParams()}};$('#lbody').onchange=null;$('#lbody').onclick=null;
- if(PS==='tree')drawTreeEd();else if(PS==='subs')drawSubEd();else if(PS==='base')drawBaseEd();else if(PS==='fx')drawFxList();else drawParamGroups()}
+ if(PS==='tree')drawTreeEd();else if(PS==='subs')drawSubEd();else if(PS==='base')drawBaseEd();else if(PS==='bands')drawBandEd();else if(PS==='fx')drawFxList();else drawParamGroups()}
 const TR=()=>L.cycles.map((r,i)=>[r,i]).filter(([r])=>r&&r.key);
 const OPS_ALL=['rough','semi','finish','drill','ream','bore','thread','probe'],KINDS=['rough','semi','finish','drill','thread','bore','probe'];
 const famRows=()=>TR().filter(([r])=>!r.parent).sort((a,b)=>(a[0].order||0)-(b[0].order||0));
@@ -4312,6 +4416,62 @@ function drawBaseEd(){const rows=L.baseline.map((r,i)=>[r,i]).filter(([r])=>Obje
    const old=JSON.stringify(L.bands);L.bands=nb;logChange('bands','(all)','bands',old,JSON.stringify(nb),'Library → Baselines');saveLib('bands');await flushLib();saveCLOG();BW=JSON.parse(JSON.stringify(nb));drawBaseEd();$('#bwmsg').textContent='Bands saved ✓'}}}
 let BW=null;
 const _drawBaseEd=drawBaseEd;drawBaseEd=function(){if(!BW)BW=JSON.parse(JSON.stringify(L.bands&&L.bands.length?L.bands:SF.BANDS));_drawBaseEd()};
+/* ---------- Bands (2026-10-14): lib/matbands — Material › Cutter type › Ø range → Vc, f/edge ----------
+   Laid out like hyperMILL's Materials dialog. Vc / f/edge are the roughing reference for that cutter type: the sub-cycle's
+   ap / ae then re-derive the programmed fz (chip thinning) and the sub-cycle multipliers scale them. Seeded once from the
+   manufacturer catalogue (or the app's typical model where there is none) — never from logged cuts. Every cell is editable. */
+const MB_COLS=['material','cutter','lo','hi','Vc','fz','src','note'];
+const mbCutters=()=>Object.keys(SF.TT).filter(sfx=>L.tools.some(t=>AUD.sfxOf(t['Tool Code'])===sfx));
+const mbKey=(m,c)=>String(m||'').trim().toLowerCase()+'|'+String(c||'').trim().toUpperCase();
+const mbRows=(m,c)=>L.matbands.map((r,i)=>[r,i]).filter(([r])=>mbKey(r.material,r.cutter)===mbKey(m,c)).sort((a,b)=>+a[0].lo - +b[0].lo);
+/* the global Ø ranges that cover this cutter type's tools in the library (first table rows) */
+function mbRanges(sfx){const B=(L.bands&&L.bands.length?L.bands:SF.BANDS).slice().sort((a,b)=>a.lo-b.lo),ds=L.tools.filter(t=>AUD.sfxOf(t['Tool Code'])===sfx).map(t=>+t['Diameter (mm)']).filter(d=>d>0);
+ if(!ds.length)return [];const lo=Math.min(...ds),hi=Math.max(...ds);return B.filter(b=>+b.hi>=lo-.005&&+b.lo<=hi+.005).map(b=>({lo:+b.lo,hi:+b.hi}))}
+function mbSeedTable(mat,sfx){const ctx=sfctx(mat,'','Flood'),rg=mbRanges(sfx),mk=t=>rg.map(b=>{const v=SF.bandSeed(ctx,sfx,b.lo,b.hi,t);return v?Object.assign({lo:b.lo,hi:b.hi},v):null}).filter(Boolean);
+ return SF.bandSmooth(mk(false),mk(true)).map(r=>Object.assign({material:mat,cutter:sfx},r))}
+/* builds every missing Material › Cutter table; existing tables are never touched */
+function mbFillMissing(){const add=[];L.materials.forEach(m=>{const mat=m.Material;if(!mat)return;mbCutters().forEach(sfx=>{if(mbRows(mat,sfx).length)return;add.push(...mbSeedTable(mat,sfx))})});return add}
+let MBM='';
+function drawBandEd(){const mats=L.materials.map(m=>m.Material).filter(Boolean),orphan=[...new Set(L.matbands.map(r=>r.material).filter(m=>!mats.some(x=>mbKey(x,'')===mbKey(m,''))))];
+ if(!MBM||![...mats,...orphan].includes(MBM))MBM=mats[0]||orphan[0]||'';
+ const cnt=m=>new Set(L.matbands.filter(r=>mbKey(r.material,'')===mbKey(m,'')).map(r=>String(r.cutter).toUpperCase())).size;
+ const iso=m=>{const x=L.materials.find(y=>y.Material===m);return x?SF.matInfo(x).iso:''};
+ const have=[...new Set(L.matbands.filter(r=>mbKey(r.material,'')===mbKey(MBM,'')).map(r=>String(r.cutter).toUpperCase()))],order=Object.keys(SF.TT),cutters=have.sort((a,b)=>(order.indexOf(a)+99*(order.indexOf(a)<0))-(order.indexOf(b)+99*(order.indexOf(b)<0)));
+ const missing=mbCutters().filter(c=>!have.includes(c)),num=(i,k,v,st)=>`<input data-mb="${i}" data-mbk="${k}" type="number" step="${st}" min="0" inputmode="decimal" value="${v==null||v===''?'':esc(v)}">`;
+ const table=c=>{const rows=mbRows(MBM,c),er=SF.bandTableProblems(rows.map(([r])=>r)),wn=SF.bandTableWarnings(rows.map(([r])=>r)),nm=SF.TT[c]?SF.TT[c].name.split(' — ')[1]||SF.TT[c].name:'';
+  return `<details class="mbt" open><summary>Cutter type <span class="tag" style="font-weight:600">${esc(c)}</span><span class="mu">${esc(nm)} · ${rows.length} Ø range${rows.length===1?'':'s'}</span>${er.length?`<span class="bad" style="font-weight:400">⚠ ${esc(er[0])}${er.length>1?` (+${er.length-1})`:''}</span>`:wn.length?`<span style="font-weight:400;color:var(--warn)" title="${esc(wn.join('\n'))}">check: ${esc(wn[0])}${wn.length>1?` (+${wn.length-1})`:''}</span>`:''}</summary>
+  <div class="tw"><table><thead><tr><th class="n">Min Ø (mm)</th><th class="n">Max Ø (mm)</th><th class="n">Cutting speed Vc (m/min)</th><th class="n">F/edge fz (mm)</th><th>Source</th><th></th></tr></thead><tbody>
+  ${rows.map(([r,i])=>`<tr><td class="n">${num(i,'lo',r.lo,'any')}</td><td class="n">${num(i,'hi',r.hi,'any')}</td><td class="n">${num(i,'Vc',r.Vc,'any')}</td><td class="n">${num(i,'fz',r.fz,'any')}</td><td class="mbs" title="${esc((r.src||'')+(r.note?'\n'+r.note:''))}"><span><b>${esc(r.src||'')}</b>${r.note?' · '+esc(r.note):''}</span></td><td><button class="b s sm" data-mbdel="${i}" title="Delete this Ø range">✕</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty">No Ø ranges.</td></tr>'}
+  </tbody></table></div>${er.length>1?`<p class="bad" style="margin:0 12px 8px;font-size:13px">${er.map(esc).join(' · ')}</p>`:''}
+  <p class="row" style="margin:0 10px 10px"><button class="b s sm" data-mbadd="${esc(c)}">+ Ø range</button><button class="b s sm" data-mbseed="${esc(c)}" title="Replace this table with catalogue / typical-model values">Re-seed from catalogue</button><button class="b s sm" data-mbdeltab="${esc(c)}">Delete table</button></p></details>`};
+ $('#pbody').innerHTML=`<div class="card"><h2>Bands</h2><p class="mu">Cutting data per <b>material › cutter type › Ø range</b>, laid out like hyperMILL's Materials dialog. Vc and f/edge are the <b>roughing reference</b> for that cutter (f/edge = chip thickness at full engagement). Speeds &amp; Feeds and Log cut take them from here, then the sub-cycle's ap / ae and multipliers adjust them (radial chip thinning raises fz at light ae). Starting values came from the manufacturer catalogue where your tool (or a similar one) has data, otherwise from the app's typical model — never from your logged cuts. Edit any cell; it saves straight away.</p>
+ <p class="row noprint"><button class="b s sm" id="mbfill">Fill missing tables</button><button class="b s sm" id="mbcsv">Download CSV for the Sheet</button><span class="mu" id="mbmsg">${L.matbands.length} rows · ${mats.length} materials</span></p></div>
+ <div class="mbw"><div class="mbl" role="listbox" aria-label="Materials">${mats.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small>${esc(iso(m))} · ${cnt(m)}</small></button>`).join('')}${orphan.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small class="bad">not in materials</small></button>`).join('')}</div>
+ <div><div class="card" style="margin-top:0"><h2 style="margin-bottom:4px">${esc(MBM||'—')}</h2><p class="mu" style="margin:0 0 8px">${esc(SF.ISO_NAME[iso(MBM)]||'')}${orphan.includes(MBM)?' · <span class="bad">this name is not in your Materials list — rename it there or delete these tables</span>':''}</p>
+ <div class="row noprint">${missing.length?`<select id="mbnewc" style="max-width:200px">${opt(missing)}</select><button class="b s sm" id="mbaddc">+ Add cutter type</button>`:''}<select id="mbcopyf" style="max-width:220px"><option value="">Copy all tables from…</option>${opt(mats.filter(m=>m!==MBM&&cnt(m)))}</select></div></div>
+ ${cutters.map(table).join('')||'<p class="mu">No tables for this material yet — use <b>Fill missing tables</b> or <b>+ Add cutter type</b>.</p>'}</div></div>`;
+ const mm=t=>{const m=$('#mbmsg');if(m)m.textContent=t};
+ const save=async(code,field,from,to,note)=>{logChange('matbands',code,field,from??'',to??'','Library → Bands',note||'');saveLib('matbands');await flushLib();saveCLOG();renderCheat()};
+ $('#pbody').onchange=async e=>{const d=e.target.dataset;
+  if(e.target.id==='mbcopyf'){const from=e.target.value;if(!from)return;const src=L.matbands.filter(r=>mbKey(r.material,'')===mbKey(from,''));if(!src.length)return;
+   const n0=L.matbands.length;L.matbands=L.matbands.filter(r=>mbKey(r.material,'')!==mbKey(MBM,''));const gone=n0-L.matbands.length;
+   L.matbands.push(...src.map(r=>Object.assign({},r,{material:MBM,src:'Copied from '+from})));await save(MBM,'copied from',gone+' rows',from,src.length+' rows');return drawBandEd()}
+  if(d.mb==null)return;const r=L.matbands[+d.mb],k=d.mbk,old=r[k];let v=e.target.value.trim();if(v===''){e.target.value=old??'';return mm('A value is needed — delete the row instead.')}v=+v;if(!isFinite(v)||v<0){e.target.value=old??'';return mm('Numbers only (0 or more).')}
+  if(+old===v)return;r[k]=v;if(k==='Vc'||k==='fz')r.src='Edited';await save(`${r.material} › ${r.cutter} › Ø${r.lo}–${r.hi}`,k,old,v);
+  const er=SF.bandTableProblems(mbRows(r.material,r.cutter).map(([x])=>x));mm(er.length?'Saved — but: '+er.join('; '):'Saved ✓');if(k==='lo'||k==='hi'||er.length)drawBandEd()};
+ $('#pbody').onclick=async e=>{const t=e.target.closest('button');if(!t)return;const d=t.dataset;
+  if(d.mbm!=null){MBM=d.mbm;return drawBandEd()}
+  if(t.id==='mbcsv'){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:'matbands-for-sheet-'+today()+'.csv',data:mbCSV()});toast('matbands CSV downloaded')}catch(x){toast('Download failed: '+(x.message||x))}return}
+  if(t.id==='mbfill'){const add=mbFillMissing();if(!add.length)return mm('Nothing missing — every material has a table for every cutter type in your tool library.');L.matbands.push(...add);await save('(all)','filled','',add.length+' rows','catalogue / typical model');drawBandEd();return mm(`${add.length} rows added.`)}
+  if(t.id==='mbaddc'){const c=$('#mbnewc').value;const rows=mbSeedTable(MBM,c);if(!rows.length)rows.push({material:MBM,cutter:c,lo:1,hi:10,Vc:'',fz:'',src:'New'});L.matbands.push(...rows);await save(`${MBM} › ${c}`,'added','',rows.length+' rows');return drawBandEd()}
+  if(d.mbadd){const rows=mbRows(MBM,d.mbadd),last=rows.length?rows[rows.length-1][0]:null,lo=last?+(+last.hi+.01).toFixed(2):1;L.matbands.push({material:MBM,cutter:d.mbadd,lo,hi:+(lo*2).toFixed(2),Vc:last?last.Vc:'',fz:last?last.fz:'',src:'Edited'});await save(`${MBM} › ${d.mbadd}`,'Ø range added','',`${lo}–${(lo*2).toFixed(2)}`);return drawBandEd()}
+  if(d.mbdel!=null){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Delete?';return}const r=L.matbands.splice(+d.mbdel,1)[0];await save(`${r.material} › ${r.cutter} › Ø${r.lo}–${r.hi}`,'deleted',JSON.stringify(r),'');return drawBandEd()}
+  if(d.mbseed||d.mbdeltab){const c=d.mbseed||d.mbdeltab;if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent=d.mbseed?'Replace this table? Click again':'Delete this table? Click again';return}
+   const old=mbRows(MBM,c).map(([r])=>r);L.matbands=L.matbands.filter(r=>mbKey(r.material,r.cutter)!==mbKey(MBM,c));const add=d.mbseed?mbSeedTable(MBM,c):[];L.matbands.push(...add);
+   await save(`${MBM} › ${c}`,d.mbseed?'re-seeded':'table deleted',JSON.stringify(old),add.length?add.length+' rows':'');return drawBandEd()}}}
+function mbCSV(){const cell=v=>{if(v==null)return '';const t=String(v);return /[",\n\r]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t};
+ const rows=L.matbands.slice().sort((a,b)=>String(a.material).localeCompare(String(b.material))||String(a.cutter).localeCompare(String(b.cutter))||(+a.lo - +b.lo));
+ return [MB_COLS.join(',')].concat(rows.map(r=>MB_COLS.map(k=>cell(r[k])).join(','))).join('\r\n')}
 /* Formulas list (editing happens on the Formulas page, same editor) */
 function drawFxList(){const all=FXL();
  $('#pbody').innerHTML=`<div class="card"><h2>Formulas</h2><p class="mu">Stored in lib/formulas. Edit opens the formula on the Formulas page with its live syntax check.</p><p><button class="b s sm" id="fxnew">+ Add formula</button></p>
@@ -4534,7 +4694,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-14.3';
+const APP_V='2026-10-14.4';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
@@ -4559,6 +4719,13 @@ function selfTest(){const R=[],ok=(name,c,info)=>{R.push([name,!!c]);console[c?'
   ok('gemCond: coolant dry / mql true, flood false',SF.gemCond("coolant == 'dry' or coolant == 'mql'",{coolant:'dry'})&&SF.gemCond("coolant == 'dry' or coolant == 'mql'",{coolant:'mql'})&&!SF.gemCond("coolant == 'dry' or coolant == 'mql'",{coolant:'flood'}));
   ok('gemCond: red-flag pattern iso==N1 and vc>1500',SF.gemCond('iso==N1 and vc>1500',{iso:'N1',vc:1600})&&!SF.gemCond('iso==N1 and vc>1500',{iso:'N1',vc:1400})&&!SF.gemCond('iso==N1 and vc>1500',{iso:'P1',vc:1600}));
   {const g={src:'GEM',vc:100,fz:.05},m={src:'MFR',vc:120,fz:.06,derived:true},c={src:'CAL',calTier:'op',vc:90,fz:.04},t={src:'TYP',vc:80,fz:.03};
+   {const mb=[{material:'X',cutter:'BX',lo:4,hi:5.99,Vc:120,fz:.02},{material:'X',cutter:'BX',lo:6,hi:9.99,Vc:120,fz:.03}];
+   ok('band table: Ø8 BX finds its row',(SF.bandRowFor(mb,'x','BX',8)||{}).fz===.03);ok('band table: no row outside its ranges',SF.bandRowFor(mb,'X','BX',12)===null);
+   ok('band table: overlap is reported',SF.bandTableProblems([{lo:1,hi:5,Vc:1,fz:1},{lo:4,hi:8,Vc:1,fz:1}]).some(x=>/overlaps/.test(x)));
+   ok('band table: f/edge drop is flagged',SF.bandTableWarnings([{lo:1,hi:2,Vc:100,fz:.05},{lo:3,hi:4,Vc:100,fz:.01}]).length===1);
+   const sm=SF.bandSmooth([{lo:1,hi:2,d:1.5,Vc:100,fz:.01,src:'Catalogue'},{lo:3,hi:4,d:3,Vc:300,fz:.5,src:'Catalogue'}],[{lo:1,hi:2,d:1.5,Vc:100,fz:.01},{lo:3,hi:4,d:3,Vc:100,fz:.015}]);
+   ok('band seed: level capped at 2× typical, f/edge rises with Ø',sm[0].Vc<=200&&sm[1].fz>sm[0].fz&&/capped/.test(sm[0].src),JSON.stringify(sm.map(x=>[x.Vc,x.fz,x.src])));
+   ok('pick ladder: BAND beats catalogue',SF.pick({band:{src:'BAND',vc:1,fz:.01},mfr:{src:'MFR',vc:1,fz:.01}}).src==='BAND');}
    ok('pick ladder: MFR≈ › GEM › CAL › BASE',SF.pick({mfr:m,gem:g,cal:c,typ:t}).src==='MFR≈'&&SF.pick({gem:g,cal:c,typ:t}).src==='GEM'&&SF.pick({cal:c,typ:t}).src==='CAL'&&SF.pick({typ:t}).src==='BASE')}
   if(GEMD.baselines.length){
    ok('GEM file loaded (142 baselines, 12 cycles)',GEMD.baselines.length===142&&GEMD.cycles.length===12,GEMD.baselines.length+'/'+GEMD.cycles.length);
