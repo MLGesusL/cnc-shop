@@ -79,6 +79,13 @@ button.b.sm{min-height:30px;padding:3px 10px;font-size:13px}
 .out>div{font-size:13px;color:var(--mu);padding:10px 22px 10px 0;margin-right:22px;border-right:1px solid var(--bd);min-width:96px}
 .out>div:last-child{border-right:0}
 .out b{display:block;font-size:30px;font-weight:600;color:var(--tx);line-height:1.1;letter-spacing:-.01em}
+.out input.fxout{display:block;width:9ch;min-width:120px;font:600 30px/1.1 "Barlow Semi Condensed","Barlow",system-ui,sans-serif;color:var(--tx);background:transparent;border:1px dashed transparent;border-radius:6px;padding:0 4px;margin-left:-5px}
+.out input.fxout:hover,.out input.fxout:focus{border-color:var(--bd);background:var(--bg)}
+.out input.fxout.fxheld{border:2px solid var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+input.fxsolved{border-color:var(--warn)!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 30%,transparent)}
+.out>div.fxsolve,.out>div.fxerr{border:0;padding:4px 0;min-width:0}.out>div.fxsolve:empty,.out>div.fxerr:empty{display:none}
+.out .fxclr{margin-left:4px;vertical-align:middle}
+.out>div.fxsolve b{display:inline;font-size:inherit;font-weight:700;letter-spacing:0}.out>div.fxsolve select{display:inline-block;width:auto;max-width:240px;padding:2px 6px;margin-left:4px}.out>div.fxsolve{flex-basis:100%;margin-right:0}
 
 /* tables */
 .tw{overflow-x:auto;border:1px solid var(--bd);border-radius:var(--r);background:var(--card);margin:6px 0 10px}
@@ -2016,6 +2023,36 @@ const FX = (() => {
       return { rows };
     } catch (e) { return { rows, err: e.message }; }
   }
+  /* 2026-10-15: two-way use. Which inputs an output depends on (directly, then through earlier outputs), and a numeric
+     solve: find the value of one input that makes an output equal a typed target (bracket on × / ÷ 2 steps, then bisect). */
+  function idsOf(expr) { try { return lex(expr).filter(t => t.t === 'id').map(t => t.v); } catch (e) { return []; } }
+  function depsOf(F, outKey) {
+    const ins = new Set((F.inputs || []).map(i => i.k)), outs = new Map((F.out || []).filter(o => !o.cases).map(o => [o.k, o])), direct = [], all = new Set(), seen = new Set();
+    const walk = (k, top) => { const o = outs.get(k); if (!o || seen.has(k)) return; seen.add(k); idsOf(o.expr).forEach(id => { if (ins.has(id)) { all.add(id); if (top && !direct.includes(id)) direct.push(id); } else if (outs.has(id)) walk(id, false); }); };
+    walk(outKey, true); return { direct, all: [...all] };
+  }
+  function outVal(F, vals, k) { const r = run(F, vals); const x = r.rows.find(y => y.k === k); return x && isFinite(x.value) ? x.value : NaN; }
+  /* the input to change: one the output uses directly and nobody is holding, the later in the list the better (a rate or a
+     depth rather than a diameter or tooth count); `prefer` wins when it is a dependency */
+  function pickUnknown(F, outKey, held, prefer) {
+    const d = depsOf(F, outKey), order = (F.inputs || []).map(i => i.k), ok = k => !(held && held.has(k));
+    if (prefer && d.all.includes(prefer)) return prefer;
+    const c = d.direct.filter(ok).sort((a, b) => order.indexOf(b) - order.indexOf(a)); if (c.length) return c[0];
+    const c2 = d.all.filter(ok).sort((a, b) => order.indexOf(b) - order.indexOf(a)); return c2[0] || '';
+  }
+  function solveFor(F, vals, outKey, target, unknown) {
+    if (!unknown || !isFinite(target)) return NaN;
+    const base = Object.assign({}, vals), inp = (F.inputs || []).find(i => i.k === unknown), x0 = isFinite(+base[unknown]) && +base[unknown] !== 0 ? Math.abs(+base[unknown]) : Math.abs(+(inp && inp.dflt)) || 1;
+    const g = x => { base[unknown] = x; return outVal(F, base, outKey) - target; };
+    let a = x0, b = x0, ga = g(a); if (!isFinite(ga)) return NaN; if (Math.abs(ga) <= 1e-12 * Math.max(1, Math.abs(target))) return a;
+    let gb = ga, found = false;
+    for (let k = 0; k < 80 && !found; k++) { const lo = x0 / Math.pow(2, k + 1), hi = x0 * Math.pow(2, k + 1);
+      const gl = g(lo); if (isFinite(gl) && Math.sign(gl) !== Math.sign(ga)) { a = lo; b = x0; gb = ga; ga = gl; found = true; break; }
+      const gh = g(hi); if (isFinite(gh) && Math.sign(gh) !== Math.sign(ga)) { a = x0; b = hi; gb = gh; found = true; break; } }
+    if (!found) return NaN;
+    for (let k = 0; k < 200; k++) { const m = (a + b) / 2, gm = g(m); if (!isFinite(gm)) return NaN; if (Math.sign(gm) === Math.sign(ga)) { a = m; ga = gm; } else { b = m; gb = gm; } if (Math.abs(b - a) <= 1e-12 * Math.max(1, Math.abs(m))) break; }
+    return (a + b) / 2;
+  }
   /* inline syntax check: every expression parses and the formula runs on its default inputs with finite numbers */
   function check(F) {
     if (!F || !F.key) return 'missing key'; if (!(F.out || []).length) return 'no outputs';
@@ -2068,7 +2105,7 @@ const FX = (() => {
     { key: 'units', name: 'Unit converters', group: G.unit, inputs: [{ k: 'mm', label: 'mm', dflt: 25.4 }, { k: 'ft', label: 'feet (SFM→m/min)', dflt: 300 }, { k: 'ipt', label: 'in/tooth', dflt: .002 }],
       out: [o('inch', 'inches', 'mm/25.4', 4), o('mmin', 'm/min', 'ft*0.3048', 1), o('mmt', 'mm/tooth', 'ipt*25.4', 4)], doc: '1 in = 25.4 mm · 1 ft = 0.3048 m' }];
   const GROUPS = Object.values(G);
-  return { parse, run, check, SEED, GROUPS, FN: Object.keys(FN), CONST: Object.keys(CONST) };
+  return { parse, run, check, depsOf, pickUnknown, solveFor, SEED, GROUPS, FN: Object.keys(FN), CONST: Object.keys(CONST) };
 })();
 if (typeof module !== 'undefined') module.exports = FX;
 /* @end formulas.js */
@@ -7467,19 +7504,78 @@ function fxEditor(i){const F=FXED.F,err=FX.check(F);
  <p class="row"><button class="b" data-fxs="1"${err?' disabled':''}>Save</button><button class="b s" data-fxx="1">Cancel</button></p>`}
 const fxChk=err=>{if(err)return `<div class="note e">⚠ ${esc(err)} — fix it to save.</div>`;const r=FX.run(FXED.F,{});return `<div class="note o">✓ Runs on the default inputs: ${r.rows.filter(x=>!x.hide).map(x=>`${esc(x.label)} <b>${fxVal(x)}</b>`).join(' · ')}</div>`};
 async function fxSaveAll(list,why,key,from,to){if(OFFLINE||!db)return toast('Offline — not saved');await writeLib('formulas',list);L.formulas=list;logChange('formulas',key,'formula',from,to,'Formulas',why);await saveCLOG();renderForm();toast('Formula saved')}
+/* 2026-10-15: every formula the app uses, on the Formulas page — the calculator's fields (editable here, saved to
+   lib/calc_fields for every PC) and the engine's built-in formulas (read only; their constants are set on the pages named). */
+const CF_EXTRA=['pi','kc','k','is_ball','stickout','reach','cut_len','power_limit','defl_limit','reground','dynamic'];
+let CFW=null;/* working copy of the calculator fields */
+function cfCheck(rows){const names=[...new Set(rows.map(r=>r.key).concat(CF_EXTRA).flatMap(n=>[n,String(n).toLowerCase()]))],err=[];
+ rows.forEach(r=>{if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(r.key||''))err.push(`“${r.key||'(blank)'}” is not a valid key`);['formula','solve_back','hidden_if'].forEach(f=>{const x=String(r[f]||'').trim();if(!x)return;
+  try{const lc=x.replace(/[A-Za-z_][A-Za-z0-9_]*/g,m=>names.includes(m)?m:(names.find(n=>n.toLowerCase()===m.toLowerCase())||m));FX.parse(lc,names)}catch(e){err.push(`${r.key} · ${f}: ${e.message}`)}})});return err}
+const ENGINE_FX=[
+ ['Spindle speed','n = Vc × 1000 ÷ (π × D)','everywhere; for ball / lollipop cutters D is the effective Ø below'],
+ ['Feed','Vf = n × fz × Z  (drills, reamers: Vf = n × f)','everywhere'],
+ ['Metal removal','Q = Vf × ae × ap ÷ 1000  (cm³/min)','calculator, power check'],
+ ['Radial chip thinning','fz = hex ÷ ( 2·√(ae·(D − ae)) ÷ D )  when ae < ½D','Settings → Factors (on / off); capped at ×3'],
+ ['Axial chip thinning','fz = hex ÷ √(1 − ((R − ap) ÷ R)²)  when ap < corner / ball radius R','Settings → Factors'],
+ ['Ball-nose effective Ø','Deff = 2·√(ap·(D − ap))  when ap < ½D','Settings → Factors'],
+ ['Cusp / scallop','h = Ra × k ÷ 1000;  stepover = 2·√((D − h)·h)','k = cusp / Ra multiplier in Settings → Setup'],
+ ['Vc boost at light ae','Vc × min(vcMax, (vcFrom ÷ (ae/D))^vcExp)  below vcFrom×D','constants per family (engagement settings); Settings → Factors'],
+ ['Slotting reduction','Vc, fz × 1 − (1 − slot)·(ae/D − vcFrom) ÷ (1 − vcFrom)  above vcFrom×D','engagement settings; Settings → Factors'],
+ ['Deep-ap ease-off','fz × max(apMin, 1 − apPer·(ap/D − apFrom))  past apFrom×D','engagement settings; Settings → Factors'],
+ ['Band seed shape','Vc constant across Ø; f/edge ∝ Ø (× (0.7 + 0.15·Ø) below Ø2)','only when a band table is seeded (Cutting data → Bands → Re-seed)'],
+ ['Operation','semi-finish f/edge × 0.85, finish × 0.75; Vc from the finish / rough ratio of the material group','Cutting data → Baselines multiply on top'],
+ ['Power','P = Q × kc ÷ (60 000 × 0.8)  kW; torque T = 9549 × P ÷ n','kc by ISO group']];
+function cfHtml(){const rows=CFW||calcFields().map(r=>Object.assign({},r)),err=cfCheck(rows),own=(L.calc_fields||[]).some(r=>r&&r.key),dirty=CFW&&JSON.stringify(CFW)!==JSON.stringify(calcFields());
+ const SOLVE=[['input','typed only'],['derived_input','typed, else recommended'],['formula','worked out']];
+ return `<details class="card" id="cfcard"${CFW?' open':''}><summary class="gs" style="cursor:pointer">Formulas inside the app <span class="mu" style="font-weight:400;font-size:14px">— the calculator's own fields, and the engine's built-in formulas</span></summary>
+ <h3>Speeds &amp; Feeds calculator</h3><p class="mu" style="margin:0 0 8px">Each row is a box in the calculator. <b>Formula</b> works it out; <b>Back-solve</b> is used when you type a worked-out box (e.g. typing RPM changes Vc). Names: the keys below, plus ${CF_EXTRA.map(x=>`<code>${x}</code>`).join(' ')}. ${own?'Using your saved set.':'Using the built-in set.'}</p>
+ <div class="tw"><table><thead><tr><th>Key</th><th>Label</th><th>Unit</th><th>Value comes from</th><th>Formula</th><th>Back-solve</th><th>Default</th><th>Hide when</th><th></th></tr></thead><tbody>
+ ${rows.map((r,i)=>`<tr><td><input data-cf="${i}" data-cfk="key" value="${esc(r.key)}" style="width:70px"></td><td><input data-cf="${i}" data-cfk="label" value="${esc(r.label||'')}" style="width:120px"></td><td><input data-cf="${i}" data-cfk="unit" value="${esc(r.unit||'')}" style="width:70px"></td>
+  <td><select data-cf="${i}" data-cfk="solve">${SOLVE.map(([v,l])=>`<option value="${v}"${(r.solve||'formula')===v?' selected':''}>${l}</option>`).join('')}</select></td>
+  <td><input data-cf="${i}" data-cfk="formula" value="${esc(r.formula||'')}" style="min-width:200px;font-family:ui-monospace,monospace"></td><td><input data-cf="${i}" data-cfk="solve_back" value="${esc(r.solve_back||'')}" style="min-width:170px;font-family:ui-monospace,monospace"></td>
+  <td><input data-cf="${i}" data-cfk="default" value="${esc(r.default??'')}" style="width:60px"></td><td><input data-cf="${i}" data-cfk="hidden_if" value="${esc(r.hidden_if||'')}" style="width:90px;font-family:ui-monospace,monospace"></td><td><button class="b s sm" data-cfdel="${i}" title="Remove this box">✕</button></td></tr>`).join('')}</tbody></table></div>
+ ${err.length?`<div class="note e">⚠ ${err.map(esc).join('<br>')}</div>`:''}
+ <p class="row"><button class="b s sm" id="cf_add">+ Box</button><button class="b" id="cf_save"${dirty&&!err.length?'':' disabled'}>Save calculator formulas</button>${own?'<button class="b s sm" id="cf_reset">Back to the built-in set</button>':''}<span class="mu" id="cf_msg">${dirty?'Draft — press Save to use it on every PC.':''}</span></p>
+ <h3>Built into the speeds &amp; feeds engine</h3><p class="mu" style="margin:0 0 6px">These run inside every recommendation. Switch them on or off in Settings → Factors; their numbers are set where it says.</p>
+ <div class="tw"><table><thead><tr><th>Formula</th><th>As used</th><th>Change it in</th></tr></thead><tbody>${ENGINE_FX.map(([a,b,c])=>`<tr><td><b>${esc(a)}</b></td><td style="font-family:ui-monospace,monospace;font-size:13px">${esc(b)}</td><td class="tx mu">${esc(c)}</td></tr>`).join('')}</tbody></table></div></details>`}
+async function cfClick(e){const t=e.target,d=t.dataset||{},m=$('#cf_msg'),redraw=()=>{const c=$('#cfcard');if(c){const tmp=document.createElement('div');tmp.innerHTML=cfHtml();c.replaceWith(tmp.firstChild)}};
+ if(d.cfdel!=null){CFW=CFW||calcFields().map(r=>Object.assign({},r));CFW.splice(+d.cfdel,1);redraw();return true}
+ if(t.id==='cf_add'){CFW=CFW||calcFields().map(r=>Object.assign({},r));CFW.push({key:'new'+(CFW.length+1),label:'New box',unit:'',solve:'formula',formula:''});redraw();return true}
+ if(t.id==='cf_reset'){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Use the built-in set? Click again';return true}if(OFFLINE||!db)return toast('Offline — not saved'),true;await writeLib('calc_fields',[]);L.calc_fields=[];CFW=null;logChange('calc_fields','(all)','reset','','built-in set','Formulas');await saveCLOG();C6.sig='';redraw();toast('Calculator back to the built-in formulas');return true}
+ if(t.id==='cf_save'){const err=cfCheck(CFW||[]);if(err.length)return true;if(OFFLINE||!db)return toast('Offline — not saved'),true;const rows=CFW.map(r=>{const o={key:r.key,label:r.label||r.key,unit:r.unit||'',solve:r.solve||'formula',formula:r.formula||'',solve_back:r.solve_back||'',hidden_if:r.hidden_if||''};if(r.default!==undefined&&r.default!=='')o.default=+r.default;return o});
+  const before=JSON.stringify(calcFields());await writeLib('calc_fields',rows);L.calc_fields=rows;CFW=null;logChange('calc_fields','(all)','formulas',before,JSON.stringify(rows),'Formulas');await saveCLOG();C6.sig='';redraw();toast('Calculator formulas saved ✓');return true}
+ return false}
+function cfInput(e){const t=e.target,d=t.dataset||{};if(d.cf==null)return false;CFW=CFW||calcFields().map(r=>Object.assign({},r));const r=CFW[+d.cf];if(!r)return true;r[d.cfk]=d.cfk==='default'?(t.value===''?undefined:+t.value):t.value;
+ const err=cfCheck(CFW),b=$('#cf_save'),m=$('#cf_msg');if(b)b.disabled=!!err.length;if(m)m.textContent=err.length?'⚠ '+err[0]:'Draft — press Save to use it on every PC.';return true}
+const FXT={};/* formula cards: a result typed by hand {k, v, u = chosen input to solve for, res = input actually solved} */
 function renderForm(){const all=FXL(),G=FXGROUPS();if(!FXOPEN)FXOPEN=new Set(G.filter(g=>all.some(F=>(F.group||G[0])===g)).slice(0,1));
  const custom=all.some(F=>F.order!=null&&F.order!=='')||(Array.isArray(SETDOC.formulaGroupOrder)&&SETDOC.formulaGroupOrder.length);
- $('#form').innerHTML=`<div class="row noprint" style="margin-bottom:8px"><button class="b s sm" id="fx_coll">Collapse all</button><button class="b s sm" id="fx_exp">Expand all</button><button class="b s sm" id="fx_rdo"${custom?'':' disabled'}>Restore default order</button><span class="mu">Drag ⠿ to reorder formulas within a group, or a group heading to move the group.</span></div><div class="cs"><nav class="sb">${G.map(g=>{const fs=all.map((F,i)=>[F,i]).filter(([F])=>(F.group||G[0])===g);return fs.length?`<a class="h">${esc(g)}</a>`+fs.map(([F,i])=>`<a data-j="fc${i}">${esc(F.name)}</a>`).join(''):''}).join('')}</nav><div>`+
+ $('#form').innerHTML=`<div class="row noprint" style="margin-bottom:8px"><button class="b s sm" id="fx_coll">Collapse all</button><button class="b s sm" id="fx_exp">Expand all</button><button class="b s sm" id="fx_rdo"${custom?'':' disabled'}>Restore default order</button><span class="mu">Drag ⠿ to reorder formulas within a group, or a group heading to move the group. Every result box can be typed in to work backwards.</span></div>${cfHtml()}<div class="cs"><nav class="sb">${G.map(g=>{const fs=all.map((F,i)=>[F,i]).filter(([F])=>(F.group||G[0])===g);return fs.length?`<a class="h">${esc(g)}</a>`+fs.map(([F,i])=>`<a data-j="fc${i}">${esc(F.name)}</a>`).join(''):''}).join('')}</nav><div>`+
   G.map((g,n)=>{const fs=all.map((F,i)=>[F,i]).filter(([F])=>(F.group||G[0])===g);return fs.length?`<div class="fxgw" data-fxgw="${esc(g)}"><span class="fxh" draggable="true" data-fxgdrag="${esc(g)}" title="Drag to move this group" aria-label="Drag to move group ${esc(g)}">⠿</span><details${FXOPEN.has(g)?' open':''} id="g${n}" data-fxg="${esc(g)}" style="margin-bottom:12px;flex:1;min-width:0"><summary class="gs">${esc(g)}</summary>`+fs.map(([F,i])=>fxCard(F,i)).join('')+'</details></div>':''}).join('')+'</div></div>';
- const upd=i=>{const F=all[i],h=$('#r'+i);if(!h)return;const v={};$$(`#form input[data-i="${i}"]`).forEach(e=>v[e.dataset.k]=e.value===''?'':+e.value);const r=FX.run(F,v);
-  h.innerHTML=r.rows.filter(x=>!x.hide).map(x=>`<div>${esc(x.label)}<b${x.text!=null?' style="font-size:16px"':''}>${fxVal(x)}</b></div>`).join('')+(r.err?`<div class="bad" style="font-size:13px">${esc(r.err)}</div>`:'')};
+ /* 2026-10-15: every result box can be typed in. A typed result is held and the formula is solved backwards for one input
+    (shown amber); "Solve for" picks which. Typing that input yourself, or ✕, gives the result back to the formula. */
+ const upd=i=>{const F=all[i],h=$('#r'+i);if(!h)return;const v={},held=new Set();$$(`#form input[data-i="${i}"]`).forEach(e=>{v[e.dataset.k]=e.value===''?'':+e.value;e.classList.remove('fxsolved')});
+  const T=FXT[i];let note='';
+  if(T){const u=FX.pickUnknown(F,T.k,held,T.u),x=FX.solveFor(F,v,T.k,T.v,u);T.res=u;
+   if(isFinite(x)){v[u]=x;const e=$(`#form input[data-i="${i}"][data-k="${u}"]`);if(e){e.value=+x.toPrecision(5);e.classList.add('fxsolved')}}
+   else note=u?`No ${esc((F.inputs.find(z=>z.k===u)||{}).label||u)} gives that result — try another “Solve for”.`:'That result does not depend on any input you can change.'}
+  const r=FX.run(F,v),num=r.rows.filter(x=>!x.hide);
+  if(h.dataset.k!==F.key+'|'+num.map(x=>x.k).join()){h.dataset.k=F.key+'|'+num.map(x=>x.k).join();
+   h.innerHTML=num.map(x=>x.text!=null?`<div>${esc(x.label)}<b style="font-size:16px" data-ot="${esc(x.k)}"></b></div>`:`<div>${esc(x.label)}<input class="fxout" data-o="${i}" data-k="${esc(x.k)}" type="number" step="any" inputmode="decimal" title="Type a result to work backwards"><button class="b s sm fxclr" data-fxclr="${i}" data-k="${esc(x.k)}" title="Give this result back to the formula" hidden>✕</button></div>`).join('')+`<div class="fxsolve mu" style="font-size:13px;flex-basis:100%"></div><div class="fxerr bad" style="font-size:13px;flex-basis:100%"></div>`}
+  num.forEach(x=>{if(x.text!=null){const b=h.querySelector(`[data-ot="${CSS.escape(x.k)}"]`);if(b)b.textContent=fxVal(x);return}const e=h.querySelector(`input[data-k="${CSS.escape(x.k)}"]`);if(!e)return;const mine=T&&T.k===x.k;
+   e.classList.toggle('fxheld',!!mine);const c=h.querySelector(`[data-fxclr][data-k="${CSS.escape(x.k)}"]`);if(c)c.hidden=!mine;if(document.activeElement!==e)e.value=mine?T.v:(isFinite(x.value)?+(+x.value).toFixed(x.dp!=null?x.dp:3):'')});
+  const sv=h.querySelector('.fxsolve');if(sv)sv.innerHTML=T?`Working backwards from <b>${esc((num.find(x=>x.k===T.k)||{}).label||T.k)}</b> — solve for <select data-fxu="${i}">${FX.depsOf(F,T.k).all.map(k=>`<option value="${esc(k)}"${k===T.res?' selected':''}>${esc((F.inputs.find(z=>z.k===k)||{}).label||k)}</option>`).join('')}</select>`:'';
+  const er=h.querySelector('.fxerr');if(er)er.innerHTML=(note||'')+(r.err?esc(r.err):'')};
  all.forEach((F,i)=>upd(i));
- $('#form').oninput=e=>{const t=e.target;
+ $('#form').oninput=e=>{const t=e.target;if(cfInput(e))return;
+  if(t.dataset.o!=null){const i=+t.dataset.o;if(t.value===''){delete FXT[i];return upd(i)}FXT[i]={k:t.dataset.k,v:+t.value,u:FXT[i]&&FXT[i].k===t.dataset.k?FXT[i].u:''};return upd(i)}
+  if(t.dataset.fxu!=null){const i=+t.dataset.fxu;if(FXT[i]){FXT[i].u=t.value;upd(i)}return}
+  if(t.dataset.i&&FXT[+t.dataset.i]&&FXT[+t.dataset.i].res===t.dataset.k)delete FXT[+t.dataset.i];
   if(t.dataset.fxf&&FXED){const sec=t.closest('.card'),g=k=>sec.querySelector(`[data-fxf="${k}"]`).value;FXED.F=Object.assign(fxParseLines(FXED.F,g('inputs'),g('out')),{name:g('name'),group:g('group'),doc:g('doc')});const err=FX.check(FXED.F);$('#fxchk').innerHTML=fxChk(err);sec.querySelector('[data-fxs]').disabled=!!err;return}
   if(t.dataset.pre){if(t.value==='')return;const[i,k]=t.dataset.pre.split('-');const inp=$(`#form input[data-i="${i}"][data-k="${k}"]`);if(inp)inp.value=t.value;upd(+i)}
   else if(t.dataset.i){const s=$(`#form select[data-pre="${t.dataset.i}-${t.dataset.k}"]`);if(s)s.value=[...s.options].some(o=>o.value!==''&&+o.value===+t.value)?[...s.options].find(o=>o.value!==''&&+o.value===+t.value).value:'';upd(+t.dataset.i)}};
  $('#form').onchange=$('#form').oninput;
- $('#form').onclick=async e=>{const d=e.target.dataset||{};
+ $('#form').onclick=async e=>{const d=e.target.dataset||{};if(await cfClick(e))return;if(d.fxclr!=null){delete FXT[+d.fxclr];upd(+d.fxclr);return}
   if(d.fxe){FXED={key:d.fxe,F:cloneF(all.find(x=>x.key===d.fxe))};renderForm();const c=document.querySelector('[data-fxf="name"]');if(c)c.closest('.card').scrollIntoView({block:'start'});return}
   if(d.fxx){FXED=null;renderForm();return}
   if(e.target.id==='fx_coll'||e.target.id==='fx_exp'){const o=e.target.id==='fx_exp';$$('#form details[data-fxg]').forEach(x=>x.open=o);FXOPEN=new Set(o?G:[]);return}
@@ -7575,7 +7671,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-15.5';
+const APP_V='2026-10-15.6';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
