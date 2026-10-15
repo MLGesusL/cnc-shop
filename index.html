@@ -4605,7 +4605,7 @@ const HM_MAP={
  'edges.tslot-3d':['Contouring','T Slot on 3D Model','',4],'finishing.plane':['Contouring','3D Plane Machining','',5],
  'contouring.2d':['','Contour Milling','',6],'contouring.inclined':['','Inclined Contour Milling','',7],'contouring.5x':['','5X Contour','',8],'contouring.playback':['','Playback Milling','',9]};
 const HM_NEW={'roughing.arbitrary-trochoidal':'roughing.trochoidal','roughing.arbitrary-hf-shallow':'roughing.hf-shallow'};
-async function cycTreeHM(){const via='cycles-hm 2026-10-15';if(OFFLINE||!db||!L.cycles.some(c=>c&&c.key)||CLOG.entries.some(e=>e.table==='cycles'&&e.via===via))return null;
+async function cycTreeHM(){const via='cycles-hm 2026-10-15';if(OFFLINE||!db||!L.cycles.some(c=>c&&c.key)||L.cycles.some(c=>c&&c.hm))return null;
  try{await db.doc('lib/backup-cycles-hm-'+today()).set({v:LIB_V,rows:L.cycles})}catch(e){}
  const by=k=>L.cycles.find(r=>r&&r.key===k),fams=new Set(L.cycles.filter(r=>r&&r.key&&!r.parent).map(r=>r.Cycle));let n=0,added=[],moved=[];
  L.cycles.forEach(r=>{if(r&&r.key&&!r.parent&&HM_FAM[r.Cycle]){const[l,o]=HM_FAM[r.Cycle];if(l!==r.Cycle)r.label=l;r.order=o;n++}});
@@ -7057,7 +7057,7 @@ async function mbRestoreRemoved(){const via='bands-override-restore 2026-10-15';
   if(L.matbands.some(r=>String(r.source||'')===src&&mbKey(r.material,r.cutter)===mbKey(m,c)))return;rows.forEach(r=>L.matbands.push(Object.assign({},r,{off:true})));n+=rows.length;back.push(m+' › '+c)});
  if(n){await writeLib('matbands',L.matbands);logChange('matbands','(overrides)','restored, switched off','',back.join(', '),via,'overrides removed earlier today are back, switched off — turn them on in Cutting data → Bands');await saveCLOG();SF.invalidate()}
  return back.length}
-async function mbStandardise(){const via='bands-std 2026-10-15';if(!L.matbands.length||CLOG.entries.some(e=>e.table==='matbands'&&e.via===via))return null;
+async function mbStandardise(){const via='bands-std 2026-10-15';if(!L.matbands.length||L.matbands.some(r=>mbIsGroup(r.material)))return null;
  try{await db.doc('lib/backup-matbands-'+today()).set({v:LIB_V,rows:L.matbands,bands:L.bands})}catch(e){console.warn('backup',e)}
  const med=a=>{const v=a.filter(x=>x>0).sort((x,y)=>x-y),n=v.length;return n?(n%2?v[(n-1)/2]:(v[n/2-1]+v[n/2])/2):''};
  const lk=x=>String(x||'').trim().toLowerCase(),K=(src,m,c)=>src+'|'+lk(m)+'|'+c;
@@ -7761,7 +7761,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-15.11';
+const APP_V='2026-10-15.12';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
