@@ -1242,11 +1242,26 @@ const SF = (() => {
      Vc and fz are the ROUGHING reference for that cutter: fz = f/edge at full engagement (the chip thickness), so a
      sub-cycle's ap / ae re-derive the programmed fz (chip thinning) and its multipliers scale Vc. */
   const MB_TOL = .005;
+  /* 2026-10-15: band tables are kept per ISO standard group ("@P1", "@M" …) — every material uses its group's table.
+     A material can still have its own table for a cutter type (an override). Square and bull-nose end mills share one
+     table (BX-R → BX); the corner-radius difference comes from the Baselines ratios. Lookup order for each row:
+     material's own table › its standard group's table, cutter key as given › merged end-mill key. */
+  let mbIsoFn = null;
+  const setMbIso = f => { mbIsoFn = typeof f === 'function' ? f : null; };
+  const mbGroupKey = iso => '@' + iso;
+  const mbMergeCk = c => { const m = /^(.+)-R$/.exec(c); return m && GEO_SPLIT.includes(m[1]) ? m[1] : c; };
   function bandRowFor(rows, material, sfx, d, src) {
     if (!Array.isArray(rows) || !rows.length || !material || !sfx || !(d > 0)) return null;
-    const m = String(material).trim().toLowerCase(), c = String(sfx).trim().toUpperCase(), sk = String(src || '');
-    return rows.find(r => r && String(r.source || '') === sk && String(r.material || '').trim().toLowerCase() === m && String(r.cutter || '').trim().toUpperCase() === c &&
-      +r.Vc > 0 && +r.fz > 0 && d >= +r.lo - MB_TOL && d <= +r.hi + MB_TOL) || null;
+    const m = String(material).trim().toLowerCase(), c0 = String(sfx).trim().toUpperCase(), sk = String(src || '');
+    const cks = [...new Set([c0, mbMergeCk(c0)])];
+    const iso = String(material).charAt(0) === '@' ? '' : (mbIsoFn ? mbIsoFn(material) : '');
+    const mats = [m]; if (iso) mats.push(mbGroupKey(iso).toLowerCase());
+    for (const mm of mats) for (const c of cks) {
+      const hit = rows.find(r => r && String(r.source || '') === sk && String(r.material || '').trim().toLowerCase() === mm && String(r.cutter || '').trim().toUpperCase() === c &&
+        +r.Vc > 0 && +r.fz > 0 && d >= +r.lo - MB_TOL && d <= +r.hi + MB_TOL);
+      if (hit) return hit;
+    }
+    return null;
   }
   /* problems in one Material › Cutter table ([] = fine): min < max, no overlaps, Vc and f/edge filled */
   function bandTableProblems(rows) {
@@ -1762,8 +1777,8 @@ const SF = (() => {
     if (!src) return ord.some(tg => okv(all[tg])) ? { warn: 'No recommendation — the sources that have a value are switched off', noRec: true, all } : null;
     const v = all[src];
     const at = sub ? ` — applied at the ${subName} engagement` : '';
-    const basedOn = /^S:/.test(src) ? `${srcName(ctx0, src)}: band ${v.bandRow.material} › ${v.bandRow.cutter} › Ø${v.bandRow.lo}–${v.bandRow.hi} (Vc ${v.bandRow.Vc}, f/edge ${v.bandRow.fz}) with its own baselines${at}`
-      : src === 'BAND' ? `your band table: ${v.bandRow.material} › ${v.bandRow.cutter} › Ø${v.bandRow.lo}–${v.bandRow.hi} (Vc ${v.bandRow.Vc}, f/edge ${v.bandRow.fz})${at}`
+    const basedOn = /^S:/.test(src) ? `${srcName(ctx0, src)}: band ${String(v.bandRow.material).replace(/^@(.+)$/,'ISO $1 standard')} › ${v.bandRow.cutter} › Ø${v.bandRow.lo}–${v.bandRow.hi} (Vc ${v.bandRow.Vc}, f/edge ${v.bandRow.fz}) with its own baselines${at}`
+      : src === 'BAND' ? `your band table: ${String(v.bandRow.material).replace(/^@(.+)$/,'ISO $1 standard')} › ${v.bandRow.cutter} › Ø${v.bandRow.lo}–${v.bandRow.hi} (Vc ${v.bandRow.Vc}, f/edge ${v.bandRow.fz})${at}`
       : src === 'CUTS' ? (v.cutsNote || `${v.n} verified cut${v.n > 1 ? 's' : ''}`) + at
       : src === 'MFR' ? (v.note || 'manufacturer catalogue') + (TT[sfx] ? ' — catalogue Vc and chip load as a band value' + at : '')
       : 'typical model (coated carbide, by material group)' + at;
@@ -1788,7 +1803,7 @@ const SF = (() => {
     ['CTE magazine — Thread milling machining parameters', 'https://www.ctemag.com/articles/thread-milling-machining-parameters']
   ];
   return { FAMS, famOf, matFactor, matInfo, build, suggest, invalidate, KC11: KC, TT, OPN, REFS, interp: lerp, sig, ISO_NAME, sRad, sAx, deffOf, aeLim,
-    RULE_WHEN, RULE_SET, RULE_TEXT, ruleParts, matchWhen, trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, bandRowFor, bandTableProblems, bandTableWarnings, bandSeed, bandSmooth, GEO_SPLIT, GEO_DEF, ckOfT, baseCk, SRCNAME, cutsRef, srcOrder, srcName, srcOverride, SRC_FIELDS, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, opDefaultsLayers, SFTIERS, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
+    RULE_WHEN, RULE_SET, RULE_TEXT, ruleParts, matchWhen, trusted, goodRes, opCls, dbSub, resolve, pick, fixedOpOf, subsFor, BANDS, bandOf, bandRowFor, setMbIso, mbGroupKey, mbMergeCk, bandTableProblems, bandTableWarnings, bandSeed, bandSmooth, GEO_SPLIT, GEO_DEF, ckOfT, baseCk, SRCNAME, cutsRef, srcOrder, srcName, srcOverride, SRC_FIELDS, validateBands, FAMILY_AP, DYN_SUBS, DEFAULT_BASELINE, TREE, subOf, familyOf, opDefaultsFor, opDefaultsLayers, SFTIERS, resolveBaseline, matchWhen, applyRules, ruleProblems, engagement, codeDefault, raStep, emTyp, AE_THIN_MIN, rdBandOf, gemRow, gemCond, gemAdj, gemFlags, gemCycle, gemVal, GEM_TOOL };
 })();
 if (typeof module !== 'undefined') module.exports = SF;
 /* @end sf.js */
@@ -5143,6 +5158,8 @@ async function load(){
     if(RAW.matbands&&!RAW.matbands.exists&&L.tools.length&&L.materials.length){try{L.matbands=mbFillMissing();await writeLib('matbands',L.matbands);logChange('matbands','(seed)','created','',L.matbands.length+' rows','first run','band tables seeded from manufacturer catalogue, else typical model');await saveCLOG()}catch(e){console.error('matbands seed',e)}}
     /* 2026-10-14 (2): square / bull-nose split + drill, reamer tables — the new cutter types get tables once */
     try{const via='matbands v2 2026-10-14';if(L.matbands.length&&L.tools.length&&!CLOG.entries.some(e=>e.table==='matbands'&&e.via===via)){SF.GEO_SPLIT.forEach(k=>{const sq=L.tools.some(t=>AUD.sfxOf(t['Tool Code'])===k&&SF.ckOfT(t,k)===k),bu=L.tools.some(t=>AUD.sfxOf(t['Tool Code'])===k&&SF.ckOfT(t,k)===k+'-R');if(!sq&&bu&&!L.matbands.some(r=>String(r.cutter).toUpperCase()===k+'-R'))L.matbands.forEach(r=>{if(String(r.cutter).toUpperCase()===k)r.cutter=k+'-R'})});const add=mbFillMissing();if(add.length||true){L.matbands.push(...add);await writeLib('matbands',L.matbands)}logChange('matbands','(new cutter types)','created','',add.length+' rows',via,'bull-nose tables (BX-R, AL-R …) and drill / reamer tables (feed per rev)');await saveCLOG()}}catch(e){console.error('matbands v2',e)}
+    /* 2026-10-15: band tables per ISO standard, square + bull nose merged, Ø10–15.99 split */
+    try{const r=await mbStandardise();if(r)toast(`Bands regrouped by ISO standard: ${r.made} standard tables`+(r.kept.length?`, ${r.kept.length} hand-edited material table${r.kept.length>1?'s':''} kept as override${r.kept.length>1?'s':''}`:'')+' — Cutting data → Bands',6000)}catch(e){console.error('bands-std',e)}
     let mig=0;for(const k of Object.keys(RAW)){if(RAW[k].exists&&RAW[k].v<LIB_V){try{L[k]=await migrateLib(k,RAW[k]);mig++}catch(e){console.error('migrate',k,e)}}}if(mig)await saveCLOG();
     try{if(await seedTree())toast('Cycle tree added to Library → cycles (your hyperMILL cycles are unchanged)',4000)}catch(e){console.error('cycle tree',e)}
     /* 2026-10-13.1: cycle parameters rebuilt from the hyperMILL screenshots — record the key renames in the change log once */
@@ -5825,7 +5842,7 @@ const nf=(v,d=0)=>isFinite(v)&&v!==null?(+v).toFixed(d).replace(/\B(?=(\d{3})+(?
 function originTxt(r,x,s){const ex=[x.hex?'max chip '+(+x.hex).toFixed(3)+' mm':'',x.deff?'effective Ø '+(+x.deff).toFixed(1):'',x.adjTxt||''].filter(Boolean).join(' · ');
  const head=s==='MFR'||s==='MFR≈'?(x.note||'')+(x.vtx?' · printed Vc '+x.vtx:'')+(x.ftx?' · printed fz '+x.ftx:'')+(x.apTxt?' · ap '+x.apTxt:'')+(x.aeTxt?' · ae '+x.aeTxt:'')
   :s==='DB'?`${x.n} verified cut${x.n>1?'s':''}${x.exact?' with this Ø':' (same material family)'} · results ${x.res||'–'} · materials ${(x.mats||[]).join(', ')}`
-  :s==='BAND'?(x.bandRow?`${x.bandRow.material} › ${x.bandRow.cutter} › Ø${x.bandRow.lo}–${x.bandRow.hi}: Vc ${x.bandRow.Vc}, f/edge ${x.bandRow.fz}${x.bandRow.src?' ('+x.bandRow.src+')':''}`:'')+(x.engTxt?' · '+x.engTxt:''):s==='CAL'?(x.calNote||''):s==='GEM'?`${x.gemRow&&x.gemRow.name?x.gemRow.name+' · ':''}${x.note||'typical European mould-shop practice'}${x.conf?' · confidence '+x.conf:''}${x.engTxt?' · '+x.engTxt:''}`:(SRCT.BASE+(x.src==='REF'?' · from published reference data (Formulas → References)':x.src==='TYP'?' · typical shop practice':'')+(x.engTxt?' · '+x.engTxt:''));
+  :s==='BAND'?(x.bandRow?`${String(x.bandRow.material).replace(/^@(.+)$/,'ISO $1 standard')} › ${x.bandRow.cutter} › Ø${x.bandRow.lo}–${x.bandRow.hi}: Vc ${x.bandRow.Vc}, f/edge ${x.bandRow.fz}${x.bandRow.src?' ('+x.bandRow.src+')':''}`:'')+(x.engTxt?' · '+x.engTxt:''):s==='CAL'?(x.calNote||''):s==='GEM'?`${x.gemRow&&x.gemRow.name?x.gemRow.name+' · ':''}${x.note||'typical European mould-shop practice'}${x.conf?' · confidence '+x.conf:''}${x.engTxt?' · '+x.engTxt:''}`:(SRCT.BASE+(x.src==='REF'?' · from published reference data (Formulas → References)':x.src==='TYP'?' · typical shop practice':'')+(x.engTxt?' · '+x.engTxt:''));
  return [SRCT[s]||'',head,ex].filter(Boolean).join('\n')}
 /* ---------- Phase 9: "Explain this value" — which source won (the ladder), and for baseline values which rows matched,
    in what order, and which field came from which row / sub-cycle / family default / rule / code default. ---------- */
@@ -5850,7 +5867,7 @@ function xplEng(w){const e=w&&w.eng;if(!e)return '';const src=e.src||{},od=e.odF
   ${rows.length?`<div class="tw"><table><thead><tr><th>Field</th><th class="n">Value</th><th>From</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`:'<p class="mu">No baseline row, sub-cycle default or rule set any field — the code default was used.</p>'}
   <p class="mu" style="margin:6px 0 0">${['ap','ae'].map(k=>e.from&&e.from[k]?`${k}: <b>${esc(e.from[k])}</b>`:'').filter(Boolean).join(' · ')}${e.txt?' · '+esc(e.txt):''}</p>
   <h3>Baseline rows that matched, in order</h3>${chain?`<ol>${chain}</ol>`:'<p class="mu">None.</p>'}${rules?`<h3>Rules applied</h3><ul>${rules}</ul>`:''}`}
-function xplVc(w){const v=w&&w.vcWhy;if(!v)return '';const br=v.bandRow,p=[`${v.from==='baseline'?'baseline row Vc':v.from==='band'?`band table Vc ${esc(br?br.material+' › '+br.cutter+' › Ø'+br.lo+'–'+br.hi+' = '+br.Vc:'')}${br&&f(v.base,1)!==f(+br.Vc,1)?' → for this operation':''}`:'material model Vc'} ${f(v.base,1)}`];if(v.vcMult!==1)p.push(`× ${v.vcMult} (sub-cycle Vc multiplier)`);if(v.gem!==1)p.push(`× ${v.gem} (GEM cycle)`);if(v.adj!==1)p.push(`× ${f(v.adj,2)} (${esc(v.adjTxt||'coolant / preference')})`);if(v.rule!==1)p.push(`× ${v.rule} (rule vc_mult)`);
+function xplVc(w){const v=w&&w.vcWhy;if(!v)return '';const br=v.bandRow,p=[`${v.from==='baseline'?'baseline row Vc':v.from==='band'?`band table Vc ${esc(br?(String(br.material).charAt(0)==='@'?'ISO '+String(br.material).slice(1)+' standard':br.material)+' › '+br.cutter+' › Ø'+br.lo+'–'+br.hi+' = '+br.Vc:'')}${br&&f(v.base,1)!==f(+br.Vc,1)?' → for this operation':''}`:'material model Vc'} ${f(v.base,1)}`];if(v.vcMult!==1)p.push(`× ${v.vcMult} (sub-cycle Vc multiplier)`);if(v.gem!==1)p.push(`× ${v.gem} (GEM cycle)`);if(v.adj!==1)p.push(`× ${f(v.adj,2)} (${esc(v.adjTxt||'coolant / preference')})`);if(v.rule!==1)p.push(`× ${v.rule} (rule vc_mult)`);
  return `<h3>Target Vc</h3><p>${p.join(' ')} = <b>${f(v.base*v.vcMult*v.gem*v.adj*v.rule,1)} m/min</b> (before the spindle limit)</p>`}
 function explainHtml(o){const r=o.row||{},x=o.best,s=o.src;
  const all=o.all||null,val=k=>all?all[k]:k==='BAND'?r.band:k==='CUTS'?r.cuts:k==='MFR'?r.mfr:k==='TYP'?r.typ:/^S:/.test(k)?(r.custom||{})[k.slice(2)]:null;
@@ -6763,14 +6780,14 @@ const MB_COLS=['material','cutter','lo','hi','Vc','fz','src','note','source'];
 /* cutter keys: end-mill types split square / bull nose (BX, BX-R …), plus drills, reamers and taps (Vc + feed per rev) */
 const MB_DRILL=['CD','HSS','SP','RM','TAP'],MB_NAMES={CD:'Carbide drills',HSS:'HSS drills',SP:'Spot drills',RM:'Reamers',TAP:'Taps (Vc only — feed = pitch)'};
 const mbIsRev=ck=>MB_DRILL.includes(SF.baseCk(ck));
-const ckName=ck=>{const b=SF.baseCk(ck),tt=SF.TT[b];return (tt?(tt.name.split(' — ')[1]||tt.name):MB_NAMES[b]||b)+(/-R$/.test(ck)?' — bull nose':SF.GEO_SPLIT.includes(b)?' — square':'')};
+const ckName=ck=>{const b=SF.baseCk(ck),tt=SF.TT[b];return (tt?(tt.name.split(' — ')[1]||tt.name):MB_NAMES[b]||b)+(/-R$/.test(ck)?' — bull nose':SF.GEO_SPLIT.includes(b)?' — square & corner radius':'')};
 const ckOfCode=code=>{const t=tool(code);return t?SF.ckOfT(t,AUD.sfxOf(code)):AUD.sfxOf(code)};
-const mbCutters=()=>{const s=new Set();L.tools.forEach(t=>{const sf=AUD.sfxOf(t['Tool Code']);if(SF.TT[sf]||MB_DRILL.includes(sf))s.add(SF.ckOfT(t,sf))});const ord=[...Object.keys(SF.TT).flatMap(k=>[k,k+'-R']),...MB_DRILL];return [...s].sort((a,b)=>ord.indexOf(a)-ord.indexOf(b))};
+const mbCutters=()=>{const s=new Set();L.tools.forEach(t=>{const sf=AUD.sfxOf(t['Tool Code']);if(SF.TT[sf]||MB_DRILL.includes(sf))s.add(SF.mbMergeCk(SF.ckOfT(t,sf)))});const ord=[...Object.keys(SF.TT),...MB_DRILL];return [...s].sort((a,b)=>ord.indexOf(a)-ord.indexOf(b))};
 const mbKey=(m,c)=>String(m||'').trim().toLowerCase()+'|'+String(c||'').trim().toUpperCase();
 let MBS='';/* the source being edited: '' = Bands, else a custom source key */
 const mbRows=(m,c,src)=>L.matbands.map((r,i)=>[r,i]).filter(([r])=>String(r.source||'')===String(src==null?MBS:src)&&mbKey(r.material,r.cutter)===mbKey(m,c)).sort((a,b)=>+a[0].lo - +b[0].lo);
 /* the global Ø ranges that cover this cutter key's tools in the library (first table rows) */
-function mbRanges(ck){const B=(L.bands&&L.bands.length?L.bands:SF.BANDS).slice().sort((a,b)=>a.lo-b.lo),ds=L.tools.filter(t=>ckOfCode(t['Tool Code'])===ck).map(t=>+t['Diameter (mm)']).filter(d=>d>0);
+function mbRanges(ck){const B=(L.bands&&L.bands.length?L.bands:SF.BANDS).slice().sort((a,b)=>a.lo-b.lo),ds=L.tools.filter(t=>SF.mbMergeCk(ckOfCode(t['Tool Code']))===SF.mbMergeCk(ck)).map(t=>+t['Diameter (mm)']).filter(d=>d>0);
  if(!ds.length)return [];const lo=Math.min(...ds),hi=Math.max(...ds);return B.filter(b=>+b.hi>=lo-.005&&+b.lo<=hi+.005).map(b=>({lo:+b.lo,hi:+b.hi}))}
 /* drills / reamers: the median of the Speeds & Feeds rows (catalogue, else reference table) inside each Ø range */
 function mbSeedRev(mat,ck){const ctx=sfctx(mat,'','Flood');let sec=null;try{sec=SF.build(ctx).find(x=>x.sfx===SF.baseCk(ck))}catch(e){}if(!sec)return [];
@@ -6780,29 +6797,72 @@ function mbSeedRev(mat,ck){const ctx=sfctx(mat,'','Flood');let sec=null;try{sec=
 function mbSeedTable(mat,ck){if(mbIsRev(ck))return SF.baseCk(ck)==='TAP'?[]:mbSeedRev(mat,ck);const ctx=sfctx(mat,'','Flood'),rg=mbRanges(ck),mk=t=>rg.map(b=>{const v=SF.bandSeed(ctx,ck,b.lo,b.hi,t);return v?Object.assign({lo:b.lo,hi:b.hi},v):null}).filter(Boolean);
  return SF.bandSmooth(mk(false),mk(true)).map(r=>Object.assign({material:mat,cutter:ck},r))}
 /* builds every missing Material › Cutter table of your Bands; existing tables are never touched */
-function mbFillMissing(){const add=[];L.materials.forEach(m=>{const mat=m.Material;if(!mat)return;mbCutters().forEach(ck=>{if(mbRows(mat,ck,'').length)return;add.push(...mbSeedTable(mat,ck))})});return add}
+/* 2026-10-15: band tables per ISO standard group ("@P1" …); a material's own table for a cutter type is an override */
+const mbIsoOfName=n=>{const k=String(n||'').trim().toLowerCase(),x=L.materials.find(y=>String(y.Material||'').trim().toLowerCase()===k);return SF.matInfo(x||{Material:n}).iso};
+SF.setMbIso(mbIsoOfName);
+const mbIsGroup=m=>String(m||'').charAt(0)==='@';
+const mbGroups=()=>{const s=new Set();L.materials.forEach(m=>{if(m.Material)s.add(SF.matInfo(m).iso)});const ord=Object.keys(SF.ISO_NAME);return [...s].sort((a,b)=>ord.indexOf(a)-ord.indexOf(b))};
+const mbGroupLabel=g=>{const iso=String(g).replace(/^@/,'');return 'ISO '+iso+' — '+(SF.ISO_NAME[iso]||'')};
+const mbMembers=iso=>L.materials.filter(m=>m.Material&&SF.matInfo(m).iso===iso).map(m=>m.Material);
+/* the group's seed material: the one whose machinability factor is closest to the group's plain value */
+function mbRep(iso){const ms=L.materials.filter(m=>m.Material&&SF.matInfo(m).iso===iso).sort((a,b)=>Math.abs(SF.matInfo(a).k-1)-Math.abs(SF.matInfo(b).k-1));return ms[0]?ms[0].Material:''}
+function mbSeedGroup(iso,ck){const rep=mbRep(iso);if(!rep)return [];return mbSeedTable(rep,ck).map(r=>Object.assign(r,{material:'@'+iso,note:(r.note?r.note+' · ':'')+'seeded for '+rep}))}
+/* builds every missing Standard › Cutter table of your Bands; existing tables are never touched */
+function mbFillMissing(){const add=[];mbGroups().forEach(iso=>mbCutters().forEach(ck=>{if(mbRows('@'+iso,ck,'').length)return;add.push(...mbSeedGroup(iso,ck))}));return add}
+/* one-off: per-material tables → one table per ISO standard (median of its materials), square + bull-nose merged,
+   Ø10–15.99 split into 10–11.99 and 12–15.99. Tables you edited by hand stay as that material's override. */
+async function mbStandardise(){const via='bands-std 2026-10-15';if(!L.matbands.length||CLOG.entries.some(e=>e.table==='matbands'&&e.via===via))return null;
+ try{await db.doc('lib/backup-matbands-'+today()).set({v:LIB_V,rows:L.matbands,bands:L.bands})}catch(e){console.warn('backup',e)}
+ const med=a=>{const v=a.filter(x=>x>0).sort((x,y)=>x-y),n=v.length;return n?(n%2?v[(n-1)/2]:(v[n/2-1]+v[n/2])/2):''};
+ const lk=x=>String(x||'').trim().toLowerCase(),K=(src,m,c)=>src+'|'+lk(m)+'|'+c;
+ /* 1. tables keyed by source › material › cutter; bull-nose folded into the end-mill table (the square one wins if both exist) */
+ const T=new Map();L.matbands.forEach(r=>{const c0=String(r.cutter||'').trim().toUpperCase(),c=SF.mbMergeCk(c0),k=K(String(r.source||''),r.material,c);let t=T.get(k);if(!t){t={src:String(r.source||''),mat:r.material,c,by:{}};T.set(k,t)}(t.by[c0]=t.by[c0]||[]).push(r)});
+ T.forEach(t=>{t.rows=(t.by[t.c]||Object.values(t.by)[0]).map(r=>Object.assign({},r,{cutter:t.c}))});
+ const known=new Map(L.materials.filter(m=>m.Material).map(m=>[lk(m.Material),SF.matInfo(m).iso]));
+ const out=[],made=[],kept=[];let dropped=0;
+ /* 2. one standard table per source › ISO group › cutter */
+ const G=new Map();T.forEach(t=>{if(mbIsGroup(t.mat)){out.push(...t.rows);return}const iso=known.get(lk(t.mat));if(!iso){out.push(...t.rows);return}
+  const gk=K(t.src,'@'+iso,t.c);(G.get(gk)||G.set(gk,{src:t.src,iso,c:t.c,mem:[]}).get(gk)).mem.push(t)});
+ G.forEach(g=>{if(T.has(K(g.src,'@'+g.iso,g.c)))return;
+  const base=g.mem.slice().sort((a,b)=>b.rows.length-a.rows.length)[0].rows.slice().sort((a,b)=>+a.lo - +b.lo);
+  const at=(t,d)=>t.rows.find(r=>d>=+r.lo-.005&&d<=+r.hi+.005);
+  const rows=base.map(b=>{const mid=(+b.lo + +b.hi)/2,hits=g.mem.map(t=>at(t,mid)).filter(Boolean),vc=med(hits.map(r=>+r.Vc)),fz=med(hits.map(r=>+r.fz));
+   const o={material:'@'+g.iso,cutter:g.c,lo:b.lo,hi:b.hi,Vc:vc===''?'':+(+vc).toPrecision(3),fz:fz===''?'':+(+fz).toPrecision(2),src:g.mem.length>1?'Standard (median of '+hits.length+' materials)':(b.src||'Standard'),note:'from '+g.mem.map(t=>t.mat).join(', ')};if(g.src)o.source=g.src;return o});
+  out.push(...rows);made.push((g.src?'['+g.src+'] ':'')+'ISO '+g.iso+' › '+g.c);
+  g.mem.forEach(t=>{if(t.rows.some(r=>r.src==='Edited')){out.push(...t.rows);kept.push(t.mat+' › '+t.c)}else dropped+=t.rows.length})});
+ /* 3. split Ø10–15.99 */
+ const split=r=>Math.abs(+r.lo-10)<.01&&Math.abs(+r.hi-15.99)<.01?[Object.assign({},r,{hi:11.99}),Object.assign({},r,{lo:12})]:[r];
+ L.matbands=out.flatMap(split);
+ const gb=(L.bands||[]);if(gb.some(b=>Math.abs(+b.lo-10)<.01&&Math.abs(+b.hi-15.99)<.01)){L.bands=gb.flatMap(b=>Math.abs(+b.lo-10)<.01&&Math.abs(+b.hi-15.99)<.01?[Object.assign({},b,{hi:11.99,label:'10.0–11.99'}),Object.assign({},b,{lo:12,label:'12.0–15.99'})]:[b]);await writeLib('bands',L.bands)}
+ await writeLib('matbands',L.matbands);
+ logChange('matbands','(all)','grouped by ISO standard',dropped+' per-material rows',made.length+' standard tables',via,'square + bull-nose end mills merged; Ø10–15.99 split into 10–11.99 and 12–15.99'+(kept.length?'; kept as material overrides (hand-edited): '+kept.join(', '):'')+'; old tables saved in lib/backup-matbands-'+today());
+ await saveCLOG();SF.invalidate();return {made:made.length,kept,dropped}}
 let MBM='';
-function drawBandEd(){const mats=L.materials.map(m=>m.Material).filter(Boolean),srcs=L.sources||[];if(MBS&&!srcs.some(x=>x.key===MBS))MBS='';
- const mine=L.matbands.filter(r=>String(r.source||'')===MBS),orphan=[...new Set(mine.map(r=>r.material).filter(m=>!mats.some(x=>mbKey(x,'')===mbKey(m,''))))];
- if(!MBM||![...mats,...orphan].includes(MBM))MBM=mats[0]||orphan[0]||'';
+function drawBandEd(){const mats=L.materials.map(m=>m.Material).filter(Boolean),srcs=L.sources||[],grps=mbGroups().map(g=>'@'+g);if(MBS&&!srcs.some(x=>x.key===MBS))MBS='';
+ const mine=L.matbands.filter(r=>String(r.source||'')===MBS),orphan=[...new Set(mine.map(r=>r.material).filter(m=>!mbIsGroup(m)&&!mats.some(x=>mbKey(x,'')===mbKey(m,''))))];
+ const ogrp=[...new Set(mine.map(r=>r.material).filter(m=>mbIsGroup(m)&&!grps.some(x=>mbKey(x,'')===mbKey(m,''))))];
+ if(!MBM||![...grps,...ogrp,...mats,...orphan].some(x=>mbKey(x,'')===mbKey(MBM,'')))MBM=grps[0]||mats[0]||orphan[0]||'';
+ const isG=mbIsGroup(MBM),gOf=m=>'@'+mbIsoOfName(m),myG=isG?MBM:gOf(MBM);
  const cnt=m=>new Set(mine.filter(r=>mbKey(r.material,'')===mbKey(m,'')).map(r=>String(r.cutter).toUpperCase())).size;
- const iso=m=>{const x=L.materials.find(y=>y.Material===m);return x?SF.matInfo(x).iso:''};
- const ord=[...Object.keys(SF.TT).flatMap(k=>[k,k+'-R']),...MB_DRILL],have=[...new Set(mine.filter(r=>mbKey(r.material,'')===mbKey(MBM,'')).map(r=>String(r.cutter).toUpperCase()))].sort((a,b)=>(ord.indexOf(a)+999*(ord.indexOf(a)<0))-(ord.indexOf(b)+999*(ord.indexOf(b)<0)));
- const missing=[...new Set([...mbCutters(),'TAP'])].filter(c=>!have.includes(c)),num=(i,k,v)=>`<input data-mb="${i}" data-mbk="${k}" type="number" step="any" min="0" inputmode="decimal" value="${v==null||v===''?'':esc(v)}">`;
+ const iso=m=>mbIsGroup(m)?String(m).slice(1):(()=>{const x=L.materials.find(y=>y.Material===m);return x?SF.matInfo(x).iso:''})();
+ const ord=[...Object.keys(SF.TT),...MB_DRILL],have=[...new Set(mine.filter(r=>mbKey(r.material,'')===mbKey(MBM,'')).map(r=>String(r.cutter).toUpperCase()))].sort((a,b)=>(ord.indexOf(a)+999*(ord.indexOf(a)<0))-(ord.indexOf(b)+999*(ord.indexOf(b)<0)));
+ const gHave=isG?[]:[...new Set(mine.filter(r=>mbKey(r.material,'')===mbKey(myG,'')).map(r=>String(r.cutter).toUpperCase()))].filter(c=>!have.includes(c)).sort((a,b)=>ord.indexOf(a)-ord.indexOf(b));
+ const missing=[...new Set([...mbCutters(),'TAP'])].filter(c=>!have.includes(c)&&!gHave.includes(c)),num=(i,k,v)=>`<input data-mb="${i}" data-mbk="${k}" type="number" step="any" min="0" inputmode="decimal" value="${v==null||v===''?'':esc(v)}">`;
  const table=c=>{const rows=mbRows(MBM,c),rev=mbIsRev(c),er=SF.bandTableProblems(rows.map(([r])=>r)).filter(x=>!(c==='TAP'&&/f\/edge/.test(x))),wn=SF.bandTableWarnings(rows.map(([r])=>r));
-  return `<details class="mbt" open><summary>Cutter type <span class="tag" style="font-weight:600">${esc(c)}</span><span class="mu">${esc(ckName(c))} · ${rows.length} Ø range${rows.length===1?'':'s'}</span>${er.length?`<span class="bad" style="font-weight:400">⚠ ${esc(er[0])}${er.length>1?` (+${er.length-1})`:''}</span>`:wn.length?`<span style="font-weight:400;color:var(--warn)" title="${esc(wn.join('\n'))}">check: ${esc(wn[0])}${wn.length>1?` (+${wn.length-1})`:''}</span>`:''}</summary>
-  <div class="tw"><table><thead><tr><th class="n">Min Ø (mm)</th><th class="n">Max Ø (mm)</th><th class="n">Cutting speed Vc (m/min)</th><th class="n">${rev?(c==='TAP'?'Pitch (mm) — optional':'Feed f (mm/rev)'):'F/edge fz (mm)'}</th><th class="n" title="Spindle speed across this Ø range: n = Vc × 1000 ÷ (π × Ø)${MBMACH?', capped at '+esc(MBMACH)+'’s spindle limit':''}">RPM</th><th class="n" title="${rev?'Feed = RPM × feed per rev':'Reference feed at full engagement = RPM × f/edge × flutes (flutes of your tools in this range; ≈ = estimated flute count)'}">Feed (mm/min)</th><th>Source of the numbers</th><th></th></tr></thead><tbody>
+  return `<details class="mbt" open><summary>Cutter type <span class="tag" style="font-weight:600">${esc(c)}</span><span class="mu">${esc(ckName(c))} · ${rows.length} Ø range${rows.length===1?'':'s'}</span>${isG?'':'<span class="tag" style="background:var(--warn);color:#fff" title="This material uses this table instead of its standard ('+esc(mbGroupLabel(myG))+')">override</span>'}${er.length?`<span class="bad" style="font-weight:400">⚠ ${esc(er[0])}${er.length>1?` (+${er.length-1})`:''}</span>`:wn.length?`<span style="font-weight:400;color:var(--warn)" title="${esc(wn.join('\n'))}">check: ${esc(wn[0])}${wn.length>1?` (+${wn.length-1})`:''}</span>`:''}</summary>
+  <div class="tw"><table><thead><tr><th class="n">Min Ø (mm)</th><th class="n">Max Ø (mm)</th><th class="n">Cutting speed Vc (m/min)</th><th class="n">${rev?(c==='TAP'?'Pitch (mm) — optional':'Feed f (mm/rev)'):'F/edge fz (mm)'}</th><th class="n" title="Spindle speed at the smallest and largest Ø of your tools in this range (or the range ends when you have none): n = Vc × 1000 ÷ (π × Ø)${MBMACH?', capped at '+esc(MBMACH)+'’s spindle limit':''}">RPM by Ø</th><th class="n" title="${rev?'Feed = RPM × feed per rev':'Reference feed at full engagement = RPM × f/edge × flutes (flutes of your tools in this range; ≈ = estimated flute count)'}">Feed by Ø (mm/min)</th><th>Source of the numbers</th><th></th></tr></thead><tbody>
   ${rows.map(([r,i])=>`<tr><td class="n">${num(i,'lo',r.lo)}</td><td class="n">${num(i,'hi',r.hi)}</td><td class="n">${num(i,'Vc',r.Vc)}</td><td class="n">${num(i,'fz',r.fz)}</td>${mbRFcells(r,c)}<td class="mbs" title="${esc((r.src||'')+(r.note?'\n'+r.note:''))}"><span><b>${esc(r.src||'')}</b>${r.note?' · '+esc(r.note):''}</span></td><td><button class="b s sm" data-mbdel="${i}" title="Delete this Ø range">✕</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">No Ø ranges.</td></tr>'}
   </tbody></table></div>${er.length>1?`<p class="bad" style="margin:0 12px 8px;font-size:13px">${er.map(esc).join(' · ')}</p>`:''}
-  <p class="row" style="margin:0 10px 10px"><button class="b s sm" data-mbadd="${esc(c)}">+ Ø range</button>${MBS?`<button class="b s sm" data-mbfrom="${esc(c)}" title="Replace this table with a copy of the same table in Bands">Copy from Bands</button>`:`<button class="b s sm" data-mbseed="${esc(c)}" title="Replace this table with catalogue / typical-model values">Re-seed from catalogue</button>`}<button class="b s sm" data-mbdeltab="${esc(c)}">Delete table</button></p></details>`};
+  <p class="row" style="margin:0 10px 10px"><button class="b s sm" data-mbadd="${esc(c)}">+ Ø range</button>${MBS?`<button class="b s sm" data-mbfrom="${esc(c)}" title="Replace this table with a copy of the same table in Bands">Copy from Bands</button>`:`<button class="b s sm" data-mbseed="${esc(c)}" title="Replace this table with catalogue / typical-model values">Re-seed from catalogue</button>`}<button class="b s sm" data-mbdeltab="${esc(c)}">${isG?'Delete table':'Remove override (use '+esc('ISO '+myG.slice(1))+')'}</button></p></details>`};
+ const inherit=gHave.length?`<div class="card"><h2 style="font-size:15px;margin-bottom:4px">Using the ${esc(mbGroupLabel(myG))} tables</h2><p class="mu" style="margin:0 0 8px">These cutter types have no table of their own for ${esc(MBM)}, so they use the standard. Make an override only when this material needs different numbers.</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:6px 14px">${gHave.map(c=>`<div style="display:flex;align-items:center;gap:8px;min-width:0"><span class="tag">${esc(c)}</span><span class="mu" style="flex:1;min-width:0;font-size:13px">${esc(ckName(c))}</span><button class="b s sm lkhide" data-mbov="${esc(c)}">Override</button></div>`).join('')}</div><p class="row" style="margin:10px 0 0"><button class="b s sm" data-mbm="${esc(myG)}">Open the ISO ${esc(myG.slice(1))} standard</button></p></div>`:'';
  const sname=MBS?(srcs.find(x=>x.key===MBS)||{}).name||MBS:'Bands';
- $('#pbody').innerHTML=`<div class="card"><h2>Bands</h2><p class="mu">Cutting data per <b>material › cutter type › Ø range</b>, laid out like hyperMILL's Materials dialog. Vc and f/edge are the <b>roughing reference</b> for that cutter (f/edge = chip thickness at full engagement); drills, reamers and taps use <b>feed per rev</b>. Square and bull-nose end mills have separate tables (BX and BX-R). Every recommendation then goes through <b>Baselines</b>. Edit any cell; it saves straight away.</p>
+ $('#pbody').innerHTML=`<div class="card"><h2>Bands</h2><p class="mu">Cutting data per <b>ISO standard › cutter type › Ø range</b>, laid out like hyperMILL's Materials dialog. Every material uses its standard's tables (P1, P2, M, N1 …); give a material its own table (an <b>override</b>) only where it needs different numbers. Vc and f/edge are the <b>roughing reference</b> for that cutter (f/edge = chip thickness at full engagement); drills, reamers and taps use <b>feed per rev</b>. Square and corner-radius end mills share one table — the Baselines ratios make the difference. Every recommendation then goes through <b>Baselines</b>.</p>
  <div class="row noprint"><label style="margin:0">Source</label><select id="mbsrc" style="max-width:260px"><option value="">Bands (your main table)</option>${srcs.map(x=>`<option value="${esc(x.key)}"${x.key===MBS?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
  ${MBS?'<button class="b s sm" id="mbfill2">Copy missing tables from Bands</button>':'<button class="b s sm" id="mbfill">Fill missing tables</button>'}<button class="b s sm" id="mbcsv">Download CSV for the Sheet</button><button class="b s sm" data-srctpl="csv" title="Blank band table for every material × cutter × Ø range — Cutting data → Sources explains the format">Blank template</button><label style="margin:0 0 0 8px">RPM limit</label><select id="mbmach" style="max-width:220px" title="Cap the RPM and feed columns at a machine's spindle speed"><option value="">none</option>${L.machines.map(m=>`<option value="${esc(m.Machine)}"${m.Machine===MBMACH?' selected':''}>${esc(m.Machine)} (${esc(m['Max Spindle Speed (RPM)']||'?')} rpm)</option>`).join('')}</select><span class="mu" id="mbmsg">${esc(sname)}: ${mine.length} rows</span></div></div>
- <div class="mbw"><div class="mbl" role="listbox" aria-label="Materials">${mats.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small>${esc(iso(m))} · ${cnt(m)}</small></button>`).join('')}${orphan.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small class="bad">not in materials</small></button>`).join('')}</div>
- <div><div class="card" style="margin-top:0"><h2 style="margin-bottom:4px">${esc(MBM||'—')} <small class="mu" style="font-weight:400">${esc(sname)}</small></h2><p class="mu" style="margin:0 0 8px">${esc(SF.ISO_NAME[iso(MBM)]||'')}${orphan.includes(MBM)?' · <span class="bad">this name is not in your Materials list — rename it there or delete these tables</span>':''}</p>
- <div class="row noprint lkhide">${missing.length?`<select id="mbnewc" style="max-width:260px">${missing.map(c=>`<option value="${esc(c)}">${esc(c)} — ${esc(ckName(c))}</option>`).join('')}</select><button class="b s sm" id="mbaddc">+ Add cutter type</button>`:''}<select id="mbcopyf" style="max-width:220px"><option value="">Copy all tables from…</option>${opt(mats.filter(m=>m!==MBM&&cnt(m)))}</select></div></div>
- ${have.map(table).join('')||'<p class="mu">No tables for this material yet — use <b>Fill missing tables</b> or <b>+ Add cutter type</b>.</p>'}</div></div>`;
+ <div class="mbw"><div class="mbl" role="listbox" aria-label="Standards and materials"><h6 class="navg" style="margin:4px 8px">ISO standards</h6>${[...grps,...ogrp].map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span style="white-space:nowrap">${esc('ISO '+m.slice(1))}</span><small>${esc(SF.ISO_NAME[m.slice(1)]||'')} · ${cnt(m)}${ogrp.includes(m)?' · no material':''}</small></button>`).join('')}<h6 class="navg" style="margin:10px 8px 4px">Materials (overrides)</h6>${mats.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small>${esc(iso(m))}${cnt(m)?` · <b>${cnt(m)} override${cnt(m)>1?'s':''}</b>`:' · standard'}</small></button>`).join('')}${orphan.map(m=>`<button data-mbm="${esc(m)}" class="${m===MBM?'on':''}"><span>${esc(m)}</span><small class="bad">not in materials</small></button>`).join('')}</div>
+ <div><div class="card" style="margin-top:0"><h2 style="margin-bottom:4px">${esc(isG?mbGroupLabel(MBM):MBM||'—')} <small class="mu" style="font-weight:400">${esc(sname)}</small></h2><p class="mu" style="margin:0 0 8px">${isG?`Standard for: ${esc(mbMembers(MBM.slice(1)).join(', ')||'no material yet')}`:esc('ISO '+iso(MBM)+' — '+(SF.ISO_NAME[iso(MBM)]||''))}${orphan.includes(MBM)?' · <span class="bad">this name is not in your Materials list — rename it there or delete these tables</span>':''}</p>
+ <div class="row noprint lkhide">${missing.length?`<select id="mbnewc" style="max-width:260px">${missing.map(c=>`<option value="${esc(c)}">${esc(c)} — ${esc(ckName(c))}</option>`).join('')}</select><button class="b s sm" id="mbaddc">${isG?'+ Add cutter type':'+ Override cutter type'}</button>`:''}${isG?`<select id="mbcopyf" style="max-width:220px"><option value="">Copy all tables from…</option>${opt(grps.filter(m=>m!==MBM&&cnt(m)))}</select>`:''}</div></div>
+ ${have.map(table).join('')}${inherit}${!have.length&&!inherit?`<p class="mu">${isG?'No tables for this standard yet — use <b>Fill missing tables</b> or <b>+ Add cutter type</b>.':'No tables in this material’s standard yet.'}</p>`:''}</div></div>`;
  const mm=t=>{const m=$('#mbmsg');if(m)m.textContent=t};
  const save=async(code,field,from,to,note)=>{logChange('matbands',(MBS?'['+sname+'] ':'')+code,field,from??'',to??'','Cutting data → Bands',note||'');saveLib('matbands');await flushLib();saveCLOG();renderCheat()};
  const tag=r=>MBS?Object.assign(r,{source:MBS}):(delete r.source,r);
@@ -6820,14 +6880,15 @@ function drawBandEd(){const mats=L.materials.map(m=>m.Material).filter(Boolean),
   if(d.mbm!=null){MBM=d.mbm;return drawBandEd()}
   if(d.srctpl){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:'source-template-'+today()+'.csv',data:srcTemplate('csv')});toast('Blank template downloaded')}catch(x){toast('Download failed')}return}
   if(t.id==='mbcsv'){if(!dl)return toast('Downloads unavailable here');try{await dl.save({filename:'matbands-for-sheet-'+today()+'.csv',data:mbCSV()});toast('matbands CSV downloaded')}catch(x){toast('Download failed: '+(x.message||x))}return}
-  if(t.id==='mbfill'){const add=mbFillMissing();if(!add.length)return mm('Nothing missing — every material has a table for every cutter type in your tool library.');L.matbands.push(...add);await save('(all)','filled','',add.length+' rows','catalogue / typical model');drawBandEd();return mm(`${add.length} rows added.`)}
+  if(t.id==='mbfill'){const add=mbFillMissing();if(!add.length)return mm('Nothing missing — every ISO standard in your materials has a table for every cutter type in your tool library.');L.matbands.push(...add);await save('(all)','filled','',add.length+' rows','catalogue / typical model');drawBandEd();return mm(`${add.length} rows added.`)}
   if(t.id==='mbfill2'){const keys=new Set(mine.map(r=>mbKey(r.material,r.cutter))),add=L.matbands.filter(r=>!r.source&&!keys.has(mbKey(r.material,r.cutter))).map(r=>tag(Object.assign({},r,{src:'Copied from Bands'})));if(!add.length)return mm('Nothing missing.');L.matbands.push(...add);await save('(all)','copied from Bands','',add.length+' rows');return drawBandEd()}
-  if(t.id==='mbaddc'){const c=$('#mbnewc').value;let rows=MBS?mbRows(MBM,c,'').map(([r])=>tag(Object.assign({},r,{src:'Copied from Bands'}))):mbSeedTable(MBM,c);if(!rows.length)rows=[tag({material:MBM,cutter:c,lo:1,hi:10,Vc:'',fz:'',src:'New'})];L.matbands.push(...rows);await save(`${MBM} › ${c}`,'added','',rows.length+' rows');return drawBandEd()}
+  if(d.mbov||(t.id==='mbaddc'&&!isG)){const c=d.mbov||$('#mbnewc').value,g=mbRows(myG,c).map(([r])=>tag(Object.assign({},r,{material:MBM,src:'Override (copied from ISO '+myG.slice(1)+')',note:''})));const rows=g.length?g:(MBS?[]:mbSeedTable(MBM,c));if(!rows.length)rows.push(tag({material:MBM,cutter:c,lo:1,hi:10,Vc:'',fz:'',src:'New'}));L.matbands.push(...rows);await save(`${MBM} › ${c}`,'override added','',rows.length+' rows');return drawBandEd()}
+  if(t.id==='mbaddc'){const c=$('#mbnewc').value;let rows=MBS?mbRows(MBM,c,'').map(([r])=>tag(Object.assign({},r,{src:'Copied from Bands'}))):isG?mbSeedGroup(MBM.slice(1),c):mbSeedTable(MBM,c);if(!rows.length)rows=[tag({material:MBM,cutter:c,lo:1,hi:10,Vc:'',fz:'',src:'New'})];L.matbands.push(...rows);await save(`${MBM} › ${c}`,'added','',rows.length+' rows');return drawBandEd()}
   if(d.mbadd){const rows=mbRows(MBM,d.mbadd),last=rows.length?rows[rows.length-1][0]:null,lo=last?+(+last.hi+.01).toFixed(2):1;L.matbands.push(tag({material:MBM,cutter:d.mbadd,lo,hi:+(lo*2).toFixed(2),Vc:last?last.Vc:'',fz:last?last.fz:'',src:'Edited'}));await save(`${MBM} › ${d.mbadd}`,'Ø range added','',`${lo}–${(lo*2).toFixed(2)}`);return drawBandEd()}
   if(d.mbdel!=null){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Delete?';return}const r=L.matbands.splice(+d.mbdel,1)[0];await save(`${r.material} › ${r.cutter} › Ø${r.lo}–${r.hi}`,'deleted',JSON.stringify(r),'');return drawBandEd()}
-  if(d.mbseed||d.mbdeltab||d.mbfrom){const c=d.mbseed||d.mbdeltab||d.mbfrom;if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent=d.mbdeltab?'Delete this table? Click again':'Replace this table? Click again';return}
+  if(d.mbseed||d.mbdeltab||d.mbfrom){const c=d.mbseed||d.mbdeltab||d.mbfrom;if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent=d.mbdeltab?(isG?'Delete this table? Click again':'Remove override? Click again'):'Replace this table? Click again';return}
    const old=mbRows(MBM,c).map(([r])=>r);L.matbands=L.matbands.filter(r=>!(String(r.source||'')===MBS&&mbKey(r.material,r.cutter)===mbKey(MBM,c)));
-   const add=d.mbseed?mbSeedTable(MBM,c):d.mbfrom?mbRows(MBM,c,'').map(([r])=>tag(Object.assign({},r,{src:'Copied from Bands'}))):[];L.matbands.push(...add);
+   const add=d.mbseed?(isG?mbSeedGroup(MBM.slice(1),c):mbSeedTable(MBM,c)):d.mbfrom?mbRows(MBM,c,'').map(([r])=>tag(Object.assign({},r,{src:'Copied from Bands'}))):[];L.matbands.push(...add);
    await save(`${MBM} › ${c}`,d.mbseed?'re-seeded':d.mbfrom?'copied from Bands':'table deleted',JSON.stringify(old),add.length?add.length+' rows':'');return drawBandEd()}}}
 function mbCSV(){const cell=v=>{if(v==null)return '';const t=String(v);return /[",\n\r]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t};
  const rows=L.matbands.slice().sort((a,b)=>String(a.source||'').localeCompare(String(b.source||''))||String(a.material).localeCompare(String(b.material))||String(a.cutter).localeCompare(String(b.cutter))||(+a.lo - +b.lo));
@@ -7040,11 +7101,11 @@ async function promptsSave(){const keys=['ask.core','ask.knowledge','learn.tutor
 
 /* ---------- 2026-10-15 blank source template: the standard format for a source — every material × cutter type × Ø range in
    your library with empty Vc / f/edge, plus (JSON) every sub-cycle × operation baseline row with empty multipliers ---------- */
-function srcTemplate(kind){const bands=[];L.materials.forEach(m=>{const mat=m.Material;if(!mat)return;mbCutters().forEach(ck=>mbRanges(ck).forEach(b=>bands.push({material:mat,cutter:ck,lo:b.lo,hi:b.hi,Vc:'',fz:'',src:'',note:''})))});
+function srcTemplate(kind){const bands=[];mbGroups().forEach(iso=>{const mat='@'+iso;mbCutters().forEach(ck=>mbRanges(ck).forEach(b=>bands.push({material:mat,cutter:ck,lo:b.lo,hi:b.hi,Vc:'',fz:'',src:'',note:''})))});
  if(kind==='csv')return ['material,cutter,lo,hi,Vc,fz,src,note'].concat(bands.map(r=>['material','cutter','lo','hi','Vc','fz','src','note'].map(k=>csvCell(r[k])).join(','))).join('\r\n');
  const bl=[];['rough','semi','finish'].forEach(op=>bl.push({subcycle:'*',op,vcMult:'',fzMult:'',apD:'',apDmax:'',aeD:'',aeDmax:''}));
  famRows().forEach(([f])=>TR().filter(([r])=>r.parent===f.Cycle).forEach(([r])=>(f.fixedOp?[f.fixedOp]:(r.usableAs||[])).forEach(op=>bl.push({subcycle:r.key,subcycleName:f.Cycle+' › '+r.Cycle,op,vcMult:'',fzMult:'',apD:'',apDmax:'',aeD:'',aeDmax:''}))));
- return JSON.stringify({type:SRC_PKG,v:1,name:'My source',note:'',format:{bands:'material = exact name in Materials · cutter = cutter type (BX, BX-R = bull nose, CD = carbide drill …) · lo / hi = Ø range in mm · Vc = roughing cutting speed m/min · fz = f/edge at full engagement in mm (drills, reamers: feed per rev; taps: pitch, optional) · src / note = where the numbers came from. Rows left blank are skipped on import.',
+ return JSON.stringify({type:SRC_PKG,v:1,name:'My source',note:'',format:{bands:'material = @ + ISO group for a standard table (@P1, @M, @N1 …) or an exact name in Materials for that material only · cutter = cutter type (BX = end mill, square or corner radius; CD = carbide drill …) · lo / hi = Ø range in mm · Vc = roughing cutting speed m/min · fz = f/edge at full engagement in mm (drills, reamers: feed per rev; taps: pitch, optional) · src / note = where the numbers came from. Rows left blank are skipped on import.',
   baselines:'one row per sub-cycle × operation; subcycle * = this source’s default for that operation. vcMult / fzMult = × on the band values; apD / aeD = stepdown / stepover ×Ø; apDmax / aeDmax = limits ×Ø. Blank = use the shared baselines.'},bands,baselines:bl},null,1)}
 
 /* ---------- 2026-10-15 auto-detect: a material or cutter type that is new to the app gets generic band tables (catalogue, else
@@ -7058,9 +7119,10 @@ async function autoDetect(){if(AUTO_BUSY||OFFLINE||!db||!L.materials.length||!L.
  const km=new Set(K.materials.map(x=>String(x).trim().toLowerCase())),kc=new Set((K.cutters||[]).map(x=>String(x).trim().toUpperCase()));
  const nm=mats.filter(m=>!km.has(m.trim().toLowerCase())),nc=cks.filter(c=>!kc.has(c));if(!nm.length&&!nc.length)return null;
  const add=[],lim=[];
- mats.forEach(m=>cks.forEach(c=>{if(!nm.includes(m)&&!nc.includes(c))return;const why=nm.includes(m)?'new material '+m:'new cutter type '+c;
-  if(!mbRows(m,c,'').length)add.push(...mbSeedTable(m,c).map(r=>Object.assign(r,{src:'Generic (auto) · '+(r.src||''),note:'added automatically for the '+why+' — check and adjust'})));
-  (L.sources||[]).forEach(S=>{if(mbRows(m,c,S.key).length)return;mbRanges(c).forEach(b=>add.push({material:m,cutter:c,lo:b.lo,hi:b.hi,Vc:'',fz:'',src:'Blank (auto)',note:'fill in, or delete to use the next source',source:S.key}))})}));
+ const ng=new Set(nm.map(mbIsoOfName));
+ mbGroups().forEach(iso=>cks.forEach(c=>{const g='@'+iso;if(mbRows(g,c,'').length)return;if(!ng.has(iso)&&!nc.includes(c))return;const why=nc.includes(c)?'new cutter type '+c:'new material in ISO '+iso;
+  add.push(...mbSeedGroup(iso,c).map(r=>Object.assign(r,{src:'Generic (auto) · '+(r.src||''),note:'added automatically for the '+why+' — check and adjust'})));
+  (L.sources||[]).forEach(S=>{if(mbRows(g,c,S.key).length)return;mbRanges(c).forEach(b=>add.push({material:g,cutter:c,lo:b.lo,hi:b.hi,Vc:'',fz:'',src:'Blank (auto)',note:'fill in, or delete to use the next source',source:S.key}))})}));
  nm.forEach(m=>{if(!L.baseline.some(r=>String(r.material||'').trim().toLowerCase()===m.trim().toLowerCase()))lim.push({material:m,tool:'*',subcycle:'*',op:'*',band:'*',auto:today()})});
  nc.forEach(c=>{if(!L.baseline.some(r=>String(r.tool||'').trim().toUpperCase()===c))lim.push({material:'*',tool:c,subcycle:'*',op:'*',band:'*',auto:today()})});
  const via='auto-detect';if(add.length){L.matbands.push(...add);await writeLib('matbands',L.matbands);logChange('matbands',[...nm,...nc].join(', '),'auto-added','',add.length+' rows',via,'generic tables in Bands, blank tables in custom sources')}
@@ -7073,13 +7135,17 @@ async function autoDetect(){if(AUTO_BUSY||OFFLINE||!db||!L.materials.length||!L.
 let MBMACH='';
 const mbZdef=ck=>{const b=SF.baseCk(ck);return mbIsRev(ck)?1:b==='BN'||b==='LP'||b==='CH'?2:b==='AL'?3:4};
 function mbRF(r,c){const Vc=+r.Vc,f=+r.fz,lo=Math.max(+r.lo||0,.1),hi=+r.hi;if(!(Vc>0)||!(hi>0))return null;
- const cap=MBMACH?capOf(MBMACH):Infinity,rpm=D=>Math.min(Vc*1000/(Math.PI*D),cap),rev=mbIsRev(c);
- const ts=L.tools.filter(t=>ckOfCode(t['Tool Code'])===c).map(t=>({D:+t['Diameter (mm)'],z:+t.Flutes})).filter(t=>t.D>=lo-.005&&t.D<=hi+.005);
- const pts=ts.length?ts:[{D:lo,z:NaN},{D:hi,z:NaN}],zOf=t=>rev?1:t.z>0?t.z:mbZdef(c);
- const rs=pts.map(t=>rpm(t.D)),fs=f>0?pts.map(t=>rpm(t.D)*f*zOf(t)):[];
- return {r0:Math.min(...rs),r1:Math.max(...rs),f0:fs.length?Math.min(...fs):NaN,f1:fs.length?Math.max(...fs):NaN,capped:Vc*1000/(Math.PI*lo)>cap,est:!ts.length||(!rev&&ts.some(t=>!(t.z>0))),n:ts.length}}
-function mbRFcells(r,c){const x=mbRF(r,c);if(!x)return '<td class="n mu mbrf">—</td><td class="n mu mbrf">—</td>';const tt=`${x.n?x.n+' of your tools in this range':'no tools in this range — Ø ends shown'}${x.est?' · flute count estimated':''}${x.capped?' · capped by the spindle limit':''}`;
- return `<td class="n mbrf" title="${esc(tt)}" style="white-space:nowrap">${x.capped?'<span class="bad">⚠</span> ':''}${mbRng(x.r0,x.r1)}</td><td class="n mbrf" title="${esc(tt)}" style="white-space:nowrap">${x.est&&isFinite(x.f0)?'≈ ':''}${mbRng(x.f0,x.f1)}</td>`}
+ const cap=MBMACH?capOf(MBMACH):Infinity,rpm=D=>Math.min(Vc*1000/(Math.PI*D),cap),rev=mbIsRev(c),mc=SF.mbMergeCk(c);
+ const ts=L.tools.filter(t=>SF.mbMergeCk(ckOfCode(t['Tool Code']))===mc).map(t=>({D:+t['Diameter (mm)'],z:+t.Flutes})).filter(t=>t.D>=lo-.005&&t.D<=hi+.005);
+ const zOf=t=>rev?1:t.z>0?t.z:mbZdef(c),est=!ts.length||(!rev&&ts.some(t=>!(t.z>0)));
+ /* ends in Ø order: the smallest and the largest Ø of your tools in this range, else the range's own ends */
+ const ds=ts.length?[...new Set(ts.map(t=>t.D))].sort((a,b)=>a-b):[lo,hi],ends=[...new Set([ds[0],ds[ds.length-1]])];
+ const pt=D=>{const zs=ts.filter(t=>Math.abs(t.D-D)<.005).map(zOf),z=zs.length?Math.max(...zs):(rev?1:mbZdef(c)),n=rpm(D);return {D,n,F:f>0?n*f*z:NaN}};
+ return {pts:ends.map(pt),capped:Vc*1000/(Math.PI*lo)>cap,est,n:ts.length}}
+const mbFmtD=d=>'Ø'+(+(+d).toFixed(2));
+function mbRFcells(r,c){const x=mbRF(r,c);if(!x)return '<td class="n mu mbrf">—</td><td class="n mu mbrf">—</td>';const tt=`${x.n?'Ø of your '+x.n+' tool'+(x.n>1?'s':'')+' in this range':'no tools in this range — the range’s ends shown'}${x.est?' · flute count estimated':''}${x.capped?' · capped by the spindle limit':''}`;
+ const cell=k=>x.pts.map(p=>isFinite(p[k])?`<span style="white-space:nowrap"><small class="mu">${mbFmtD(p.D)}</small> ${Math.round(p[k]).toLocaleString()}</span>`:'—').join('<span class="mu"> → </span>');
+ return `<td class="n mbrf" title="${esc(tt)}">${x.capped?'<span class="bad">⚠</span> ':''}${cell('n')}</td><td class="n mbrf" title="${esc(tt)}">${x.est&&x.pts.some(p=>isFinite(p.F))?'≈ ':''}${cell('F')}</td>`}
 const mbRng=(a,b)=>{const f=x=>Math.round(x).toLocaleString();return !isFinite(a)?'—':Math.abs(a-b)<.5?f(a):f(a)+'–'+f(b)};
 
 /* lock wrappers: every editing page re-applies its lock after it draws */
@@ -7360,7 +7426,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-15.2';
+const APP_V='2026-10-15.3';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
