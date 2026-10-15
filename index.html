@@ -2081,7 +2081,7 @@ const CF = (() => {
     ['mat', 'Material', c => c.material],
     ['tool', 'Tool', c => c.tool],
     ['typ', 'Type', (c, x) => x.sfxOf ? x.sfxOf(c.tool) : ''],
-    ['fam', 'Family', c => c.cycleFamily],
+    ['fam', 'Family', c => (typeof famLabel === 'function' ? famLabel(c.cycleFamily) : c.cycleFamily)],
     ['sub', 'Sub-cycle', c => c.subcycleKey],
     /* tagged cuts carry the tree op (rough / semi / finish / drill …); untagged ones their legacy op, lower-cased so both agree */
     ['op', 'Operation', c => { const v = c.subcycleKey ? c.operation : (c.operationOrig || c.operation); return v ? String(v).toLowerCase() : v; }],
@@ -3491,7 +3491,10 @@ allow #mm Allowance
 allow_add_xy #mm Additional allowance XY
 [Vertical infeed mode]
 v_infeed * Vertical infeed mode : Constant stepdown | Scallop height
-zstep #mm Vertical stepdown
+zstep #mm Vertical stepdown @v_infeed=Constant stepdown
+zl_scallop #mm Scallop height @v_infeed=Scallop height
+zl_max #mm Max. stepdown @v_infeed=Scallop height
+zl_min #mm Min. stepdown @v_infeed=Scallop height
 [Plane level detection]
 plane_det * Plane level detection : Off | Auto | Only planar faces
 &RETSAFE3D
@@ -4018,7 +4021,10 @@ bot_z #mm Bottom
 allow #mm Allowance
 [Vertical infeed mode]
 v_infeed * Vertical infeed mode : Constant stepdown | Scallop height
-zstep #mm Vertical stepdown
+zstep #mm Vertical stepdown @v_infeed=Constant stepdown
+zl_scallop #mm Scallop height @v_infeed=Scallop height
+zl_max #mm Max. stepdown @v_infeed=Scallop height
+zl_min #mm Min. stepdown @v_infeed=Scallop height
 &RETSAFE
 &AX5
 =Boundary
@@ -4541,6 +4547,43 @@ function treeRows(legacy){const cl=o=>JSON.parse(JSON.stringify(o));
   const src=legacy.filter(c=>(TAGS.candidatesFor(c.Cycle)||[]).includes(n.key));r.Category=src.length?src[0].Category||n.parent:n.parent;
   if(src.length){r.hyperMILL=src.map(c=>c.Cycle);TREE_TEXT.forEach(f=>{const v=[...new Set(src.map(c=>c[f]).filter(Boolean))];if(v.length)r[f]=v.join(' · ')})}
   return r})}
+/* 2026-10-15: regroup the tree as Family › hyperMILL cycle › Operation › Sub-cycle (keys unchanged, so baselines and
+   logged cuts keep working). Families get display names; T-slot and plane machining move to Contouring / flat faces;
+   3D arbitrary roughing gets the same trochoidal / traditional / high-feed sub-cycles as 3D optimised roughing. */
+const HM_FAM={'Roughing (3D)':['Roughing',1],'Finishing (3D)':['Surfacing',2],'Contouring':['Contouring / flat faces',3],'Pocketing (2.5D)':['Pocketing (2.5D)',4],'Rest machining (3-axis)':['Rest machining (3-axis)',5],
+ 'Drilling':['Drilling',6],'Reaming':['Reaming',7],'Boring':['Boring',8],'Threading':['Threading',9],'Edges & chamfer':['Edges & chamfer',10],'5-Axis (general)':['5-Axis',11],'Impeller / Blisk':['Impeller / Blisk',12],'Tube':['Tube',13],'Probing':['Probing',14]};
+/* key: [family (internal name) or '', hyperMILL cycle, sub-cycle ('' = the cycle has just this one), order, extra ops] */
+const HM_MAP={
+ 'roughing.trochoidal':['','3D Optimised Roughing','Trochoidal',1],'roughing.traditional':['','3D Optimised Roughing','Traditional',2],'roughing.hf-shallow':['','3D Optimised Roughing','High feed shallow',3],'roughing.pocket':['','3D Optimised Roughing','Pocket',4],
+ 'roughing.arbitrary-trochoidal':['','3D Arbitrary Roughing','Trochoidal',5],'roughing.arbitrary':['','3D Arbitrary Roughing','Traditional',6],'roughing.arbitrary-hf-shallow':['','3D Arbitrary Roughing','High feed shallow',7],
+ 'roughing.shape-offset':['','5 Axis Shape Offset Roughing','',8],'roughing.plunge':['','3D Plunge Roughing','',9],
+ 'finishing.z-level':['','Z Level Finishing','',1],'finishing.iso':['','ISO Machining','',2,['rough']],'finishing.equidistant':['','Equidistant','',3,['rough']],
+ 'finishing.profile':['','3D Profile Finishing','',4],'finishing.pencil':['','3D Pencil Milling','',5],'finishing.corner-rest':['','3D Corner Rest Machining','',6],'finishing.auto-rest':['','3D Automatic Rest Machining','',7],
+ 'finishing.free-path':['','3D Free Path Milling','',8],'finishing.rib-groove':['','3D Rib and Groove','',9],'finishing.complete':['','3D Complete Finishing','',10],
+ 'contouring.full-flute':['','3D Contour Milling','Full flute contouring',1],'contouring.spiral':['','3D Contour Milling','Spiral contouring',2],'contouring.2d-3d':['','3D Contour Milling','Standard',3],
+ 'edges.tslot-3d':['Contouring','T Slot on 3D Model','',4],'finishing.plane':['Contouring','3D Plane Machining','',5],
+ 'contouring.2d':['','Contour Milling','',6],'contouring.inclined':['','Inclined Contour Milling','',7],'contouring.5x':['','5X Contour','',8],'contouring.playback':['','Playback Milling','',9]};
+const HM_NEW={'roughing.arbitrary-trochoidal':'roughing.trochoidal','roughing.arbitrary-hf-shallow':'roughing.hf-shallow'};
+async function cycTreeHM(){const via='cycles-hm 2026-10-15';if(OFFLINE||!db||!L.cycles.some(c=>c&&c.key)||CLOG.entries.some(e=>e.table==='cycles'&&e.via===via))return null;
+ try{await db.doc('lib/backup-cycles-hm-'+today()).set({v:LIB_V,rows:L.cycles})}catch(e){}
+ const by=k=>L.cycles.find(r=>r&&r.key===k),fams=new Set(L.cycles.filter(r=>r&&r.key&&!r.parent).map(r=>r.Cycle));let n=0,added=[],moved=[];
+ L.cycles.forEach(r=>{if(r&&r.key&&!r.parent&&HM_FAM[r.Cycle]){const[l,o]=HM_FAM[r.Cycle];if(l!==r.Cycle)r.label=l;r.order=o;n++}});
+ Object.entries(HM_NEW).forEach(([k,from])=>{if(by(k))return;const f=by(from),a=by('roughing.arbitrary');if(!f||!a)return;const r=clone(f);r.key=k;r.parent=a.parent;r.Cycle='3D Arbitrary Roughing — '+HM_MAP[k][2];r.added='2026-10-15: same settings as '+f.Cycle;delete r.hyperMILL;L.cycles.push(r);added.push(k)});
+ Object.entries(HM_MAP).forEach(([k,[fam,hm,sub,ord,ops]])=>{const r=by(k);if(!r)return;r.hm=hm;if(sub)r.sub=sub;else delete r.sub;r.order=ord;if(!sub)r.Cycle=hm;
+  if(ops)r.usableAs=OPS_ALL.filter(o=>(r.usableAs||[]).includes(o)||ops.includes(o));
+  if(fam&&fams.has(fam)&&r.parent!==fam){moved.push([k,r.parent,fam]);r.parent=fam}n++});
+ await writeLib('cycles',L.cycles);
+ /* cuts that used a moved sub-cycle follow it; the old Ø10–15.99 band label is replaced by the new split */
+ let cm=0;for(const c of CUTS){const f={};const mv=moved.find(m=>m[0]===c.subcycleKey);if(mv&&c.cycleFamily!==mv[2])f.cycleFamily=mv[2];
+  if(c.band==='10.0–15.99'){const t=tool(c.tool),d=t?+t['Diameter (mm)']:NaN;if(d>0){const b=SF.bandOf(d,L.bands);if(b&&b.label!==c.band)f.band=b.label}}
+  if(Object.keys(f).length){Object.assign(c,f);try{await db.collection('cuts').doc(c.id).update(f);cm++}catch(e){}}}
+ logChange('cycles','(cycle tree)','Family › hyperMILL cycle › Operation › Sub-cycle','',n+' rows',via,(added.length?'added '+added.join(', ')+'; ':'')+(moved.length?'moved '+moved.map(m=>m[0]+' to '+m[2]).join(', ')+'; ':'')+cm+' cuts updated; previous table in lib/backup-cycles-hm-'+today());
+ await saveCLOG();SF.invalidate();return {n,added,moved,cm}}
+/* 2026-10-15: saved cycle pages get the Z-level vertical-infeed fields (stepdown, or scallop height + max / min stepdown) */
+async function cpPatchZL(){const via='cp-zlevel 2026-10-15';if(OFFLINE||!db||!cpHasLayout(L.cycleparams)||CLOG.entries.some(e=>e.table==='cycleparams'&&e.via===via))return 0;let n=0;
+ L.cycleparams.forEach(g=>{const P=g.Params||[],i=P.findIndex(p=>p&&p.key==='zstep');if(i<0||!P.some(p=>p&&p.key==='v_infeed')||P.some(p=>p&&p.key==='zl_scallop'))return;const z=P[i];if(!z.when)z.when='v_infeed=Constant stepdown';
+  const mk=(key,label)=>{const o={key,label,type:'number',unit:'mm',tab:z.tab,when:'v_infeed=Scallop height'};if(z.sec)o.sec=z.sec;return o};P.splice(i+1,0,mk('zl_scallop','Scallop height'),mk('zl_max','Max. stepdown'),mk('zl_min','Min. stepdown'));n++});
+ if(n){await writeLib('cycleparams',L.cycleparams);logChange('cycleparams','Z-level pages','fields added','',n+' page'+(n>1?'s':''),via,'Vertical stepdown only with Constant stepdown; Scallop height, Max. / Min. stepdown only with Scallop height');await saveCLOG()}return n}
 async function seedTree(){if(OFFLINE||!db||!L.cycles.length||L.cycles.some(c=>c&&c.key))return false;const legacy=L.cycles.slice(),rows=legacy.concat(treeRows(legacy)),ts=Date.now();
  await db.doc('lib/backup-cycles-tree-'+ts).set({v:LIB_V,at:new Date().toISOString(),rows:legacy});await writeLib('cycles',rows);L.cycles=rows;
  const fam=rows.filter(r=>r.key&&!r.parent).length,sub=rows.filter(r=>r.key&&r.parent).length;
@@ -5165,7 +5208,7 @@ async function load(){
     /* 2026-10-13.1: cycle parameters rebuilt from the hyperMILL screenshots — record the key renames in the change log once */
     try{const via='CPD 2026-10-13.1';if(!CLOG.entries.some(e=>e.table==='cycleparams'&&e.via===via)){Object.entries(CP_RENAME).forEach(([a,b])=>logChange('cycleparams',a,'key',a,b,via,'same hyperMILL field; logged values under '+a+' are read as '+b));
      logChange('cycleparams','(built-in set)','rewritten','starter set','hyperMILL screenshots',via,'Log cut fields now match your hyperMILL dialogs; starter fields with no screenshot match are kept (hidden) so logged cuts keep their labels; old option wording mapped: Helix→Helical, Climb→Climb milling, Bottom-up/Top-down→Climb (upward)/Conventional (downward), Yes/No→On/Off');await saveCLOG()}}catch(e){}
-    const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
+    const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{await cpPatchZL()}catch(e){console.error('cp-zlevel',e)}try{const r=await cycTreeHM();if(r)toast('Cycles regrouped as Family › hyperMILL cycle › Operation › Sub-cycle — Cycles → Cycle tree',6000)}catch(e){console.error('cycles-hm',e)}try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
     try{await autoDetect()}catch(e){console.error(e)}
     await tdLoad();await caLoad();try{const qa=await db.collection('asks').get();ASKS=qa.docs.map(d=>({id:d.id,...dat(d)}));drawAH()}catch(e){}DBOK=true;setStatus(`${L.tools.length} tools · ${CUTS.length} cuts`,true);
   }catch(e){setStatus('Load error: '+(e.message||e.code),false)}
@@ -5440,7 +5483,7 @@ function renderLog(){const sp0=$('.tp[data-tp="log"]');if(sp0)LOGTAG=tpRead(sp0)
   $('#log').innerHTML=`<div class="card"><h2>Log a new cut</h2>
 ${st(1,'Job &amp; machine',fs(['date','job','machine','material','coolant']))}
 ${st(2,'Tool &amp; holder',fs(['tool','holder','stickout'])+'<div id="tg"></div>')}
-${st(3,'Cycle',fs(['cycle','operation'])+`<div id="lgtag" style="margin-top:10px"><label>Sub-cycle <span class="mu">— family › operation › sub-cycle; the Ø band is set from the tool when you save</span></label>${tpHtml('log',LOGTAG)}<div id="lgtagerr"></div></div>`,'the hyperMILL cycle you used, and where it sits in the cycle tree')}
+${st(3,'Cycle',`<div hidden>${fs(['cycle','operation'])}</div><div id="lgtag"><label>Family › hyperMILL cycle › Operation › Sub-cycle <span class="mu">— each list only offers what fits the choice before it; the Ø band is set from the tool when you save</span></label>${tpHtml('log',LOGTAG)}<div id="lgtagerr"></div></div>`,'the hyperMILL cycle you used')}
 ${st(4,'Cutting data',fs(['vc','fz','doc','woc','stepover'])+`<div id="lgaf"></div><div class="out"><div>RPM<b id="o_rpm">–</b></div><div>Feed mm/min<b id="o_feed">–</b></div><div>MRR cm³/min<b id="o_mrr">–</b></div><div style="flex:1;min-width:200px">Tool<b id="o_tool" style="font-size:13px">–</b></div></div>`,'what you actually ran')}
 ${st(5,'hyperMILL cycle settings','<div id="cp"></div>','as on the cycle’s dialog')}
 ${st(6,'Result',fs(['result'])+`<div style="margin-top:10px"><label>Notes</label><textarea id="f_notes" rows="2"></textarea></div>
@@ -5477,7 +5520,14 @@ function renderParams(params,readonly){const tabs=new Map(),put=(it)=>{const p=i
  return `<div class="hmp"><div class="hmtabs noprint" role="tablist">${order.map((t,i)=>`<button type="button" role="tab" data-hmt="${i}" class="${i?'':'on'}" aria-selected="${i?'false':'true'}">${esc(t)}<small>${[...tabs.get(t).values()].reduce((a,x)=>a+x.length,0)}</small></button>`).join('')}</div>
  ${order.map((t,i)=>`<div class="hmpanel" data-hmp="${i}"${i?' hidden':''}><div class="hmprint">${esc(t)}</div><div class="hmboxes">${[...tabs.get(t)].map(([b,items])=>`<fieldset class="hmbox"><legend>${esc(b)}</legend>${items.map(it=>field(it,b)).join('')}</fieldset>`).join('')}</div></div>`).join('')}</div>`}
 /* tabs, radio / tick boxes → their hidden value field, and the fields hyperMILL only shows in one mode */
-function hmWhen(root){if(!root)return;$$('[data-when]',root).forEach(el=>{const[k,v]=el.dataset.when.split('=');const c=root.querySelector(`[data-pk="${k}"]`),cv=c?c.value:'';el.hidden=!!(cv&&cv!==v)});
+/* "Show only when": key=Value, key=A|B (any of), key!=Value; several joined with & (all must hold). The key can be on any tab
+   of the page. A choice nobody has set yet counts as its first option — hyperMILL's default. */
+function hmWhenVal(root,k){const c=root.querySelector(`[data-pk="${k}"]`);let v=c?c.value:'';if(v)return v;
+ const r=root.querySelector(`[data-rk="${k}"]`);if(r)return r.value;if(root.querySelector(`[data-ck="${k}"]`))return 'Off';
+ if(c&&c.tagName==='SELECT'){const o=[...c.options].find(x=>x.value);return o?o.value:''}return ''}
+function hmWhenOk(root,w){return String(w||'').split('&').map(x=>x.trim()).filter(Boolean).every(c=>{const m=/^([^!=]+?)\s*(!=|=)\s*(.*)$/.exec(c);if(!m)return true;
+ const v=hmWhenVal(root,m[1].trim()),alts=m[3].split('|').map(x=>x.trim());if(!v)return true;return m[2]==='='?alts.includes(v):!alts.includes(v)})}
+function hmWhen(root){if(!root)return;$$('[data-when]',root).forEach(el=>{el.hidden=!hmWhenOk(root,el.dataset.when)});
  $$('.hmbox',root).forEach(b=>{const fs=$$('.hmf',b);b.hidden=fs.length>0&&fs.every(x=>x.hidden)})}
 function hmSync(root){if(!root)return;$$('input[type=hidden][data-pk]',root).forEach(h=>{const k=h.dataset.pk,v=h.value;$$(`[data-rk="${k}"]`,root).forEach(r=>r.checked=r.value===v);const c=root.querySelector(`[data-ck="${k}"]`);if(c)c.checked=v==='On'});hmWhen(root)}
 function hmBind(root){if(!root||root.dataset.hmb)return;root.dataset.hmb='1';
@@ -5710,29 +5760,47 @@ document.addEventListener('click',e=>{if(e.target.dataset&&e.target.dataset.fcle
 /* ---------- Phase 3: sub-cycle tags — family › operation › sub-cycle, band frozen at tagging ---------- */
 /* the tree from lib/cycles (rows with a key; the Library stores the name in 'Cycle') in the engine's shape, else the built-in tree */
 let CT_SRC=null,CT_SIG='',CT=null;
-const CTREE=()=>{const rows=(L.cycles||[]).filter(x=>x&&x.key),sig=rows.length+'|'+rows.map(r=>r.key+r.Cycle+r.parent+(r.usableAs||[]).join()+r.order+r.fixedOp).join(';');
+const CTREE=()=>{const rows=(L.cycles||[]).filter(x=>x&&x.key),sig=rows.length+'|'+rows.map(r=>r.key+r.Cycle+r.parent+(r.usableAs||[]).join()+r.order+r.fixedOp+(r.hm||'')+(r.sub||'')+(r.label||'')).join(';');
  if(CT&&CT_SRC===L.cycles&&CT_SIG===sig)return CT;CT_SRC=L.cycles;CT_SIG=sig;/* each node inherits from its stored row, so in-place edits (params, opDefaults…) show at once; name/parent are its own */
  CT=rows.length?rows.map(r=>Object.assign(Object.create(r),{name:r.Cycle,parent:r.parent||''})):SF.TREE;return CT};
 const FAMS=()=>CTREE().filter(x=>!x.parent).sort((a,b)=>(a.order||0)-(b.order||0));
 const SUBS=fam=>CTREE().filter(x=>x.parent===fam).sort((a,b)=>(a.order||0)-(b.order||0));
 const OPL={rough:'Rough',semi:'Semi',finish:'Finish',drill:'Drill',ream:'Ream',bore:'Bore',thread:'Thread',probe:'Probe'};
-const subName=k=>{const x=CTREE().find(y=>y.key===k&&y.parent);return x?x.name:(k||'')};
+/* 2026-10-15: Family › hyperMILL cycle › Operation › Sub-cycle. A sub-cycle row carries hm (the hyperMILL cycle it belongs to)
+   and sub (its own name inside that cycle, only when the cycle has several); families can carry a display label. */
+const hmOf=x=>x?(x.hm||x.name||x.Cycle||''):'';
+const subOf=x=>x&&x.sub?x.sub:'';
+const famLabel=f=>{const x=CTREE().find(y=>!y.parent&&y.name===f);return x&&x.label?x.label:(f||'')};
+const subName=k=>{const x=CTREE().find(y=>y.key===k&&y.parent);return x?(subOf(x)?hmOf(x)+' › '+subOf(x):hmOf(x)):(k||'')};
 const famFixed=fam=>SF.fixedOpOf(fam,CTREE());
 const cutLbl=c=>`${c.date||''} ${c.tool||''} ${c.material||''}`.trim();
-const tagLabel=c=>TAGS.isTagged(c)?`${c.cycleFamily} › ${subName(c.subcycleKey)} · ${OPL[c.operation]||c.operation} · Ø${c.band}`:'';
-/* picker: v = {cycleFamily, operation, subcycleKey}. Operation is hidden for fixed-op families; '' = All ops (sub-cycles then carry R/S/F tags) */
-function tpHtml(id,v){v=v||{};const fams=FAMS(),fam=v.cycleFamily||'',fx=famFixed(fam),op=fx||v.operation||'';
- const all=fam?SF.subsFor(fam,null,CTREE()):[],subs=fam?SF.subsFor(fam,op,CTREE()):[],ops=[...new Set(all.flatMap(x=>x.usableAs||[]))];
- const tg=x=>(x.usableAs||[]).map(o=>(OPL[o]||o)[0]).join('/');
- return `<span class="tp" data-tp="${esc(id)}"><select data-tpf="fam" aria-label="Family"><option value="">Family…</option>${fams.map(f=>`<option${f.name===fam?' selected':''}>${esc(f.name)}</option>`).join('')}</select>${fam&&!fx?`<select data-tpf="op" aria-label="Operation"><option value="">All ops</option>${ops.map(o=>`<option value="${o}"${o===op?' selected':''}>${OPL[o]||o}</option>`).join('')}</select>`:''}${fam?`<select data-tpf="sub" aria-label="Sub-cycle"><option value="">Sub-cycle…</option>${subs.map(x=>`<option value="${esc(x.key)}"${x.key===v.subcycleKey?' selected':''}>${esc(x.name)}${op?'':' ['+tg(x)+']'}</option>`).join('')}</select>`:''}</span>`}
-function tpRead(el){const g=k=>{const s=el.querySelector(`[data-tpf="${k}"]`);return s?s.value:''};const fam=g('fam'),sub=g('sub');let op=famFixed(fam)||g('op');
- /* 'All ops' + a sub-cycle usable in only one op → that op (brief 3.5) */
- if(!op&&sub){const x=CTREE().find(y=>y.key===sub);if(x&&(x.usableAs||[]).length===1)op=x.usableAs[0]}
- return{cycleFamily:fam||null,operation:op||null,subcycleKey:sub||null}}
-document.addEventListener('change',e=>{const f=e.target.dataset&&e.target.dataset.tpf;if(!f||f==='sub')return;const sp=e.target.closest('.tp');if(!sp)return;const v=tpRead(sp);
- if(f==='fam'){v.operation=famFixed(v.cycleFamily)||'';v.subcycleKey=null}else if(f==='op')v.operation=e.target.value;
- const k=CTREE().find(y=>y.key===v.subcycleKey);if(k&&(k.parent!==v.cycleFamily||(v.operation&&!(k.usableAs||[]).includes(v.operation))))v.subcycleKey=null;
- const t=document.createElement('span');t.innerHTML=tpHtml(sp.dataset.tp,v);sp.replaceWith(t.firstChild);if(sp.dataset.tp==='log')calc()});
+const tagLabel=c=>TAGS.isTagged(c)?`${famLabel(c.cycleFamily)} › ${subName(c.subcycleKey)} · ${OPL[c.operation]||c.operation} · Ø${c.band}`:'';
+/* picker: v = {cycleFamily, hm, operation, subcycleKey} — Family › hyperMILL cycle › Operation › Sub-cycle.
+   Each list only offers what belongs under the choice before it, and changing a choice clears the ones after it, so an
+   impossible path (e.g. Boring › Roughing › Trochoidal) cannot be picked. Operation is shown only when the cycle allows
+   more than one; Sub-cycle only when the cycle has more than one. */
+const hmLeaves=(fam,hm)=>SUBS(fam).filter(x=>hmOf(x)===hm);
+const hmList=fam=>[...new Set(SUBS(fam).map(hmOf))];
+function tpState(v){v=v||{};const fam=v.cycleFamily||'',fx=famFixed(fam);let hm=v.hm||'';const k=v.subcycleKey?CTREE().find(y=>y.key===v.subcycleKey&&y.parent===fam):null;
+ if(!fam)return{fam:'',fx:null,hm:'',ops:[],op:'',subs:[],sub:''};
+ if(k&&!hm)hm=hmOf(k);const hms=hmList(fam);if(!hms.includes(hm))hm=hms.length===1?hms[0]:'';
+ const leaves=hm?hmLeaves(fam,hm):[],ops=fx?[fx]:[...new Set(leaves.flatMap(x=>x.usableAs||[]))].sort((a,b)=>OPS_ALL.indexOf(a)-OPS_ALL.indexOf(b));
+ let op=fx||v.operation||'';if(!ops.includes(op))op=ops.length===1?ops[0]:'';
+ const subs=leaves.filter(x=>!op||fx||(x.usableAs||[]).includes(op));let sub=k&&subs.includes(k)?k.key:'';if(!sub&&subs.length===1)sub=subs[0].key;
+ return{fam,fx,hm,hms,ops,op,subs,sub}}
+function tpHtml(id,v){const S=tpState(v),fams=FAMS(),hid=(f,val)=>`<input type="hidden" data-tpf="${f}" value="${esc(val)}">`;
+ const famSel=`<select data-tpf="fam" aria-label="Family"><option value="">Family…</option>${fams.map(f=>`<option value="${esc(f.name)}"${f.name===S.fam?' selected':''}>${esc(f.label||f.name)}</option>`).join('')}</select>`;
+ if(!S.fam)return `<span class="tp" data-tp="${esc(id)}">${famSel}</span>`;
+ const hmSel=S.hms.length>1?`<select data-tpf="hm" aria-label="hyperMILL cycle"><option value="">hyperMILL cycle…</option>${S.hms.map(h=>`<option${h===S.hm?' selected':''}>${esc(h)}</option>`).join('')}</select>`:hid('hm',S.hm)+(S.hm?`<span class="tag" title="hyperMILL cycle">${esc(S.hm)}</span>`:'');
+ const opSel=!S.hm||S.fx?hid('op',S.fx||''):S.ops.length>1?`<select data-tpf="op" aria-label="Operation"><option value="">Operation…</option>${S.ops.map(o=>`<option value="${o}"${o===S.op?' selected':''}>${OPL[o]||o}</option>`).join('')}</select>`:hid('op',S.op)+(S.op?`<span class="tag" title="Operation">${OPL[S.op]||S.op}</span>`:'');
+ const leaves=S.hm?hmLeaves(S.fam,S.hm):[],subSel=!S.hm?'':leaves.length>1?(S.ops.length>1&&!S.op?`<select data-tpf="sub" aria-label="Sub-cycle" disabled><option value="">pick the operation first</option></select>`:`<select data-tpf="sub" aria-label="Sub-cycle"><option value="">Sub-cycle…</option>${S.subs.map(x=>`<option value="${esc(x.key)}"${x.key===S.sub?' selected':''}>${esc(subOf(x)||x.name)}</option>`).join('')}</select>`):hid('sub',S.sub);
+ return `<span class="tp" data-tp="${esc(id)}">${famSel}<span class="mu">›</span>${hmSel}${S.hm&&(S.ops.length>1&&!S.fx)?'<span class="mu">›</span>':''}${opSel}${S.hm&&leaves.length>1?'<span class="mu">›</span>':''}${subSel}</span>`}
+function tpRead(el){const g=k=>{const s=el.querySelector(`[data-tpf="${k}"]`);return s?s.value:''};const S=tpState({cycleFamily:g('fam'),hm:g('hm'),operation:g('op'),subcycleKey:g('sub')});
+ return{cycleFamily:S.fam||null,hm:S.hm||null,operation:S.op||null,subcycleKey:S.sub||null}}
+document.addEventListener('change',e=>{const f=e.target.dataset&&e.target.dataset.tpf;if(!f)return;const sp=e.target.closest('.tp');if(!sp)return;const v=tpRead(sp);
+ if(f==='fam'){v.hm=null;v.operation=null;v.subcycleKey=null}else if(f==='hm'){v.operation=null;v.subcycleKey=null}else if(f==='op'){const k=CTREE().find(y=>y.key===v.subcycleKey);if(k&&!(k.usableAs||[]).includes(v.operation))v.subcycleKey=null}
+ if(f==='sub'&&!e.target.value)v.subcycleKey=null;
+ const t=document.createElement('span');t.innerHTML=tpHtml(sp.dataset.tp,v);sp.replaceWith(t.firstChild);if(sp.dataset.tp==='log'){logSyncCycle();calc()}});
 /* band frozen when a tag is first set; an existing frozen band is kept */
 const bandFor=c=>{if(c.band)return c.band;const t=tool(c.tool),b=t?SF.bandOf(+t['Diameter (mm)'],L.bands):null;return b?b.label:null};
 const tagErrs=(c,v)=>{const t=tool(c.tool);return TAGS.validate({...v,band:bandFor(c)},CTREE(),t?+t['Diameter (mm)']:NaN,L.bands)};
@@ -5946,6 +6014,13 @@ function drawCS(){const cards=csCards(),q=CSQ.toLowerCase(),body=$('#cs_body'),n
 /* ---------- Phase 5 Block A — sub-cycle calculator (reads SF.resolve, the same resolver as Log cut's Suggested start) ---------- */
 let CALCV={tag:{},mat:'',tool:'',so:'',soDirty:false,holder:'',mach:'',band:''};
 const KIND_FAM={CD:'Drilling',HSS:'Drilling',SP:'Drilling',RM:'Reaming',TM:'Threading'};
+/* Log cut: the hidden hyperMILL-cycle and operation fields follow the picker (they choose the cycle page and the setup line) */
+function logSyncCycle(){const lt=logTag(),fc=$('#f_cycle'),fo=$('#f_operation');if(!fc||!fo)return;const own=HMC().map(c=>c.Cycle);
+ let nm=lt.subcycleKey?cycleNameFor(lt.subcycleKey):'';if(!nm&&lt.hm&&lt.cycleFamily)nm=hmLeaves(lt.cycleFamily,lt.hm).map(x=>cycleNameFor(x.key)).find(Boolean)||'';
+ if(!nm&&lt.hm){const h=lt.hm.toLowerCase().replace(/optimised/,'optimized');nm=own.find(c=>c.toLowerCase()===h||c.toLowerCase()==='3d '+h)||''}
+ if(nm&&!own.includes(nm)&&!fc.querySelector(`option[value="${CSS.escape(nm)}"]`)){const o=document.createElement('option');o.textContent=nm;fc.appendChild(o)}
+ fc.value=nm||'';const OPM={rough:'Rough',semi:'Semi',finish:'Finish',drill:'Drill',ream:'Drill',bore:'Finish',thread:'Thread'};if(lt.operation&&OPM[lt.operation])fo.value=OPM[lt.operation];
+ fc.dispatchEvent(new Event('change',{bubbles:true}))}
 const cycleNameFor=k=>{const own=HMC().map(c=>c.Cycle);const hit=TAGS.NAME_MAP.filter(([n,ks])=>ks.includes(k)).map(x=>x[0]);return hit.find(n=>own.includes(n))||hit[0]||''};
 const legacyOp=op=>({rough:'Rough',semi:'Semi',finish:'Finish',drill:'Drill',ream:'Drill',thread:'Thread',bore:'Finish'})[op]||'';
 /* ---------- Phase 6b: calculator (M.A. Ford style, live two-way) ----------
@@ -6186,7 +6261,7 @@ function c6AdvHtml(){const v=CALCV,a=C6.adv,ball=C6.def&&C6.def.ball,known=!!(v.
 
 function calcHtml(){const v=CALCV,sg=c6Sig();if(sg!==C6.sig){C6.sig=sg;c6Reset()}
  return `<div class="card" id="calc"><h2>Calculator</h2><p class="mu" style="margin:0 0 8px">Type a tool code, tap the material row to choose a material, and pick the cycle family › operation › sub-cycle. Every number is live: change one and the others follow (Vc ↔ RPM, fz ↔ Vf, ae / ap ↔ Q). Tap the tool sizes to change Ø, flute length, radius or Z for this calculation. Values start from the same resolver as Log cut's Suggested start.</p>
- <div class="g"><div style="grid-column:1/-1"><label>Family › Operation › Sub-cycle</label>${tpHtml('calc',v.tag)}</div></div>
+ <div class="g"><div style="grid-column:1/-1"><label>Family › hyperMILL cycle › Operation › Sub-cycle</label>${tpHtml('calc',v.tag)}</div></div>
  ${c6AdvHtml()}
  <div id="calc6" style="margin-top:10px">${calc6Html()}</div>
  <details id="calc_tbl" style="margin-top:12px"${C6.tblOpen?' open':''}><summary><b>All sub-cycles in this family</b> <small class="mu">— the same values for every sub-cycle, side by side</small></summary><div id="calc_out" style="margin-top:10px">${calcOut()}</div></details></div>`}
@@ -6664,21 +6739,22 @@ function drawTreeEd(){const fams=famRows(),fnames=fams.map(([r])=>r.Cycle);if(!T
  const orphans=TR().filter(([r])=>r.parent&&!fnames.includes(r.parent));
  const OPN2={rough:'Rough',semi:'Semi',finish:'Finish',drill:'Drill',ream:'Ream',bore:'Bore',thread:'Thread',probe:'Probe'};
  const sub=([r,i],fam)=>{const n=cutsUsing(r).length,fixed=fam&&fam.fixedOp;return `<div class="tsub"><span class="tdot">└</span>
-  <input data-tr="${i}" data-tf="Cycle" value="${esc(r.Cycle)}" aria-label="Sub-cycle name" class="tname">
+  <input data-tr="${i}" data-tf="hm" value="${esc(r.hm||r.Cycle)}" aria-label="hyperMILL cycle" title="hyperMILL cycle — rows with the same name are grouped under it" class="tname" list="hmcyclist">
+  <input data-tr="${i}" data-tf="sub" value="${esc(r.sub||'')}" aria-label="Sub-cycle" placeholder="sub-cycle (if several)" title="Sub-cycle name inside the hyperMILL cycle — leave empty when the cycle has only this one" class="tname" style="max-width:170px">
   <span class="tops">${fixed?`<span class="tag">${esc(OPN2[fixed]||fixed)} only</span>`:OPS_ALL.map(o=>`<label class="tchip${(r.usableAs||[]).includes(o)?' on':''}" title="Can be logged / recommended as ${o}"><input type="checkbox" data-tr="${i}" data-tu="${o}"${(r.usableAs||[]).includes(o)?' checked':''}>${OPN2[o]}</label>`).join('')}</span>
   <span class="mu tmeta">${n?`${n} cut${n>1?'s':''}`:''}${r.added?' <span class="tag" title="'+esc(r.added)+'">added</span>':''}</span>
   <input data-tr="${i}" data-tf="order" type="number" step="1" value="${esc(r.order??'')}" title="Order in the list" class="tord">
   ${!n?`<button class="b s sm" data-tdel="${i}" title="Delete — nothing uses it">✕</button>`:'<span style="width:32px"></span>'}</div>`};
- const fam=([r,i])=>{const kids=TR().filter(([x])=>x.parent===r.Cycle).sort((a,b)=>(a[0].order||0)-(b[0].order||0)),n=cutsUsing(r).length,open=TROPEN.has(r.Cycle);
-  return `<details class="tfam" data-tfam="${esc(r.Cycle)}"${open?' open':''}><summary><span class="tname2">${esc(r.Cycle)}</span><span class="mu">${kids.length} sub-cycle${kids.length===1?'':'s'}${r.fixedOp?' · always '+esc(r.fixedOp):''}${n?' · '+n+' cuts':''}</span></summary>
-  <div class="tfhead"><label>Family name<input data-tr="${i}" data-tf="Cycle" value="${esc(r.Cycle)}"></label>
+ const fam=([r,i])=>{const kids=TR().filter(([x])=>x.parent===r.Cycle).sort((a,b)=>(a[0].order||0)-(b[0].order||0)),n=cutsUsing(r).length,open=TROPEN.has(r.Cycle),nh=new Set(kids.map(([x])=>x.hm||x.Cycle)).size;
+  return `<details class="tfam" data-tfam="${esc(r.Cycle)}"${open?' open':''}><summary><span class="tname2">${esc(r.label||r.Cycle)}</span><span class="mu">${nh} hyperMILL cycle${nh===1?'':'s'} · ${kids.length} row${kids.length===1?'':'s'}${r.fixedOp?' · always '+esc(r.fixedOp):''}${n?' · '+n+' cuts':''}</span></summary>
+  <div class="tfhead"><label title="What Log cut and Speeds &amp; Feeds show">Family name<input data-tr="${i}" data-tf="label" value="${esc(r.label||r.Cycle)}"></label><label title="Internal name — cuts and settings refer to it">Internal name<input data-tr="${i}" data-tf="Cycle" value="${esc(r.Cycle)}"></label>
    <label>Kind<select data-tr="${i}" data-tf="kind">${opt(KINDS,r.kind)}</select></label>
    <label title="Fixed: every sub-cycle is one operation and Log cut skips the Operation choice">Operation<select data-tr="${i}" data-tf="fixedOp"><option value="">chosen per cut</option>${OPS_ALL.map(o=>`<option${o===r.fixedOp?' selected':''}>${o}</option>`).join('')}</select></label>
    <label>Order<input data-tr="${i}" data-tf="order" type="number" step="1" value="${esc(r.order??'')}" class="tord"></label>
    <span style="align-self:end">${!n&&!kids.length?`<button class="b s sm" data-tdel="${i}">Delete family</button>`:''}</span></div>
-  <div class="tsubs">${kids.map(k=>sub(k,r)).join('')||'<p class="mu" style="margin:6px 0">No sub-cycles yet.</p>'}</div>
+  <div class="tsubs">${kids.length?'<div class="mu" style="font-size:12px;margin:4px 0 2px 22px">hyperMILL cycle · sub-cycle · operations it can be used for · order</div>':''}${kids.map(k=>sub(k,r)).join('')||'<p class="mu" style="margin:6px 0">No sub-cycles yet.</p>'}</div>
   <p class="row" style="margin:6px 0 0"><button class="b s sm" data-taddin="${esc(r.Cycle)}">+ Sub-cycle in ${esc(r.Cycle)}</button></p></details>`};
- $('#pbody').innerHTML=`<div class="card"><h2>Cycle tree</h2><p class="mu">How hyperMILL cycles are grouped for Log cut, Speeds &amp; Feeds and the Baselines: <b>family</b> › <b>operation</b> › <b>sub-cycle</b>. Tick the operations a sub-cycle can be used for. Names, operations and families that logged cuts use are protected — re-tag those cuts first. Your ${HMC().length} hyperMILL cycle names are kept separately (Library → Data → cycles).</p>
+ $('#pbody').innerHTML=`<div class="card"><h2>Cycle tree</h2><datalist id="hmcyclist">${[...new Set(TR().filter(([r])=>r.parent).map(([r])=>r.hm||r.Cycle))].map(h=>`<option>${esc(h)}</option>`).join('')}</datalist><p class="mu">How cycles are picked in Log cut, Speeds &amp; Feeds and the Baselines: <b>family</b> › <b>hyperMILL cycle</b> › <b>operation</b> (when the cycle allows more than one) › <b>sub-cycle</b> (when the cycle has more than one). Rows with the same hyperMILL cycle name are grouped under it; tick the operations each can be used for. Names, operations and families that logged cuts use are protected — re-tag those cuts first. Your ${HMC().length} hyperMILL cycle names are kept separately (Library → Data → cycles).</p>
  <p class="row noprint"><button class="b s sm" data-tadd="fam">+ Family</button><button class="b s sm" id="topenall">Expand all</button><button class="b s sm" id="tcloseall">Collapse all</button><span id="tmsg" class="mu"></span></p>
  ${orphans.length?`<div class="note e">Sub-cycles whose family no longer exists: ${orphans.map(([r])=>esc(r.Cycle)).join(', ')} — pick a family for them in the old list below.</div><div class="tw"><table><tbody>${orphans.map(([r,i])=>`<tr><td>${esc(r.Cycle)}</td><td><select data-tr="${i}" data-tf="parent">${opt(['',...fnames],r.parent)}</select></td></tr>`).join('')}</tbody></table></div>`:''}
  <div class="ttree">${fams.map(fam).join('')}</div></div>`;
@@ -7168,11 +7244,20 @@ function drawParamGroups(){if(!CPW){CPW=clone(CP());CPW_SAVED=JSON.stringify(CPW
  if(CPI>=CPW.length)CPI=0;const rx=g=>{try{return new RegExp(g.Match||'a^','i')}catch(e){return null}},g=CPW[CPI]||{Group:'',Match:'',Params:[]},r=rx(g),ms=r?HMC().filter(c=>r.test(c.Cycle)):[],un=HMC().filter(c=>!CPW.some(x=>{const q=rx(x);return q&&q.test(c.Cycle)}));
  const list=CPW.map((x,i)=>[x,i]).filter(([x])=>!CPQ||(x.Group+' '+x.Match).toLowerCase().includes(CPQ.toLowerCase()));
  const P=g.Params||[],tabs=[...new Set(P.map(p=>p.tab||'Settings'))].sort((a,b)=>{const i=HM_TABS.indexOf(a),j=HM_TABS.indexOf(b);return (i<0?50:i)-(j<0?50:j)});
- const fld=(p,pi)=>{const c=cpCtlOf(p),opts=(p.options||[]).filter(Boolean);return `<div class="cpf"><div class="cpf1"><input data-pi="${pi}" data-pk="label" value="${esc(p.label||'')}" placeholder="Label as printed" title="Label as printed in hyperMILL">
+ /* fields that can drive a "show only when" rule: radio buttons, dropdowns and tick boxes on any tab of this page */
+ const drv=P.map((x,i)=>[x,i]).filter(([x])=>x.key&&['radio','dropdown','check'].includes(cpCtlOf(x)));
+ const drvOpts=k=>{const x=P.find(y=>y.key===k);if(!x)return [];return cpCtlOf(x)==='check'?['On','Off']:(x.options||[]).filter(Boolean)};
+ const whenParse=w=>{const m=/^([^!=&]+?)\s*=\s*([^&]*)$/.exec(String(w||'').trim());return m?{k:m[1].trim(),v:m[2].split('|').map(x=>x.trim()).filter(Boolean)}:null};
+ const whenTxt=w=>{const q=whenParse(w);if(!q)return w?esc(w):'';const x=P.find(y=>y.key===q.k);return `<b>${esc(x?(x.label||x.key):q.k)}</b> = ${esc(q.v.join(' or '))}${x&&(x.tab||'Settings')!==(P.find(y=>y.when===w)||{}).tab?` <span class="mu">(${esc(x.tab||'Settings')} tab)</span>`:''}`};
+ const whenUI=(p,pi)=>{const q=whenParse(p.when),adv=p.when&&!q,opts=q?drvOpts(q.k):[];
+  return `<div class="cpwhen" style="flex:3;min-width:260px"><span class="hml">Show only when</span><div class="row" style="gap:6px;flex-wrap:wrap"><select data-pi="${pi}" data-pk="_whenK" style="max-width:220px"><option value="">always shown</option>${drv.filter(([,i])=>i!==pi).map(([x])=>`<option value="${esc(x.key)}"${q&&q.k===x.key?' selected':''}>${esc(x.label||x.key)}${(x.tab||'Settings')!==(p.tab||'Settings')?' — '+esc(x.tab||'Settings'):''}</option>`).join('')}</select>
+   ${q?`<span class="mu">is</span>${opts.map(o=>`<label style="display:flex;gap:4px;align-items:center;margin:0;font-weight:400"><input type="checkbox" data-pi="${pi}" data-pk="_whenV" value="${esc(o)}"${q.v.includes(o)?' checked':''}> ${esc(o)}</label>`).join('')}`:''}
+   ${adv?`<input data-pi="${pi}" data-pk="when" value="${esc(p.when)}" title="Advanced rule: key=A|B, key!=A, joined with &">`:''}</div></div>`};
+ const fld=(p,pi)=>{const c=cpCtlOf(p),opts=(p.options||[]).filter(Boolean);return `<div class="cpf"${p.when?' style="border-left:3px solid var(--warn);padding-left:8px"':''}>${p.when?`<div class="mu" style="font-size:12px;margin-bottom:2px">↳ shown only when ${whenTxt(p.when)}</div>`:''}<div class="cpf1"><input data-pi="${pi}" data-pk="label" value="${esc(p.label||'')}" placeholder="Label as printed" title="Label as printed in hyperMILL">
   <select data-pi="${pi}" data-pk="_ctl">${CP_CTL.map(([v,l])=>`<option value="${v}"${v===c?' selected':''}>${l}</option>`).join('')}</select>
   ${c==='radio'||c==='dropdown'?`<input data-pi="${pi}" data-pk="options" value="${esc(opts.join(', '))}" placeholder="Choices, comma separated" class="cpopts">`:c==='number'?`<input data-pi="${pi}" data-pk="unit" value="${esc(p.unit||'')}" placeholder="unit" style="width:70px">`:''}
   <span class="cpbtns"><button class="b s sm" data-cpmv="${pi}:-1" title="Up">↑</button><button class="b s sm" data-cpmv="${pi}:1" title="Down">↓</button><button class="b s sm" data-cpdp="${pi}" title="Delete field">✕</button></span></div>
-  <details class="cpf2"><summary>more</summary><div class="cpf3"><label>Key (stored with cuts)<input data-pi="${pi}" data-pk="key" value="${esc(p.key||'')}"></label><label>Tab<input data-pi="${pi}" data-pk="tab" value="${esc(p.tab||'')}" list="hmtablist"></label><label>Box<input data-pi="${pi}" data-pk="sec" value="${esc(p.sec||'')}"></label><label>Show only when<input data-pi="${pi}" data-pk="when" value="${esc(p.when||'')}" placeholder="key=Value"></label><label style="flex:2">Hint<input data-pi="${pi}" data-pk="hint" value="${esc(p.hint||'')}"></label></div></details></div>`};
+  <details class="cpf2"><summary>more</summary><div class="cpf3"><label>Key (stored with cuts)<input data-pi="${pi}" data-pk="key" value="${esc(p.key||'')}"></label><label>Tab<input data-pi="${pi}" data-pk="tab" value="${esc(p.tab||'')}" list="hmtablist"></label><label>Box<input data-pi="${pi}" data-pk="sec" value="${esc(p.sec||'')}"></label>${whenUI(p,pi)}<label style="flex:2">Hint<input data-pi="${pi}" data-pk="hint" value="${esc(p.hint||'')}"></label></div></details></div>`};
  const tabHtml=t=>{const boxes=[...new Set(P.filter(p=>(p.tab||'Settings')===t).map(p=>p.sec||'Settings'))];return `<div class="cptab"><h4>${esc(t)}</h4>${boxes.map(bx=>`<fieldset class="hmbox cpbox"><legend>${esc(bx)}</legend>${P.map((p,pi)=>[p,pi]).filter(([p])=>(p.tab||'Settings')===t&&(p.sec||'Settings')===bx).map(([p,pi])=>fld(p,pi)).join('')}<button class="b s sm" data-cpaf="${esc(t)}|${esc(bx)}">+ field in ${esc(bx)}</button></fieldset>`).join('')}<button class="b s sm" data-cpab="${esc(t)}">+ box on ${esc(t)}</button></div>`};
  $('#pbody').innerHTML=`<datalist id="hmtablist">${HM_TABS.map(t=>`<option>${esc(t)}</option>`).join('')}</datalist>
  <div class="card"><h2>Cycle pages</h2><p class="mu">What <b>Log cut</b> shows for each hyperMILL cycle — laid out like the cycle's dialog: tabs › boxes › fields, with radio buttons, tick boxes, dropdowns and values as in hyperMILL (read from your 226 screenshots). Showing: <b>${using}</b>. Changes here are only a draft until you press <b>Save</b>.</p>
@@ -7196,6 +7281,8 @@ function drawParamGroups(){if(!CPW){CPW=clone(CP());CPW_SAVED=JSON.stringify(CPW
   if(d.pi==null)return;const p=G.Params[+d.pi],k=d.pk,v=t.value;
   if(k==='_ctl'){if(v==='number'||v==='text'){p.type=v;delete p.ctl;delete p.options}else{p.type='select';p.ctl=v;if(v==='check')p.options=['','On','Off'];else if(!p.options||p.options.filter(Boolean).join()==='On,Off')p.options=['']}drawParamGroups()}
   else if(k==='options')p.options=['',...v.split(',').map(x=>x.trim()).filter(Boolean)];
+  else if(k==='_whenK'){if(!v)delete p.when;else{const x=G.Params.find(y=>y.key===v),o=x?(cpCtlOf(x)==='check'?['On']:(x.options||[]).filter(Boolean).slice(0,1)):[];p.when=v+'='+(o[0]||'')}drawParamGroups();pv();msg('Draft — press Save to keep it.');return}
+  else if(k==='_whenV'){const box=t.closest('.cpwhen'),vals=[...box.querySelectorAll('[data-pk="_whenV"]:checked')].map(x=>x.value),kk=String(p.when||'').split('=')[0];if(!vals.length){t.checked=true;return msg('Pick at least one value — or choose “always shown”.')}p.when=kk+'='+vals.join('|');drawParamGroups();pv();msg('Draft — press Save to keep it.');return}
   else{if(v==='')delete p[k];else p[k]=v;if(k==='tab'||k==='sec'){drawParamGroups();msg('Draft — press Save to keep it.');return}}
   pv();msg('Draft — press Save to keep it.')};
  cpEl.onclick=async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset,G=CPW[CPI];
@@ -7426,7 +7513,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-15.3';
+const APP_V='2026-10-15.4';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
