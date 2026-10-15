@@ -6564,8 +6564,18 @@ function liveCard(){const pre=_mem.get('_prelive'),pd=pre&&pre.data||{},preTools
  return `<div class="card"><h2>Live database</h2><p class="mu">One live copy of all your data — library, cuts, settings, to-do — kept in your Google Sheet, so every PC sees the same thing without loading backups. Anyone with the app can view; saving needs the write key, typed once on each PC that may edit. Set-up steps: User Guide → Live database.</p>
  <div class="g"><div><label for="lv_url">Web app URL${src?` <span class="mu">(from ${src})</span>`:''}</label><input id="lv_url" value="${esc(LIVE.url)}" placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false"></div><div><label for="lv_key">Write key (this PC only)</label><input id="lv_key" type="password" value="${esc(LIVE.key)}" autocomplete="off" placeholder="leave empty for view only"></div></div>
  <p class="mu">Status: <b>${st}</b> · ${wr}${n?` · <b>${n}</b> change${n>1?'s':''} waiting to send`:''}</p>
- <p class="row"><button class="b s" id="lv_save">Save &amp; test</button>${S==='empty'?'<button class="b" id="lv_up">Upload this PC’s data</button>':''}${S==='live'||S==='cache'?'<button class="b s sm" id="lv_rep">Replace live data with this PC’s copy…</button>':''}${pre&&(S==='live'||S==='cache')?`<button class="b" id="lv_pre" title="This PC’s full data as it was just before it first loaded the live database (${esc(new Date(pre.at).toLocaleString())})">Restore this PC’s earlier copy (${preTools} tools, ${preCuts} cuts)…</button>`:''}<span class="mu" id="lv_msg"></span></p></div>`}
+ <p class="row"><button class="b s" id="lv_save">Save &amp; test</button>${S==='empty'?'<button class="b" id="lv_up">Upload this PC’s data</button>':''}<span class="mu" id="lv_msg"></span></p>
+ ${S==='live'||S==='cache'?`<details style="margin-top:10px;border:1px solid var(--bad,#c62828);border-radius:8px;padding:8px 12px"><summary style="cursor:pointer;color:var(--bad,#c62828);font-weight:600">Danger zone — overwrite the live database</summary>
+ <p class="mu">These replace the data <b>every PC</b> sees. Type <b>OVERWRITE</b> in the box first.</p><p class="row"><input id="lv_conf" placeholder="type OVERWRITE" autocomplete="off" style="max-width:180px">
+ <button class="b s sm" id="lv_sheet" title="Library tables (tools, materials, cycles, holders, machines, baseline, bands, band tables, formulas) from the Google Sheet tabs. Cuts, settings and to-do stay as they are.">Load library from the Google Sheet</button>
+ <button class="b s sm" id="lv_rep">Replace everything with this PC’s copy</button>${pre?`<button class="b s sm" id="lv_pre" title="This PC’s data from ${esc(new Date(pre.at).toLocaleString())}">Replace everything with this PC’s earlier copy (${preTools} tools, ${preCuts} cuts)</button>`:''}</p></details>`:''}</div>`}
 async function liveClick(e){const id=e.target.id,m=$('#lv_msg'),say=t=>{if(m)m.textContent=t};
+ if(['lv_rep','lv_pre','lv_sheet'].includes(id)&&(($('#lv_conf')||{}).value||'').trim()!=='OVERWRITE'){say('Type OVERWRITE in the box in the Danger zone first.');return true}
+ if(id==='lv_sheet'){if(ROLE()!=='admin')return say('Needs the write key or an administrator.'),true;e.target.disabled=true;say('Loading the Google Sheet tabs…');
+  try{if(!SHEET_CFG.id)throw new Error('No Sheet ID in sheets.json');const data=await loadSheets(SHEET_CFG.id,SHEET_CFG.tabs);const ks=Object.keys(data).filter(k=>Object.prototype.hasOwnProperty.call(L,k)&&Array.isArray(data[k])&&data[k].length);
+   if(!ks.length)throw new Error('the Sheet could not be read (is it published to the web?)');for(const k of ks){L[k]=data[k];await writeLib(k,data[k])}
+   logChange('library','('+ks.join(', ')+')','loaded from the Google Sheet','',ks.map(k=>k+' '+data[k].length).join(', '),'Settings → Live database');await saveCLOG();SF.invalidate();say(`✓ Loaded ${ks.map(k=>k+' ('+data[k].length+')').join(', ')}. Saving to the live database… then reload.`)}
+  catch(x){e.target.disabled=false;say('Failed: '+(x.message||x))}return true}
  if(id==='lv_pre'){const pre=_mem.get('_prelive');if(!pre||!pre.data)return say('No earlier copy on this PC.'),true;
   if(LIVE._sure!=='pre'){LIVE._sure='pre';say('This replaces the live data for every PC with this PC’s copy from '+new Date(pre.at).toLocaleString()+' (the Drive backup keeps the current one). Click again to confirm.');return true}
   LIVE._sure=null;e.target.disabled=true;say('Uploading…');
@@ -7751,7 +7761,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-15.10';
+const APP_V='2026-10-15.11';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
