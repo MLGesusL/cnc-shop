@@ -4594,12 +4594,12 @@ async function _idbInit(){
 }
 const _ls = {
   get(p){ return _mem.get(LS_PREFIX + p); },
-  set(p, v){ const k = LS_PREFIX + p; _mem.set(k, v); return _idbPut(k, v).then(() => true, e => {
+  set(p, v){ const k = LS_PREFIX + p; _mem.set(k, v); liveQ('put', p, v); return _idbPut(k, v).then(() => true, e => {
     console.warn('IndexedDB write failed:', e);
     if (!_idbWarned) { _idbWarned = true; setTimeout(() => alert('Storage write failed. Your data is safe in this session but may not survive a refresh. Reload and try again.'), 100); }
     return false;
   }); },
-  del(p){ const k = LS_PREFIX + p; _mem.delete(k); return _idbDel(k).catch(() => {}); }
+  del(p){ const k = LS_PREFIX + p; _mem.delete(k); liveQ('del', p); return _idbDel(k).catch(() => {}); }
 };
 function _snap(id, data){
   return { id, exists: data !== undefined, data: () => data === undefined ? undefined : JSON.parse(JSON.stringify(data)) };
@@ -4639,6 +4639,108 @@ const DB = {
   doc: p => { const i = p.indexOf('/'); return _doc(p.slice(0,i), p.slice(i+1)); },
   collection: p => _coll(p)
 };
+
+/* ---------- 1c. Live database (2026-10-15) ----------
+   One live copy of all app data, kept in the Google Sheet by a small Apps Script web app (apps-script/Code.gs).
+   • At start-up the app downloads everything from it; IndexedDB stays as this PC's cache (used when the
+     live database cannot be reached, e.g. no network).
+   • Every save still goes to the cache first (instant), then is queued and sent to the live database.
+     The queue is kept in IndexedDB, so changes made offline are sent next time the app is open online.
+   • Reading needs only the URL. Saving needs the write key (Settings → Live database), entered once per PC.
+     Without it the PC is view-only: changes stay on that PC.
+   • Library tables are also written to their readable Sheet tabs, so the Sheet never needs a manual import. */
+const LIVE = { url:'', key:'', state:'off', rev:0, q:[], busy:false, err:'', at:'', canWrite:null, newer:false, retry:null, sheetKeys:[] };
+const LIVE_QKEY = '_liveq', LIVE_BATCH = 1500000;
+function liveCfg(cfg){ let u='', k=''; try{ u=localStorage.getItem('live.url')||''; k=localStorage.getItem('live.key')||''; }catch(e){}
+  LIVE.url = (u || (cfg && cfg.live) || '').trim(); LIVE.key = k; return LIVE.url; }
+function _liveFetch(url, opt, ms){ const c = new AbortController(), t = setTimeout(() => c.abort(), ms||30000);
+  return fetch(url, Object.assign({ redirect:'follow', cache:'no-store', signal:c.signal }, opt||{})).then(async r => {
+    clearTimeout(t); if(!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json(); return j; },
+    e => { clearTimeout(t); throw (e && e.name === 'AbortError') ? new Error('timed out') : e; }); }
+function liveGet(action){ return _liveFetch(LIVE.url + (LIVE.url.includes('?')?'&':'?') + 'action=' + action + '&t=' + Date.now(), null, action==='all'?45000:15000); }
+function livePost(body){ return _liveFetch(LIVE.url, { method:'POST', body: JSON.stringify(body) }, 60000); }
+/* Sheet tab copy of a library table: header row + one row per record, objects as JSON text */
+function liveSheetRows(tab, rows){ rows = (rows||[]).filter(r => r && typeof r === 'object');
+  const head = (SHEET_HEAD[tab] && SHEET_HEAD[tab].length) ? SHEET_HEAD[tab].slice() : [];
+  rows.forEach(r => Object.keys(r).forEach(k => { if(!head.includes(k)) head.push(k); }));
+  const cell = v => v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  return [head].concat(rows.map(r => head.map(k => cell(r[k])))); }
+function liveOp(op, p, v){ const o = { op, key:p };
+  if(op === 'put'){ o.value = v; const m = /^lib\/(.+)$/.exec(p);
+    if(m && (SHEET_CFG.tabs||[]).includes(m[1]) && m[1] !== 'cycleparams' && v && Array.isArray(v.rows)) o.sheet = { tab:m[1], rows: liveSheetRows(m[1], v.rows) }; }
+  return o; }
+/* queue a change for the live database (latest value per record wins) */
+function liveQ(op, p, v){
+  if(!LIVE.url || LIVE.state === 'off' || LIVE.state === 'empty' || LIVE.state === 'loading' || !LIVE.key) return;
+  LIVE.q = LIVE.q.filter(x => x.key !== p); LIVE.q.push({ op, key:p, value: op==='put' ? v : undefined });
+  liveSaveQ(); clearTimeout(LIVE._t); LIVE._t = setTimeout(liveFlush, 400); drawSync(); }
+function liveSaveQ(){ _idbPut(LIVE_QKEY, LIVE.q).catch(() => {}); }
+async function liveFlush(){
+  if(LIVE.busy || !LIVE.q.length || !LIVE.key || !LIVE.url || LIVE.state === 'empty') return;
+  LIVE.busy = true; drawSync();
+  try{
+    while(LIVE.q.length){
+      const batch = []; let size = 0;
+      for(const x of LIVE.q){ const op = liveOp(x.op, x.key, x.value), s = JSON.stringify(op).length; if(batch.length && size + s > LIVE_BATCH) break; batch.push({ src:x, op }); size += s; }
+      const r = await livePost({ action:'write', token: LIVE.key, ops: batch.map(b => b.op) });
+      if(!r.ok){ LIVE.err = r.error || 'not saved'; if(r.code === 'auth' || r.code === 'nokey'){ LIVE.canWrite = false; } throw Object.assign(new Error(LIVE.err), { code:r.code }); }
+      const sent = new Set(batch.map(b => b.src));
+      LIVE.q = LIVE.q.filter(x => !sent.has(x)); liveSaveQ();
+      LIVE.rev = Math.max(LIVE.rev, +r.rev || 0); LIVE.canWrite = true; LIVE.err = ''; LIVE.at = new Date().toISOString();
+      if(LIVE.state === 'cache') LIVE.state = 'live';
+    }
+  }catch(e){
+    LIVE.err = e.message || String(e);
+    if(e.code !== 'auth' && e.code !== 'nokey'){ clearTimeout(LIVE.retry); LIVE.retry = setTimeout(liveFlush, 30000); }
+  }finally{ LIVE.busy = false; drawSync(); }
+}
+/* start-up: send anything waiting from last time, then load the live copy into the cache */
+async function liveInit(cfg){
+  if(!liveCfg(cfg)){ LIVE.state = 'off'; return; }
+  LIVE.state = 'loading';
+  try{ const q = await new Promise(res => { _idbOpen().then(d => { const r = d.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(LIVE_QKEY); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }, () => res(null)); });
+    LIVE.q = Array.isArray(q) ? q : []; }catch(e){ LIVE.q = []; }
+  try{
+    if(LIVE.q.length && LIVE.key){ LIVE.state = 'cache'; await liveFlush(); }
+    const r = await liveGet('all'); if(!r || !r.ok) throw new Error((r && r.error) || 'no answer');
+    LIVE.rev = +r.rev || 0; const data = r.data || {}, keys = Object.keys(data);
+    if(!keys.length){ LIVE.state = 'empty'; return; }
+    /* one-off safety copy of what this PC held before it first joined the live database */
+    const local = {}; for(const [k, v] of _mem) if(k.startsWith(LS_PREFIX)) local[k] = v;
+    if(Object.keys(local).length && _mem.get('_prelive') === undefined){ const snap = { at:new Date().toISOString(), data:local }; _mem.set('_prelive', snap); await _idbPut('_prelive', snap).catch(() => {}); }
+    /* keep queued (unsent) records as they are on this PC */
+    const keep = new Set(LIVE.q.map(x => LS_PREFIX + x.key));
+    for(const k of [..._mem.keys()]) if(k.startsWith(LS_PREFIX) && !keep.has(k) && !(k.slice(LS_PREFIX.length) in data)){ _mem.delete(k); _idbDel(k).catch(() => {}); }
+    for(const p of keys){ const k = LS_PREFIX + p; if(keep.has(k)) continue; _mem.set(k, data[p]); _idbPut(k, data[p]).catch(() => {}); }
+    LIVE.state = 'live'; LIVE.at = new Date().toISOString(); LIVE.err = '';
+  }catch(e){ LIVE.state = 'cache'; LIVE.err = e.message || String(e); }
+}
+/* first time: copy this PC's data up (only when the live database is empty, or when asked to replace it) */
+async function liveUpload(replace){
+  if(!LIVE.url) throw new Error('No live database URL'); if(!LIVE.key) throw new Error('Enter the write key first');
+  const items = [];
+  for(const [k, v] of _mem) if(k.startsWith(LS_PREFIX)) items.push([k.slice(LS_PREFIX.length), v]);
+  /* tables that came from the Sheet at start-up: upload what the app is actually using */
+  const lk = new Set(); LIVE.sheetKeys.forEach(t => { if(L[t]){ const i = items.findIndex(x => x[0] === 'lib/'+t), v = { v:LIB_V, rows:L[t] }; if(i >= 0) items[i][1] = v; else items.push(['lib/'+t, v]); lk.add('lib/'+t); } });
+  if(Object.keys(SHEET_HEAD).length){ const i = items.findIndex(x => x[0] === 'meta/sheethead'); if(i >= 0) items[i][1] = SHEET_HEAD; else items.push(['meta/sheethead', SHEET_HEAD]); }
+  let first = true, sent = 0, batch = [], size = 0;
+  const send = async () => { const r = await livePost({ action:'write', token:LIVE.key, replaceAll: first && !!replace, ops: batch });
+    if(!r.ok) throw new Error(r.error || 'upload failed'); LIVE.rev = +r.rev || LIVE.rev; sent += batch.length; first = false; batch = []; size = 0; };
+  for(const [p, v] of items){ const op = liveOp('put', p, v), s = JSON.stringify(op).length; if(batch.length && size + s > LIVE_BATCH) await send(); batch.push(op); size += s; }
+  if(batch.length) await send();
+  for(const p of lk){ const v = items.find(x => x[0] === p)[1]; _mem.set(LS_PREFIX + p, v); await _idbPut(LS_PREFIX + p, v).catch(() => {}); }
+  LIVE.state = 'live'; LIVE.canWrite = true; LIVE.q = []; liveSaveQ(); LIVE.at = new Date().toISOString(); LIVE.err = ''; drawSync();
+  return sent;
+}
+/* another PC saved something since this one loaded: offer a reload (never reloads by itself) */
+async function liveCheckNewer(){
+  if(LIVE.state !== 'live' || LIVE.q.length || LIVE.busy || document.hidden) return;
+  try{ const r = await liveGet('rev'); if(r && r.ok && +r.rev > LIVE.rev){ LIVE.newer = true; drawSync(); } }catch(e){}
+}
+window.addEventListener('focus', liveCheckNewer);
+setInterval(liveCheckNewer, 120000);
+window.addEventListener('online', () => { if(LIVE.q.length) liveFlush(); });
+window.addEventListener('beforeunload', e => { if(LIVE.q.length && LIVE.key && LIVE.state !== 'empty'){ e.preventDefault(); e.returnValue = ''; } });
 
 /* ---------- 2. AI (replaces Claude with Ollama) ---------- */
 const OLLAMA_URL   = 'http://localhost:11434';
@@ -5001,21 +5103,26 @@ async function load(){
   dl = dlShim;
   /* Phase 1: if ./sheets.json exists with a real Sheet ID, load the library tables from that Google Sheet.
      On any failure, the IndexedDB values loaded below are kept for the tables that did not come from the Sheet. */
-  let sheetData = null;
+  let sheetData = null, sheetCfg = null;
+  try{ const r = await fetch('./sheets.json',{cache:'no-store'}); if(r.ok) sheetCfg = await r.json(); }catch(e){ console.warn('sheets.json:',e); }
+  if(sheetCfg&&Array.isArray(sheetCfg.tabs)) SHEET_CFG={id:sheetCfg.id||'',tabs:sheetCfg.tabs,live:sheetCfg.live||''};
+  /* 2026-10-15: live database first — when it answers with data, the Sheet tabs are only its readable copy */
+  await liveInit(sheetCfg);
+  if(LIVE.state==='live'){ const h=_ls.get('meta/sheethead'); if(h&&typeof h==='object') SHEET_HEAD=h; }
   try{
-    const r = await fetch('./sheets.json',{cache:'no-store'});
-    if(r.ok){
-      const cfg = await r.json();
+    if(LIVE.state!=='live'){
+      const cfg = sheetCfg;
       if(cfg&&cfg.id&&cfg.id!=='PASTE_ID_HERE'){
-        SHEET_CFG={id:cfg.id,tabs:Array.isArray(cfg.tabs)?cfg.tabs:[]};
+        SHEET_CFG={id:cfg.id,tabs:Array.isArray(cfg.tabs)?cfg.tabs:[],live:cfg.live||''};
         sheetData=await loadSheets(cfg.id,SHEET_CFG.tabs);
         Object.entries(sheetData).forEach(([k,rows])=>{if(Object.prototype.hasOwnProperty.call(L,k))L[k]=rows});
         /* Phase 8: only a load that actually brought tabs back counts as a sync */
         SHEET_SYNC={tried:true,got:Object.keys(sheetData),missing:SHEET_CFG.tabs.filter(t=>!(t in sheetData))};
         if(SHEET_SYNC.got.length)try{localStorage.setItem('sheets.lastSync',new Date().toISOString())}catch(e){}
+        LIVE.sheetKeys=Object.keys(sheetData).filter(k=>Object.prototype.hasOwnProperty.call(L,k));
       }
     }
-  }catch(e){console.warn('sheets.json:',e);sheetData=null}
+  }catch(e){console.warn('sheets:',e);sheetData=null}
   if(!db){
     OFFLINE=true;Object.assign(L,JSON.parse(JSON.stringify(DEFAULT_LIB)));
     TD={items:TDSEED.map((x,i)=>({id:'s'+i,cat:x[0],text:x[1],pri:x[2],done:false,note:''}))};
@@ -5046,9 +5153,26 @@ async function load(){
     await tdLoad();await caLoad();try{const qa=await db.collection('asks').get();ASKS=qa.docs.map(d=>({id:d.id,...dat(d)}));drawAH()}catch(e){}DBOK=true;setStatus(`${L.tools.length} tools · ${CUTS.length} cuts`,true);
   }catch(e){setStatus('Load error: '+(e.message||e.code),false)}
   SF.invalidate();renderAll();drawSync();
+  if(LIVE.state==='empty')toast('Live database connected but empty — Settings → Live database → Upload this PC’s data',6000);
+  else if(LIVE.state==='live'&&LIVE.q.length)liveFlush();
 }
 /* Phase 8: header indicator — "Synced · 10:32" from localStorage 'sheets.lastSync'; amber when some tabs did not load, red when none did */
-function drawSync(){const el=$('#sync');if(!el)return;if(!SHEET_CFG.id){el.hidden=true;return}
+function drawSync(){const el=$('#sync');if(!el)return;
+ if(LIVE.state!=='off'){const hm=t=>{const d=t?new Date(t):null;return d&&!isNaN(d)?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):''},n=LIVE.q.length;let c='ok',t='',tip='Live database (Google Sheet). Settings → Live database';
+  if(LIVE.newer){c='warn';t='Newer data from another PC — click to reload';tip='Someone saved changes on another PC since this page loaded.'}
+  else if(LIVE.state==='loading'){c='';t='Connecting to live database…'}
+  else if(LIVE.state==='empty'){c='warn';t='Live database is empty — upload this PC’s data';tip='Settings → Live database → Upload this PC’s data'}
+  else if(!LIVE.key){c='warn';t='View only — changes stay on this PC';tip='Enter the write key in Settings → Live database to save changes for every PC'}
+  else if(LIVE.canWrite===false){c='err';t='Write key not accepted — not saving';tip=LIVE.err}
+  else if(LIVE.state==='cache'){c=n?'err':'warn';t=n?`Offline — ${n} change${n>1?'s':''} waiting to send`:'Live database not reached — using this PC’s copy';tip=LIVE.err+(n?'\nChanges are sent automatically when the connection is back.':'')}
+  else if(n&&LIVE.err&&!LIVE.busy){c='err';t=`Offline — ${n} change${n>1?'s':''} waiting to send`;tip=LIVE.err+'\nRetrying every 30 s; also sent automatically next time the app opens online.'}
+  else if(LIVE.busy||n){c='';t=`Saving${n?' '+n+' change'+(n>1?'s':''):''}…`}
+  else if(LIVE.err){c='err';t='Last save failed — retrying';tip=LIVE.err}
+  else{t='Live'+(LIVE.at?' · '+hm(LIVE.at):'')}
+  el.hidden=false;el.className='chip '+c;el.textContent=t;el.title=tip;el.style.cursor=(LIVE.newer||LIVE.state==='empty'||!LIVE.key||LIVE.canWrite===false)?'pointer':'';
+  el.onclick=()=>{if(LIVE.newer)return location.reload();if(LIVE.state==='empty'||!LIVE.key||LIVE.canWrite===false){show('settings')}};return}
+ el.onclick=null;
+ if(!SHEET_CFG.id){el.hidden=true;return}
  let t=null;try{t=localStorage.getItem('sheets.lastSync')}catch(e){}const d=t?new Date(t):null,hm=d&&!isNaN(d)?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'',S=SHEET_SYNC;
  const none=S.tried&&!S.got.length,part=S.tried&&S.got.length&&S.missing.length;
  el.hidden=false;el.className='chip '+(none?'err':part?'warn':'ok');
@@ -6192,17 +6316,40 @@ async function doRestore(lib){if(OFFLINE||!db)return toast('Offline — not save
   logChange('library','(all)','restore','',b.at||'',`Restore (safety copy lib/backup-${ts})${n?`; ${n} cuts added`:''}`);await saveCLOG()}
  catch(e){return toast(`Restore stopped part-way — your previous library is in lib/backup-${ts}: `+(e.message||e.code))}
  UNDO.length=0;SF.invalidate();await load();toast(`Library restored${n?` and ${n} cut${n===1?'':'s'} added`:''}`)}
+/* Settings → Live database */
+function liveCard(){const S=LIVE.state,n=LIVE.q.length,src=(()=>{try{return localStorage.getItem('live.url')?'this PC':'sheets.json'}catch(e){return ''}})();
+ const st=S==='off'?'Not set up — the app uses this PC’s copy only':S==='empty'?'Connected — the live database is empty':S==='cache'?'Not reached at start-up — using this PC’s copy'+(LIVE.err?' ('+esc(LIVE.err)+')':''):S==='live'?'Connected'+(LIVE.at?' · last sync '+new Date(LIVE.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):''):S;
+ const wr=!LIVE.key?'No write key on this PC — view only':LIVE.canWrite===false?'Write key not accepted':LIVE.canWrite?'Saving to the live database ✓':'Write key entered (not checked yet)';
+ return `<div class="card"><h2>Live database</h2><p class="mu">One live copy of all your data — library, cuts, settings, to-do — kept in your Google Sheet, so every PC sees the same thing without loading backups. Anyone with the app can view; saving needs the write key, typed once on each PC that may edit. Set-up steps: User Guide → Live database.</p>
+ <div class="g"><div><label for="lv_url">Web app URL${src?` <span class="mu">(from ${src})</span>`:''}</label><input id="lv_url" value="${esc(LIVE.url)}" placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false"></div><div><label for="lv_key">Write key (this PC only)</label><input id="lv_key" type="password" value="${esc(LIVE.key)}" autocomplete="off" placeholder="leave empty for view only"></div></div>
+ <p class="mu">Status: <b>${st}</b> · ${wr}${n?` · <b>${n}</b> change${n>1?'s':''} waiting to send`:''}</p>
+ <p class="row"><button class="b s" id="lv_save">Save &amp; test</button>${S==='empty'?'<button class="b" id="lv_up">Upload this PC’s data</button>':''}${S==='live'||S==='cache'?'<button class="b s sm" id="lv_rep">Replace live data with this PC’s copy…</button>':''}<span class="mu" id="lv_msg"></span></p></div>`}
+async function liveClick(e){const id=e.target.id,m=$('#lv_msg'),say=t=>{if(m)m.textContent=t};
+ if(id==='lv_save'){const u=$('#lv_url').value.trim(),k=$('#lv_key').value.trim();
+  const fromCfg=u&&u===(SHEET_CFG.live||'');
+  if(u&&!fromCfg&&!/^https:\/\/script\.google(usercontent)?\.com\//.test(u)){say('That is not an Apps Script web app URL (it should start https://script.google.com/macros/s/…)');return true}
+  try{if(u&&!fromCfg)localStorage.setItem('live.url',u);else localStorage.removeItem('live.url');if(k)localStorage.setItem('live.key',k);else localStorage.removeItem('live.key')}catch(x){}
+  liveCfg({live:SHEET_CFG.live});if(!LIVE.url){say('Saved — no URL, so this PC works on its own copy. Reload to apply.');return true}
+  say('Testing…');try{const r=await livePost({action:'check',token:LIVE.key});if(!r.ok)throw new Error(r.error||'no answer');
+   LIVE.canWrite=LIVE.key?!!r.canWrite:null;say(`✓ Reached the live database (revision ${r.rev}).`+(!r.keySet?' No write key set yet — in the Sheet: CNC Shop → Set write key.':LIVE.key?(r.canWrite?' Write key accepted.':' Write key NOT accepted.'):' View only on this PC.')+' Reload the app to load the live data.');drawSync()}
+  catch(x){say('Could not reach it: '+(x.message||x)+'. Check the URL, and that the deployment has “Who has access: Anyone”.')}return true}
+ if(id==='lv_up'||id==='lv_rep'){const rep=id==='lv_rep';
+  if(rep&&LIVE._sure!=='rep'){LIVE._sure='rep';say('This overwrites the live data for every PC with this PC’s copy (the Drive backup keeps the old one). Click again to confirm.');return true}
+  LIVE._sure=null;e.target.disabled=true;say('Uploading…');
+  try{const n=await liveUpload(rep);toast('Live database ready ✓');drawSettings();const m2=$('#lv_msg');if(m2)m2.textContent=`✓ Uploaded ${n} records. Every PC now loads this data.`}
+  catch(x){e.target.disabled=false;say('Upload failed: '+(x.message||x))}return true}
+ return false}
 function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><p class="mu">Defaults used by Speeds &amp; Feeds, the Log cut suggestion and Ask AI. Saved in lib/settings.</p>
  <div class="g"><div><label for="set_ra">Ra (µm) — finishing target for ball-nose / lollipop stepover</label><input id="set_ra" type="number" step="any" min="0.05" inputmode="decimal" value="${esc(SET.ra)}"></div><div><label for="set_rak">Cusp / Ra multiplier k (ra_cusp_k)</label><input id="set_rak" type="number" step="any" min="0.1" inputmode="decimal" value="${esc(SET.raK)}"></div></div>
  <p class="mu">Cusp height h [mm] = Ra [µm] × k ÷ 1000. <b>k = 1</b> means cusp height equals the Ra target (conservative); <b>k = 4</b> means the scallop Ra is cusp ÷ 4 (Ra ≈ h/4 handbook convention). Used by the ball-nose stepover in Speeds &amp; Feeds, the Log cut suggestion and Formulas → Ball nose: stepover for target Ra.</p>
  <fieldset><legend>Speed preference</legend><div class="row">${[['balanced','Balanced'],['life','Prefer tool life'],['cycle','Prefer cycle time']].map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="set_pref" value="${k}"${SET.pref===k?' checked':''}> ${l}</label>`).join('')}</div>
  <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>AI (Ollama on this PC)</h2><p class="mu">Ask AI and Learn AI run on Ollama on this computer — free, no limits, and nothing leaves the PC. Pick a model you have pulled; it must support tools (for example <code>qwen3:8b</code> or <code>llama3.1:8b</code>). Settings are kept in this browser only.</p>
  <div class="g"><div><label for="set_olurl">Ollama address</label><input id="set_olurl" value="${esc(olCfg().url)}" spellcheck="false"></div><div><label for="set_olmodel">Model</label><select id="set_olmodel"><option>${esc(olCfg().model)}</option></select></div></div>
- <p class="row"><button class="b s" id="ol_test">Test connection</button><span class="mu" id="ol_msg"></span></p></div><div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.</p>
+ <p class="row"><button class="b s" id="ol_test">Test connection</button><span class="mu" id="ol_msg"></span></p></div>${liveCard()}<div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.${LIVE.state==='live'?' <b>The live database is connected, so these tabs are now its readable copy: the app rewrites them when it saves and does not load them at start-up.</b>':''}</p>
  <div class="g"><div><label>Sheet ID (from sheets.json)</label><input id="sh_id" value="${esc(SHEET_CFG.id||'(not set)')}" readonly></div><div><label>Last sync</label><input id="sh_last" value="${esc(sheetLastSync())}" readonly></div></div>
  <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>${n9Card()}`;
  olTest(true);
- $('#lbody').onclick=async e=>{if(e.target.id==='ol_test'){await olTest();return}if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
+ $('#lbody').onclick=async e=>{if(await liveClick(e))return;if(e.target.id==='ol_test'){await olTest();return}if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
  $('#lbody').onchange=e=>{if(e.target.id==='set_olurl'||e.target.id==='set_olmodel'){const k=e.target.id==='set_olurl'?'ollama.url':'ollama.model',v=e.target.value.trim();try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch(x){}const m=$('#ol_msg');if(m)m.textContent='Saved ✓';if(k==='ollama.url')olTest();return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
 /* ---------- Phase 9: normalise the speeds-and-feeds data (one-time migration) ----------
    lib/baseline: rows with identical values that differ in one key column are merged into one row whose cell lists the
@@ -7156,7 +7303,13 @@ function renderSetup(){const jobs=[...new Set(CUTS.map(c=>c.job).filter(Boolean)
  $('#sj').onchange=draw;$('#sp').onclick=()=>window.print();draw()}
 
 /* ---------- User guide ---------- */
-function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Where things are</h2><ul><li><b>Shop floor</b>: Speeds &amp; Feeds, Log cut, Cut database, Setup sheet.</li><li><b>Data</b>: <b>Cutting data</b> (Sources, Bands, Baselines, Material limits) · <b>Cycles</b> (Cycle pages, Cycle tree) · <b>Library</b> (tools, materials, holders, machines, tooling audit, change log) · <b>Rules</b> · <b>Formulas</b>.</li><li><b>AI</b>: Ask AI, Learn AI, Prompts (the instructions each AI uses).</li><li><b>App</b>: Settings (API key, Google Sheet, backup / restore), To-do, this guide.</li>
+function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Live database — one-time set-up</h2><ol>
+<li>Open your Google Sheet → <b>Extensions → Apps Script</b>. Delete what is in <code>Code.gs</code> and paste in the file <code>apps-script/Code.gs</code> from the GitHub repo. Save.</li>
+<li><b>Deploy → New deployment</b> → gear icon → <b>Web app</b>. Execute as: <b>Me</b>. Who has access: <b>Anyone</b>. Deploy, allow the permissions Google asks for, and copy the <b>Web app URL</b>.</li>
+<li>Reload the Sheet. A <b>CNC Shop</b> menu appears → <b>Set write key</b> → choose a key (at least 6 characters).</li>
+<li>In the app on the PC with your most up-to-date data: <b>Settings → Live database</b> → paste the URL and the write key → <b>Save &amp; test</b> → reload → <b>Upload this PC’s data</b>.</li>
+<li>On every other PC: just open the app. It loads the live data. Type the write key in Settings only on PCs that should be able to save.</li></ol>
+<p class="mu">The header chip shows <b>Live</b> when saved, <b>Saving…</b> while sending, <b>Offline — n changes waiting</b> when the database can’t be reached (they are sent automatically later), and <b>View only</b> on a PC without the write key. If another PC saves while you have the app open, the chip offers a reload. Each day a full copy is saved to Google Drive → <i>CNC Shop backups</i> (last 30 kept). The readable Sheet tabs (tools, materials, cycles…) are rewritten automatically whenever the app saves that table — don’t edit them by hand any more; edit in the app.</p></div><div class="card"><h2>Where things are</h2><ul><li><b>Shop floor</b>: Speeds &amp; Feeds, Log cut, Cut database, Setup sheet.</li><li><b>Data</b>: <b>Cutting data</b> (Sources, Bands, Baselines, Material limits) · <b>Cycles</b> (Cycle pages, Cycle tree) · <b>Library</b> (tools, materials, holders, machines, tooling audit, change log) · <b>Rules</b> · <b>Formulas</b>.</li><li><b>AI</b>: Ask AI, Learn AI, Prompts (the instructions each AI uses).</li><li><b>App</b>: Settings (API key, Google Sheet, backup / restore), To-do, this guide.</li>
 <li><b>Locks</b>: every editing page (Sources, Bands, Baselines, Material limits, Cycle pages, Cycle tree, Rules, Prompts, Library data) opens <b>locked</b> — view only, filters and downloads still work. Press <b>Unlock to edit</b>; when done press <b>Save &amp; lock</b>, which saves anything pending, tidies the rows (numbers rounded the same way, tables sorted) and locks the page again. Saving Rules or Cycle pages with their own Save button locks them too.</li>
 <li><b>New materials and cutter types</b> are picked up automatically (at start-up and when you edit the library): they get generic band tables in Bands (catalogue, else typical model — marked <i>Generic (auto)</i>), blank tables in each custom source, and a blank Material limits row marked <i>new · auto</i>. Check them, then download the CSVs for the Sheet.</li></ul></div>
 <div class="card"><h2>Speeds &amp; Feeds</h2><ul><li>Every recommendation starts from a <b>band</b> reference (roughing Vc and f/edge at full engagement for a material › cutter type › Ø range) and goes through the same <b>baseline</b> formula: operation ratio, the sub-cycle's Vc × / f/edge ×, chip thinning at light ae, the square / bull-nose factor and the material limits. Sources only differ in where the reference comes from.</li><li><b>Sources</b>: <span class="src BAND">BAND</span> your band tables · <span class="src CUTS">CUTS</span> your <i>Verified</i> cuts, worked back to a reference and averaged (median) · <span class="src MFR">MFR</span> manufacturer catalogue · <span class="src TYP">TYP</span> typical values · <span class="src CUS">custom</span> sources you make. The first enabled source in your order that has data is used; set the order and switch sources on/off in Cutting data → Sources.</li><li>The grid shows a column for every source so you can compare them. In the calculator, the source chips let you force one source; <b>Auto</b> goes back to the order.</li><li><b>Square vs bull nose</b>: end mills, bull-nose and similar tools with a corner radius have their own tables (e.g. BX and BX-R). Bull noses rough harder (f/edge ×1.15 by default); square end mills finish better. The factors are in Cutting data → Baselines.</li><li><b>Drills, reamers and taps</b> have their own band tables with feed per rev (f/rev). Taps feed at the pitch, so the TAP table only holds Vc.</li><li><b>Calculator</b>: change ae or ap and Vc / fz follow. <b>Open in Log cut</b> fills the log form — nothing is saved until you press Save there.</li><li>Hover any value for its full working: reference, source, each factor and limit.</li></ul></div>
@@ -7207,7 +7360,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-15.1';
+const APP_V='2026-10-15.2';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
