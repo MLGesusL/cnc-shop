@@ -19,6 +19,14 @@
      stays up to date without manual CSV imports.
    • Once a day it saves a full JSON copy to a Drive folder called
      "CNC Shop backups" (last 30 kept).
+   • Profiles (groundwork): people sign in with a 2-digit account and a
+     3-digit PIN. Roles: admin (everything), editor (logs and edits their
+     OWN cuts, cannot verify), viewer (reads only). Not signed in = viewer.
+     PINs are stored hashed in the script's private properties, never in
+     the readable data. 5 wrong PINs lock that account for 15 minutes.
+     The write key still works as the owner's master key (admin).
+   After changing this file: Deploy → Manage deployments → ✎ Edit →
+   Version: New version → Deploy (the URL stays the same).
    ===================================================================== */
 
 const DB_TAB = '_db';
@@ -65,17 +73,30 @@ function doGet(e) {
 function doPost(e) {
   let b;
   try { b = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: 'Bad request' }); }
-  if (b.action === 'check') return out_({ ok: true, rev: getRev_(), canWrite: keyOk_(b.token), keySet: !!getKey_() });
-  if (!getKey_()) return out_({ ok: false, code: 'nokey', error: 'No write key set yet — in the Sheet use CNC Shop → Set write key' });
-  if (!keyOk_(b.token)) return out_({ ok: false, code: 'auth', error: 'Write key not accepted' });
+  const who = tokInfo_(b.token);
+  if (b.action === 'check') return out_({ ok: true, rev: getRev_(), canWrite: !!who && who.role !== 'viewer', role: who ? who.role : 'viewer', keySet: !!getKey_(), profiles: true });
+  if (b.action === 'login') return out_(login_(b.acct, b.pin));
+  if (b.action === 'logout') { if (typeof b.token === 'string' && b.token) CacheService.getScriptCache().remove('s_' + b.token); return out_({ ok: true }); }
+  if (/^profiles\./.test(b.action)) return out_(profilesAction_(b, who));
+  if (!getKey_() && !Object.keys(profiles_()).length) return out_({ ok: false, code: 'nokey', error: 'No write key set yet — in the Sheet use CNC Shop → Set write key' });
+  if (!who) return out_({ ok: false, code: 'auth', error: b.token && String(b.token).length > 40 ? 'Signed out — sign in again' : 'Write key not accepted' });
+  if (who.role === 'viewer') return out_({ ok: false, code: 'role', error: 'Viewers cannot save' });
   if (b.action !== 'write') return out_({ ok: false, error: 'Unknown action' });
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) return out_({ ok: false, code: 'busy', error: 'Database busy — try again' });
   try {
-    const ops = Array.isArray(b.ops) ? b.ops : [];
+    let ops = Array.isArray(b.ops) ? b.ops : [];
+    if (b.replaceAll === true && who.role !== 'admin') return out_({ ok: false, code: 'role', error: 'Only an administrator can replace all data' });
     const all = (b.replaceAll === true) ? {} : readAll_();
-    const sheets = {};
+    const sheets = {}, rejected = [];
+    /* editors: only their own cuts (never the Verified tick), plus the change log and Ask AI history */
+    if (who.role === 'editor') ops = ops.filter(function (op) {
+      const k = (op && op.key) || '', cur = all[k];
+      const ok = /^(changelog|asks)\//.test(k) || (/^cuts\//.test(k) && (!cur || cur.owner === who.acct) &&
+        (op.op === 'del' || (op.value && op.value.owner === who.acct && !!op.value.verified === !!(cur && cur.verified))));
+      if (!ok) rejected.push(k); return ok;
+    });
     ops.forEach(function (op) {
       if (!op || typeof op.key !== 'string' || !op.key) return;
       if (op.op === 'del') delete all[op.key];
@@ -86,7 +107,7 @@ function doPost(e) {
     Object.keys(sheets).forEach(function (t) { writeTab_(t, sheets[t]); });
     const rev = bumpRev_();
     try { backup_(false); } catch (err) { /* a failed backup never blocks a save */ }
-    return out_({ ok: true, rev: rev, n: ops.length });
+    return out_({ ok: true, rev: rev, n: ops.length, rejected: rejected });
   } catch (err) {
     return out_({ ok: false, error: String(err) });
   } finally { lock.releaseLock(); }
@@ -148,6 +169,52 @@ function writeTab_(name, rows) {
   rg.setNumberFormat('@');
   rg.setValues(vals);
   sh.setFrozenRows(1);
+}
+
+/* ---------- profiles ---------- */
+const ROLES = ['admin', 'editor', 'viewer'];
+function profiles_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('PROFILES') || '{}'); } catch (err) { return {}; } }
+function saveProfiles_(p) { PropertiesService.getScriptProperties().setProperty('PROFILES', JSON.stringify(p)); }
+function hash_(salt, pin) { return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + pin)); }
+/* who is calling: the write key = owner (admin); else a sign-in session (6 h) */
+function tokInfo_(t) {
+  if (keyOk_(t)) return { role: 'admin', acct: '', name: 'Owner (write key)' };
+  if (typeof t !== 'string' || !t) return null;
+  const c = CacheService.getScriptCache().get('s_' + t); if (!c) return null;
+  const s = JSON.parse(c), p = profiles_()[s.acct]; return p ? { role: p.role, acct: s.acct, name: p.name } : null;
+}
+function login_(acct, pin) {
+  acct = String(acct || ''); pin = String(pin || '');
+  if (!/^\d{2}$/.test(acct) || !/^\d{3}$/.test(pin)) return { ok: false, error: 'Account is 2 digits, PIN is 3 digits' };
+  const P = PropertiesService.getScriptProperties(), lk = 'LOCK_' + acct, lock = JSON.parse(P.getProperty(lk) || '{"n":0,"until":0}');
+  if (lock.until > Date.now()) return { ok: false, error: 'Too many wrong PINs — try again in ' + Math.ceil((lock.until - Date.now()) / 60000) + ' min' };
+  const pr = profiles_()[acct];
+  if (!pr || hash_(pr.salt, pin) !== pr.hash) { lock.n++; if (lock.n >= 5) { lock.until = Date.now() + 15 * 60000; lock.n = 0; } P.setProperty(lk, JSON.stringify(lock)); return { ok: false, error: 'Account or PIN not recognised' }; }
+  P.deleteProperty(lk);
+  const token = Utilities.getUuid() + Utilities.getUuid();
+  CacheService.getScriptCache().put('s_' + token, JSON.stringify({ acct: acct }), 21600);
+  return { ok: true, token: token, acct: acct, name: pr.name, role: pr.role, hours: 6 };
+}
+function profilesAction_(b, who) {
+  if (!who || who.role !== 'admin') return { ok: false, code: 'role', error: 'Only an administrator can manage profiles' };
+  const p = profiles_();
+  if (b.action === 'profiles.list') return { ok: true, profiles: Object.keys(p).sort().map(function (a) { return { acct: a, name: p[a].name, role: p[a].role }; }) };
+  const acct = String(b.acct || '');
+  if (!/^\d{2}$/.test(acct)) return { ok: false, error: 'Account must be 2 digits' };
+  if (b.action === 'profiles.del') {
+    const admins = Object.keys(p).filter(function (a) { return p[a].role === 'admin'; });
+    if (p[acct] && p[acct].role === 'admin' && admins.length === 1 && !keyOk_(b.token)) return { ok: false, error: 'Keep at least one administrator' };
+    delete p[acct]; saveProfiles_(p); return { ok: true };
+  }
+  if (b.action === 'profiles.set') {
+    const role = ROLES.indexOf(b.role) >= 0 ? b.role : 'viewer', name = String(b.name || '').trim().slice(0, 40) || ('Account ' + acct), pin = b.pin == null ? '' : String(b.pin);
+    if (!p[acct] && !/^\d{3}$/.test(pin)) return { ok: false, error: 'A new account needs a 3-digit PIN' };
+    if (pin && !/^\d{3}$/.test(pin)) return { ok: false, error: 'PIN must be 3 digits' };
+    const cur = p[acct] || {}; cur.name = name; cur.role = role;
+    if (pin) { cur.salt = Utilities.getUuid(); cur.hash = hash_(cur.salt, pin); }
+    p[acct] = cur; saveProfiles_(p); return { ok: true };
+  }
+  return { ok: false, error: 'Unknown action' };
 }
 
 /* ---------- revision, key, backups ---------- */

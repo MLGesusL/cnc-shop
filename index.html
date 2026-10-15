@@ -413,7 +413,7 @@ button.mf-row{cursor:pointer}button.mf-row:hover{background:var(--mfl)}.mf-ico{c
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
-<div><header class="top"><h1 id="pt">Ask AI</h1><span class="chip" id="st">Loading…</span><span class="chip" id="sync" hidden></span><span class="chip err" id="offc" hidden>Offline mode — changes will not be saved</span><button class="b s sm" id="newv" hidden title="A newer version of the app is available">New version — reload</button><span class="sp"></span></header>
+<div><header class="top"><h1 id="pt">Ask AI</h1><span class="chip" id="st">Loading…</span><span class="chip" id="sync" hidden></span><button class="b s sm" id="who" hidden title="Sign in with your account and PIN"></button><span class="chip err" id="offc" hidden>Offline mode — changes will not be saved</span><button class="b s sm" id="newv" hidden title="A newer version of the app is available">New version — reload</button><span class="sp"></span></header>
 <main>
 <section class="sec" id="ask"></section><section class="sec" id="data"></section><section class="sec" id="cycles"></section><section class="sec" id="rules"></section><section class="sec" id="prompts"></section><section class="sec" id="settings"></section><section class="sec" id="log"></section><section class="sec" id="cuts"></section><section class="sec" id="cheat"></section><section class="sec" id="form"></section><section class="sec" id="learn"></section><section class="sec" id="lib"></section><section class="sec" id="setup"></section><section class="sec" id="todo"></section><section class="sec" id="guide"></section>
 </main></div></div>
@@ -2121,6 +2121,7 @@ const CF = (() => {
     ['mat', 'Material', c => c.material],
     ['tool', 'Tool', c => c.tool],
     ['typ', 'Type', (c, x) => x.sfxOf ? x.sfxOf(c.tool) : ''],
+    ['who', 'Logged by', c => c.ownerName || (c.owner ? 'Account ' + c.owner : 'Main (no account)')],
     ['fam', 'Family', c => (typeof famLabel === 'function' ? famLabel(c.cycleFamily) : c.cycleFamily)],
     ['sub', 'Sub-cycle', c => c.subcycleKey],
     /* tagged cuts carry the tree op (rough / semi / finish / drill …); untagged ones their legacy op, lower-cased so both agree */
@@ -4749,6 +4750,12 @@ const DB = {
    • Library tables are also written to their readable Sheet tabs, so the Sheet never needs a manual import. */
 const LIVE = { url:'', key:'', state:'off', rev:0, q:[], busy:false, err:'', at:'', canWrite:null, newer:false, retry:null, sheetKeys:[] };
 const LIVE_QKEY = '_liveq', LIVE_BATCH = 1500000;
+/* 2026-10-15 profiles: a sign-in session (2-digit account + 3-digit PIN, checked by the Apps Script). The write key on a PC
+   is the owner's master key (admin). Nobody signed in and no key = viewer. */
+let PROF=null;try{const x=JSON.parse(localStorage.getItem('live.sess')||'null');if(x&&x.token&&x.exp>Date.now())PROF=x}catch(e){}
+const liveTok=()=>LIVE.key||(PROF&&PROF.exp>Date.now()?PROF.token:'');
+const ROLE=()=>LIVE.key?'admin':PROF&&PROF.exp>Date.now()?PROF.role:'viewer';
+const canEditCut=c=>ROLE()==='admin'||(ROLE()==='editor'&&PROF&&c&&c.owner===PROF.acct);
 function liveCfg(cfg){ let u='', k=''; try{ u=localStorage.getItem('live.url')||''; k=localStorage.getItem('live.key')||''; }catch(e){}
   LIVE.url = (u || (cfg && cfg.live) || '').trim(); LIVE.key = k; return LIVE.url; }
 function _liveFetch(url, opt, ms){ const c = new AbortController(), t = setTimeout(() => c.abort(), ms||30000);
@@ -4769,19 +4776,22 @@ function liveOp(op, p, v){ const o = { op, key:p };
   return o; }
 /* queue a change for the live database (latest value per record wins) */
 function liveQ(op, p, v){
-  if(!LIVE.url || LIVE.state === 'off' || LIVE.state === 'empty' || LIVE.state === 'loading' || !LIVE.key) return;
+  if(!LIVE.url || LIVE.state === 'off' || LIVE.state === 'empty' || LIVE.state === 'loading' || !liveTok() || ROLE() === 'viewer') return;
   LIVE.q = LIVE.q.filter(x => x.key !== p); LIVE.q.push({ op, key:p, value: op==='put' ? v : undefined });
   liveSaveQ(); clearTimeout(LIVE._t); LIVE._t = setTimeout(liveFlush, 400); drawSync(); }
 function liveSaveQ(){ _idbPut(LIVE_QKEY, LIVE.q).catch(() => {}); }
 async function liveFlush(){
-  if(LIVE.busy || !LIVE.q.length || !LIVE.key || !LIVE.url || LIVE.state === 'empty') return;
+  if(LIVE.busy || !LIVE.q.length || !liveTok() || !LIVE.url || LIVE.state === 'empty') return;
   LIVE.busy = true; drawSync();
   try{
     while(LIVE.q.length){
       const batch = []; let size = 0;
       for(const x of LIVE.q){ const op = liveOp(x.op, x.key, x.value), s = JSON.stringify(op).length; if(batch.length && size + s > LIVE_BATCH) break; batch.push({ src:x, op }); size += s; }
-      const r = await livePost({ action:'write', token: LIVE.key, ops: batch.map(b => b.op) });
-      if(!r.ok){ LIVE.err = r.error || 'not saved'; if(r.code === 'auth' || r.code === 'nokey'){ LIVE.canWrite = false; } throw Object.assign(new Error(LIVE.err), { code:r.code }); }
+      const r = await livePost({ action:'write', token: liveTok(), ops: batch.map(b => b.op) });
+      if(!r.ok){ LIVE.err = r.error || 'not saved';
+        if(r.code === 'auth' && !LIVE.key && PROF){ profSignOut(true); LIVE.q = []; liveSaveQ(); toast('Signed out — sign in again to save', 6000); throw Object.assign(new Error(LIVE.err), { code:r.code }); }
+        if(r.code === 'auth' || r.code === 'nokey' || r.code === 'role'){ LIVE.canWrite = false; } throw Object.assign(new Error(LIVE.err), { code:r.code }); }
+      if(Array.isArray(r.rejected) && r.rejected.length) toast(`Not saved for everyone — your role can’t change: ${r.rejected.slice(0,3).join(', ')}${r.rejected.length>3?' …':''}`, 7000);
       const sent = new Set(batch.map(b => b.src));
       LIVE.q = LIVE.q.filter(x => !sent.has(x)); liveSaveQ();
       LIVE.rev = Math.max(LIVE.rev, +r.rev || 0); LIVE.canWrite = true; LIVE.err = ''; LIVE.at = new Date().toISOString();
@@ -4789,7 +4799,7 @@ async function liveFlush(){
     }
   }catch(e){
     LIVE.err = e.message || String(e);
-    if(e.code !== 'auth' && e.code !== 'nokey'){ clearTimeout(LIVE.retry); LIVE.retry = setTimeout(liveFlush, 30000); }
+    if(e.code !== 'auth' && e.code !== 'nokey' && e.code !== 'role'){ clearTimeout(LIVE.retry); LIVE.retry = setTimeout(liveFlush, 30000); }
   }finally{ LIVE.busy = false; drawSync(); }
 }
 /* start-up: send anything waiting from last time, then load the live copy into the cache */
@@ -4799,7 +4809,7 @@ async function liveInit(cfg){
   try{ const q = await new Promise(res => { _idbOpen().then(d => { const r = d.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(LIVE_QKEY); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }, () => res(null)); });
     LIVE.q = Array.isArray(q) ? q : []; }catch(e){ LIVE.q = []; }
   try{
-    if(LIVE.q.length && LIVE.key){ LIVE.state = 'cache'; await liveFlush(); }
+    if(LIVE.q.length && liveTok()){ LIVE.state = 'cache'; await liveFlush(); }
     const r = await liveGet('all'); if(!r || !r.ok) throw new Error((r && r.error) || 'no answer');
     LIVE.rev = +r.rev || 0; const data = r.data || {}, keys = Object.keys(data);
     if(!keys.length){ LIVE.state = 'empty'; return; }
@@ -4835,10 +4845,25 @@ async function liveCheckNewer(){
   if(LIVE.state !== 'live' || LIVE.q.length || LIVE.busy || document.hidden) return;
   try{ const r = await liveGet('rev'); if(r && r.ok && +r.rev > LIVE.rev){ LIVE.newer = true; drawSync(); } }catch(e){}
 }
+/* ---- sign in / out (2-digit account, 3-digit PIN) ---- */
+function drawWho(){const b=document.getElementById('who');if(!b)return;if(!LIVE.url){b.hidden=true;return}b.hidden=false;
+ const p=PROF&&PROF.exp>Date.now()?PROF:null;b.textContent=LIVE.key&&!p?'Owner (write key)':p?`${p.name} · ${p.role}`:'Sign in';b.title=p?'Signed in as account '+p.acct+' — click to sign out':LIVE.key?'This PC has the write key (full access)':'Sign in with your account and PIN';
+ b.onclick=()=>{if(p)return profSignOut();if(!LIVE.key)profOpen()}}
+function profSignOut(quiet){const t=PROF&&PROF.token;PROF=null;try{localStorage.removeItem('live.sess')}catch(e){}if(t&&LIVE.url)livePost({action:'logout',token:t}).catch(()=>{});drawWho();drawSync();if(!quiet)toast('Signed out — view only');try{renderCuts()}catch(e){}}
+function profOpen(){let d=document.getElementById('profdlg');if(d){d.remove();return}d=document.createElement('div');d.id='profdlg';
+ d.style.cssText='position:fixed;top:60px;right:16px;z-index:50;background:var(--card,#fff);border:1px solid var(--bd);border-radius:10px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,.18);width:260px';
+ d.innerHTML=`<h3 style="margin:0 0 8px">Sign in</h3><div class="g" style="grid-template-columns:1fr 1fr"><div><label for="pf_a">Account</label><input id="pf_a" inputmode="numeric" maxlength="2" pattern="\\d{2}" autocomplete="username" placeholder="00"></div><div><label for="pf_p">PIN</label><input id="pf_p" type="password" inputmode="numeric" maxlength="3" autocomplete="current-password" placeholder="•••"></div></div><p class="row" style="margin:10px 0 0"><button class="b" id="pf_go">Sign in</button><button class="b s" id="pf_x">Cancel</button></p><p class="mu" id="pf_m" style="margin:6px 0 0;font-size:13px">Not signed in = view only.</p>`;
+ document.body.appendChild(d);const a=d.querySelector('#pf_a'),pn=d.querySelector('#pf_p'),m=d.querySelector('#pf_m');a.focus();
+ const go=async()=>{if(!/^\d{2}$/.test(a.value)||!/^\d{3}$/.test(pn.value)){m.textContent='Account is 2 digits, PIN is 3 digits.';return}m.textContent='Checking…';
+  try{const r=await livePost({action:'login',acct:a.value,pin:pn.value});if(!r.ok){m.textContent=r.error||'Not recognised';pn.value='';return}
+   PROF={token:r.token,acct:r.acct,name:r.name,role:r.role,exp:Date.now()+(r.hours||6)*3600e3-60e3};try{localStorage.setItem('live.sess',JSON.stringify(PROF))}catch(e){}
+   d.remove();LIVE.canWrite=r.role!=='viewer'?null:false;drawWho();drawSync();toast(`Signed in as ${r.name} (${r.role})`);try{renderCuts()}catch(e){}}
+  catch(e){m.textContent=/action|Unknown/i.test(String(e.message))?'The live database script needs updating for profiles.':'Could not reach the live database: '+(e.message||e)}};
+ d.querySelector('#pf_go').onclick=go;d.querySelector('#pf_x').onclick=()=>d.remove();pn.onkeydown=e=>{if(e.key==='Enter')go()};a.oninput=()=>{if(a.value.length===2)pn.focus()}}
 window.addEventListener('focus', liveCheckNewer);
 setInterval(liveCheckNewer, 120000);
 window.addEventListener('online', () => { if(LIVE.q.length) liveFlush(); });
-window.addEventListener('beforeunload', e => { if(LIVE.q.length && LIVE.key && LIVE.state !== 'empty'){ e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if(LIVE.q.length && liveTok() && LIVE.state !== 'empty'){ e.preventDefault(); e.returnValue = ''; } });
 
 /* ---------- 2. AI (replaces Claude with Ollama) ---------- */
 const OLLAMA_URL   = 'http://localhost:11434';
@@ -5264,15 +5289,15 @@ function drawSync(){const el=$('#sync');if(!el)return;
   if(LIVE.newer){c='warn';t='Newer data from another PC — click to reload';tip='Someone saved changes on another PC since this page loaded.'}
   else if(LIVE.state==='loading'){c='';t='Connecting to live database…'}
   else if(LIVE.state==='empty'){c='warn';t='Live database is empty — upload this PC’s data';tip='Settings → Live database → Upload this PC’s data'}
-  else if(!LIVE.key){c='warn';t='View only — changes stay on this PC';tip='Enter the write key in Settings → Live database to save changes for every PC'}
+  else if(ROLE()==='viewer'){c='warn';t='View only — changes stay on this PC';tip='Sign in (top right), or enter the write key in Settings → Live database, to save changes for every PC'}
   else if(LIVE.canWrite===false){c='err';t='Write key not accepted — not saving';tip=LIVE.err}
   else if(LIVE.state==='cache'){c=n?'err':'warn';t=n?`Offline — ${n} change${n>1?'s':''} waiting to send`:'Live database not reached — using this PC’s copy';tip=LIVE.err+(n?'\nChanges are sent automatically when the connection is back.':'')}
   else if(n&&LIVE.err&&!LIVE.busy){c='err';t=`Offline — ${n} change${n>1?'s':''} waiting to send`;tip=LIVE.err+'\nRetrying every 30 s; also sent automatically next time the app opens online.'}
   else if(LIVE.busy||n){c='';t=`Saving${n?' '+n+' change'+(n>1?'s':''):''}…`}
   else if(LIVE.err){c='err';t='Last save failed — retrying';tip=LIVE.err}
   else{t='Live'+(LIVE.at?' · '+hm(LIVE.at):'')}
-  el.hidden=false;el.className='chip '+c;el.textContent=t;el.title=tip;el.style.cursor=(LIVE.newer||LIVE.state==='empty'||!LIVE.key||LIVE.canWrite===false)?'pointer':'';
-  el.onclick=()=>{if(LIVE.newer)return location.reload();if(LIVE.state==='empty'||!LIVE.key||LIVE.canWrite===false){show('settings')}};return}
+  el.hidden=false;el.className='chip '+c;el.textContent=t;el.title=tip;el.style.cursor=(LIVE.newer||LIVE.state==='empty'||ROLE()==='viewer'||LIVE.canWrite===false)?'pointer':'';
+  el.onclick=()=>{if(LIVE.newer)return location.reload();if(ROLE()==='viewer')return profOpen();if(LIVE.state==='empty'||LIVE.canWrite===false){show('settings')}};drawWho();return}
  el.onclick=null;
  if(!SHEET_CFG.id){el.hidden=true;return}
  let t=null;try{t=localStorage.getItem('sheets.lastSync')}catch(e){}const d=t?new Date(t):null,hm=d&&!isNaN(d)?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'',S=SHEET_SYNC;
@@ -5637,11 +5662,13 @@ async function saveCut(){const c=currentCut();if(!c.material||!c.tool)return $('
   if(lt){if(!lt.operation){$('#lgtagerr').innerHTML='<div class="bad" style="font-weight:500">Pick the operation for this sub-cycle (it is usable in more than one).</div>';return $('#msg').textContent='Not saved — operation missing.'}
    const err=tagErrs(c,lt);if(err.length){$('#lgtagerr').innerHTML=`<div class="bad" style="font-weight:500">${err.map(esc).join('<br>')}</div>`;return $('#msg').textContent='Not saved — fix the sub-cycle.'}
    Object.assign(c,TAGS.fieldsFor({...lt,band:bandFor(c)},c,'manual'));if(!c.cycle){const nm=cycleNameFor(lt.subcycleKey);if(nm)c.cycle=nm}}
+  if(PROF&&PROF.exp>Date.now()&&!LIVE.key){c.owner=PROF.acct;c.ownerName=PROF.name}
   try{const r=await db.collection('cuts').add(c);CUTS.push({id:r.id,...c});SF.invalidate();$('#msg').textContent='Saved ✓';toast('Cut saved');if(LOGPOF){const pf=LOGPOF;LOGPOF=null;attachPof(pf,r.id).then(ok=>{if(ok)toast('Cut saved · POF '+pf.name+' attached')})}setStatus(`${L.tools.length} tools · ${CUTS.length} cuts`,true);renderCuts();renderCheat();calc()}catch(e){$('#msg').textContent='Save failed: '+(e.message||e.code)}}
 
 /* Verified flag (decision 2026-10-12): only Verified cuts may feed a recommendation; the change is logged */
 document.addEventListener('change',async e=>{const id=e.target.dataset&&e.target.dataset.cver;if(!id)return;const c=CUTS.find(x=>x.id===id);if(!c)return;const v=e.target.checked;
  if(OFFLINE||!db){e.target.checked=!v;return toast('Offline — not saved')}
+ if(LIVE.state!=='off'&&ROLE()!=='admin'){e.target.checked=!v;return toast('Only an administrator can verify cuts')}
  try{await db.collection('cuts').doc(id).update({verified:v});c.verified=v;logChange('cuts',`${c.date||''} ${c.tool||''} ${c.material||''}`.trim(),'verified',v?'false':'true',v?'true':'false','Cut database',id);saveCLOG();SF.invalidate();renderCheat();if($('#cbody'))drawCutRows();toast(v?'Cut verified — it can now feed recommendations':'Verification removed — reference only')}
  catch(x){e.target.checked=!v;toast('Save failed: '+(x.message||x.code))}});
 /* ---------- tool geometry card ---------- */
@@ -5673,7 +5700,7 @@ function trend(c){const k=c.tool+'|'+c.material+'|'+CUTS.length;if(TRC.has(k))re
  const h=`<span title="${esc(last.map(x=>(x.date||'?')+' '+(x.result||'–')).join(' → '))}">${last.map(x=>`<span class="${resCls(x.result)}">●</span>`).join('')}</span>${dull?' <span class="sev High" title="The last two cuts with this tool in this material were Heavy or Bad">dull</span>':''}`;
  TRC.set(k,h);return h}
 /* 5.4 sortable columns: key, label, kind (n = numeric, d = date, s = text) */
-const CCOLS=[['date','Date','d'],['material','Material','s'],['tool','Tool (geometry)','s'],['cycle','Cycle','s'],['subcycle','Sub-cycle','s'],['vc','Vc m/min','n'],['fz','Fz mm/tooth','n'],['doc','DOC/ap mm','n'],['woc','WOC/ae mm','n'],['rpm','RPM','n'],['feed','Feed mm/min','n'],['mrr','MRR cm³/min','n'],['result','Result','s'],['verified','Verified','s'],['trend','Trend','s'],['geom','Tool geometry','s'],['settings','Cycle settings','s'],['notes','Notes','s']];
+const CCOLS=[['ownerName','Logged by','s'],['date','Date','d'],['material','Material','s'],['tool','Tool (geometry)','s'],['cycle','Cycle','s'],['subcycle','Sub-cycle','s'],['vc','Vc m/min','n'],['fz','Fz mm/tooth','n'],['doc','DOC/ap mm','n'],['woc','WOC/ae mm','n'],['rpm','RPM','n'],['feed','Feed mm/min','n'],['mrr','MRR cm³/min','n'],['result','Result','s'],['verified','Verified','s'],['trend','Trend','s'],['geom','Tool geometry','s'],['settings','Cycle settings','s'],['notes','Notes','s']];
 let CSORT={k:'date',dir:-1},CPAGE=0;const CPER=100;
 const sortVal=(c,k)=>k==='subcycle'?(TAGS.isTagged(c)?tagLabel(c):'~'):k==='verified'?(c.verified?'1':'0'):k==='settings'?extra(c):k==='geom'?toolGeomStr(c.tool):k==='trend'?(CUTS.filter(x=>x.tool===c.tool&&x.material===c.material).length):c[k];
 function sortCuts(rows){const col=CCOLS.find(x=>x[0]===CSORT.k);if(!col)return rows;const ty=col[2],d=CSORT.dir;
@@ -5683,7 +5710,7 @@ function sortCuts(rows){const col=CCOLS.find(x=>x[0]===CSORT.k);if(!col)return r
   return String(x??'').localeCompare(String(y??''),undefined,{numeric:true,sensitivity:'base'})*d})}
 const HEADF={date:'date',material:'mat',tool:'tool',cycle:'fam',subcycle:'sub',result:'res'};
 function tbl(rows,sortable){const th=([k,l,ty])=>{const n=ty==='n'?' class="n"':'',on=sortable&&CSORT.k===k;if(sortable&&HEADF[k]){const fk=HEADF[k],act=fk==='date'?!!(FS.from||FS.to||FS.days):!!(FS[fk]||[]).length;return `<th${n} aria-sort="${on?(CSORT.dir>0?'ascending':'descending'):'none'}"><button type="button" data-fhead="${fk}" data-col="${k}" title="Filter or sort by ${esc(l)}" style="border:0;background:none;cursor:pointer;padding:0;font:inherit;color:${act?'var(--hi)':'inherit'}">${l} ${act?'●':'▾'}${on?(CSORT.dir>0?' ▲':' ▼'):''}</button></th>`}return sortable?`<th${n} aria-sort="${on?(CSORT.dir>0?'ascending':'descending'):'none'}"><button type="button" data-csort="${k}" style="border:0;background:none;cursor:pointer;padding:0;font:inherit;color:inherit">${l}${on?(CSORT.dir>0?' ▲':' ▼'):''}</button></th>`:`<th${n}>${l}</th>`};
- return `<div class="tw"><table><thead><tr>${CCOLS.map(th).join('')}<th></th></tr></thead><tbody>${rows.map(c=>`<tr data-cid="${esc(c.id||'')}"><td>${esc(c.date)}</td><td>${esc(c.material)}</td><td class="tx">${badge(c.tool)}</td><td>${esc(c.cycle)}</td><td data-tagc="${esc(c.id||'')}" style="cursor:pointer;white-space:normal;min-width:150px" title="Click to set or change the sub-cycle">${tagCell(c)}</td><td class="n">${esc(c.vc)}</td><td class="n">${esc(c.fz)}</td><td class="n">${esc(c.doc)}</td><td class="n">${esc(c.woc)}</td><td class="n">${esc(c.rpm)}</td><td class="n">${esc(c.feed)}</td><td class="n">${esc(c.mrr)}</td><td class="${GOOD.test(c.result)?'good':/bad|heavy/i.test(c.result)?'bad':''}">${esc(c.result)}</td><td><label style="display:flex;gap:4px;align-items:center;margin:0" title="Verified cuts may feed recommendations (DB / CAL). Unticked cuts are reference only."><input type="checkbox" data-cver="${esc(c.id||'')}"${c.verified?' checked':''}${c.id?'':' disabled'}>${c.verified?'<span class="good">✓</span>':''}</label></td><td>${trend(c)}</td><td class="tx">${esc(toolGeomStr(c.tool))}</td><td class="tx">${esc(extra(c))}</td><td class="tx">${esc(c.notes)}</td><td><button class="b s sm" data-copy="${esc(c.id||'')}">Copy</button></td></tr>`).join('')}</tbody></table></div>`}
+ return `<div class="tw"><table><thead><tr>${CCOLS.map(th).join('')}<th></th></tr></thead><tbody>${rows.map(c=>`<tr data-cid="${esc(c.id||'')}"><td class="mu">${esc(c.ownerName||(c.owner?'Acct '+c.owner:'Main'))}</td><td>${esc(c.date)}</td><td>${esc(c.material)}</td><td class="tx">${badge(c.tool)}</td><td>${esc(c.cycle)}</td><td data-tagc="${esc(c.id||'')}" style="cursor:pointer;white-space:normal;min-width:150px" title="Click to set or change the sub-cycle">${tagCell(c)}</td><td class="n">${esc(c.vc)}</td><td class="n">${esc(c.fz)}</td><td class="n">${esc(c.doc)}</td><td class="n">${esc(c.woc)}</td><td class="n">${esc(c.rpm)}</td><td class="n">${esc(c.feed)}</td><td class="n">${esc(c.mrr)}</td><td class="${GOOD.test(c.result)?'good':/bad|heavy/i.test(c.result)?'bad':''}">${esc(c.result)}</td><td><label style="display:flex;gap:4px;align-items:center;margin:0" title="Verified cuts may feed recommendations (DB / CAL). Unticked cuts are reference only."><input type="checkbox" data-cver="${esc(c.id||'')}"${c.verified?' checked':''}${c.id&&(LIVE.state==='off'||ROLE()==='admin')?'':' disabled'}>${c.verified?'<span class="good">✓</span>':''}</label></td><td>${trend(c)}</td><td class="tx">${esc(toolGeomStr(c.tool))}</td><td class="tx">${esc(extra(c))}</td><td class="tx">${esc(c.notes)}</td><td><button class="b s sm" data-copy="${esc(c.id||'')}">Copy</button></td></tr>`).join('')}</tbody></table></div>`}
 /* ---------- Phase 10 — POF upload (reader in POF / pof.js). Decision 2026-10-12: decode the 14 cycle codes we have samples for.
    Only the parameter section (header, parameters, tool) is stored — in pofs/<cut id> — never the toolpath. ---------- */
 let POFS=[],LOGPOF=null,POFOPEN=false;
@@ -5847,6 +5874,7 @@ document.addEventListener('change',e=>{const f=e.target.dataset&&e.target.datase
 const bandFor=c=>{if(c.band)return c.band;const t=tool(c.tool),b=t?SF.bandOf(+t['Diameter (mm)'],L.bands):null;return b?b.label:null};
 const tagErrs=(c,v)=>{const t=tool(c.tool);return TAGS.validate({...v,band:bandFor(c)},CTREE(),t?+t['Diameter (mm)']:NaN,L.bands)};
 async function saveTag(c,v,how,via,extra,override){
+ if(LIVE.state!=='off'&&!canEditCut(c)&&ROLE()!=='admin')throw new Error(ROLE()==='viewer'?'View only — sign in to change cuts':'You can only change your own cuts');
  const f=TAGS.fieldsFor({...v,band:bandFor(c),tagOverride:override||undefined},c,how);
  await db.collection('cuts').doc(c.id).update(f);
  Object.entries(f).forEach(([k,val])=>{if(String(c[k]??'')!==String(val??''))logChange('cuts',cutLbl(c),k,c[k]??'',val,via,'',{cutId:c.id,...(extra||{})})});Object.assign(c,f)}
@@ -6507,6 +6535,21 @@ function factorsCard(){const F=(SETDOC&&SETDOC.factors)||{};return `<div class="
  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px 18px">${FX_LIST.map(([k,l,h])=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:0;font-weight:400"><input type="checkbox" data-fx="${k}"${F[k]===false?'':' checked'} style="margin-top:3px"><span><b>${esc(l)}</b><br><small class="mu">${esc(h)}</small></span></label>`).join('')}</div><p id="fx_msg" class="mu"></p></div>`}
 async function factorsSave(k,on){const F=Object.assign({},(SETDOC&&SETDOC.factors)||{});if(on)delete F[k];else F[k]=false;SETDOC=Object.assign(SETDOC||{},{factors:F});SF.setFactors(F);SF.invalidate();Object.keys(SFC).forEach(x=>delete SFC[x]);renderCheat();
  logChange('settings','factors',k,on?'off':'on',on?'on':'off','Settings → Factors');saveCLOG();if(OFFLINE||!db)return toast('Applied — offline, not saved');try{await db.doc('lib/settings').update({v:LIB_V,factors:F});const m=$('#fx_msg');if(m)m.textContent=`${(FX_LIST.find(x=>x[0]===k)||[,k])[1]} ${on?'on':'off'} — saved ✓`}catch(e){toast('Could not save factors')}}
+/* Settings → Profiles (groundwork): administrators add accounts, set roles and PINs. Checked by the Apps Script. */
+function profilesCard(){const r=ROLE();return `<div class="card"><h2>Profiles</h2><p class="mu">Everyone signs in (top right) with a <b>2-digit account</b> and a <b>3-digit PIN</b>. <b>Administrator</b>: everything, including verifying cuts and managing profiles. <b>Editor</b>: logs cuts and changes only their own — never the Verified tick. <b>Viewer</b>, or not signed in: looks only. Each cut shows who logged it (Cut database → Logged by), so cuts can be compared person by person. This PC: <b>${esc(LIVE.key?'owner (write key)':PROF?PROF.name+' · '+PROF.role:'not signed in')}</b>.</p>
+ ${r==='admin'&&LIVE.url?`<div id="pf_list"><p class="mu">Loading accounts…</p></div>
+ <div class="g" style="grid-template-columns:80px 1fr 140px 90px auto;align-items:end;margin-top:8px"><div><label for="pfn_a">Account</label><input id="pfn_a" inputmode="numeric" maxlength="2" placeholder="01"></div><div><label for="pfn_n">Name</label><input id="pfn_n" maxlength="40" placeholder="Name"></div><div><label for="pfn_r">Role</label><select id="pfn_r"><option value="editor">Editor</option><option value="viewer">Viewer</option><option value="admin">Administrator</option></select></div><div><label for="pfn_p">PIN</label><input id="pfn_p" type="password" inputmode="numeric" maxlength="3" placeholder="new"></div><div><button class="b" id="pfn_s">Save account</button></div></div>
+ <p class="mu" id="pf_msg" style="font-size:13px">To change someone’s role or name, type their account number with the new details; leave PIN empty to keep theirs.</p>`:`<p class="mu">${LIVE.url?'Only an administrator can manage profiles.':'Needs the live database (below).'}</p>`}</div>`}
+async function profilesLoad(){const h=$('#pf_list');if(!h)return;try{const r=await livePost({action:'profiles.list',token:liveTok()});if(!r.ok)throw new Error(r.error);
+ h.innerHTML=r.profiles.length?`<div class="tw"><table><thead><tr><th>Account</th><th>Name</th><th>Role</th><th>Cuts logged</th><th></th></tr></thead><tbody>${r.profiles.map(p=>`<tr><td><b>${esc(p.acct)}</b></td><td>${esc(p.name)}</td><td>${esc(p.role)}</td><td>${CUTS.filter(c=>c.owner===p.acct).length}</td><td><button class="b s sm" data-pfdel="${esc(p.acct)}">Remove</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="mu">No accounts yet — add yourself first as an administrator.</p>'}
+ catch(e){h.innerHTML=`<p class="bad">${esc(/Unknown action|profiles/i.test(e.message)?'The live database script needs updating for profiles — paste the new apps-script/Code.gs and redeploy (User Guide → Live database).':e.message)}</p>`}}
+async function profilesClick(e){const t=e.target,m=$('#pf_msg'),say=x=>{if(m)m.textContent=x};
+ if(t.id==='pfn_s'){const acct=$('#pfn_a').value.trim(),name=$('#pfn_n').value.trim(),role=$('#pfn_r').value,pin=$('#pfn_p').value.trim();
+  if(!/^\d{2}$/.test(acct))return say('Account must be 2 digits.'),true;if(pin&&!/^\d{3}$/.test(pin))return say('PIN must be 3 digits.'),true;
+  try{const r=await livePost({action:'profiles.set',token:liveTok(),acct,name,role,pin:pin||undefined});if(!r.ok)throw new Error(r.error);say(`Account ${acct} saved ✓`);['pfn_a','pfn_n','pfn_p'].forEach(i=>$('#'+i).value='');logChange('profiles',acct,'saved','',name+' · '+role,'Settings → Profiles');saveCLOG();profilesLoad()}catch(x){say(x.message||String(x))}return true}
+ if(t.dataset&&t.dataset.pfdel){const a=t.dataset.pfdel;if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Remove?';return true}
+  try{const r=await livePost({action:'profiles.del',token:liveTok(),acct:a});if(!r.ok)throw new Error(r.error);logChange('profiles',a,'removed','','','Settings → Profiles');saveCLOG();profilesLoad()}catch(x){say(x.message||String(x))}return true}
+ return false}
 /* Settings → Live database */
 function liveCard(){const S=LIVE.state,n=LIVE.q.length,src=(()=>{try{return localStorage.getItem('live.url')?'this PC':'sheets.json'}catch(e){return ''}})();
  const st=S==='off'?'Not set up — the app uses this PC’s copy only':S==='empty'?'Connected — the live database is empty':S==='cache'?'Not reached at start-up — using this PC’s copy'+(LIVE.err?' ('+esc(LIVE.err)+')':''):S==='live'?'Connected'+(LIVE.at?' · last sync '+new Date(LIVE.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):''):S;
@@ -6536,11 +6579,11 @@ function drawSettings(){$('#lbody').innerHTML=`<div class="card"><h2>Setup</h2><
  <fieldset><legend>Speed preference</legend><div class="row">${[['balanced','Balanced'],['life','Prefer tool life'],['cycle','Prefer cycle time']].map(([k,l])=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="radio" name="set_pref" value="${k}"${SET.pref===k?' checked':''}> ${l}</label>`).join('')}</div>
  <p class="mu">Applies to Typical and Calibrated values only. Tool life: Vc ×0.9 in hardened steel, stainless, titanium and nickel alloys, ×0.95 in pre-hardened steel. Cycle time: Vc ×1.1. Your logged values and manufacturer values are never changed.</p></fieldset><p id="set_msg" class="mu"></p></div><div class="card"><h2>AI (Ollama on this PC)</h2><p class="mu">Ask AI and Learn AI run on Ollama on this computer — free, no limits, and nothing leaves the PC. Pick a model you have pulled; it must support tools (for example <code>qwen3:8b</code> or <code>llama3.1:8b</code>). Settings are kept in this browser only.</p>
  <div class="g"><div><label for="set_olurl">Ollama address</label><input id="set_olurl" value="${esc(olCfg().url)}" spellcheck="false"></div><div><label for="set_olmodel">Model</label><select id="set_olmodel"><option>${esc(olCfg().model)}</option></select></div></div>
- <p class="row"><button class="b s" id="ol_test">Test connection</button><span class="mu" id="ol_msg"></span></p></div>${factorsCard()}${liveCard()}<div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.${LIVE.state==='live'?' <b>The live database is connected, so these tabs are now its readable copy: the app rewrites them when it saves and does not load them at start-up.</b>':''}</p>
+ <p class="row"><button class="b s" id="ol_test">Test connection</button><span class="mu" id="ol_msg"></span></p></div>${factorsCard()}${liveCard()}${profilesCard()}<div class="card"><h2>Google Sheet (master data)</h2><p class="mu">When sheets.json is present in the repo with a non-empty id, the app loads its library tables from that published Google Sheet at start-up. IndexedDB stays the fallback for any tab that cannot be fetched. To publish the Sheet: File → Share → Publish to web → Entire document → Publish. The Sheet ID is the long string between /d/ and /edit in the Sheet's URL.${LIVE.state==='live'?' <b>The live database is connected, so these tabs are now its readable copy: the app rewrites them when it saves and does not load them at start-up.</b>':''}</p>
  <div class="g"><div><label>Sheet ID (from sheets.json)</label><input id="sh_id" value="${esc(SHEET_CFG.id||'(not set)')}" readonly></div><div><label>Last sync</label><input id="sh_last" value="${esc(sheetLastSync())}" readonly></div></div>
  <p class="row"><button class="b s" id="sh_reload">Reload from Sheet now</button><span id="sh_msg" class="mu"></span></p></div>${n9Card()}`;
  olTest(true);
- $('#lbody').onclick=async e=>{if(await liveClick(e))return;if(e.target.id==='ol_test'){await olTest();return}if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
+ if($('#pf_list'))profilesLoad();$('#lbody').onclick=async e=>{if(await liveClick(e))return;if(await profilesClick(e))return;if(e.target.id==='ol_test'){await olTest();return}if(e.target.id==='sh_reload'){await reloadSheets(e.target);return}if(e.target.id==='n9chk'){await n9Check();return}if(e.target.id==='n9run'){await n9Run(e.target);return}if(e.target.id==='n9csvb')return sheetDownload('baseline');if(e.target.id==='n9csvc')return sheetDownload('cycles')};
  $('#lbody').onchange=e=>{if(e.target.dataset&&e.target.dataset.fx)return factorsSave(e.target.dataset.fx,e.target.checked);if(e.target.id==='set_olurl'||e.target.id==='set_olmodel'){const k=e.target.id==='set_olurl'?'ollama.url':'ollama.model',v=e.target.value.trim();try{if(v)localStorage.setItem(k,v);else localStorage.removeItem(k)}catch(x){}const m=$('#ol_msg');if(m)m.textContent='Saved ✓';if(k==='ollama.url')olTest();return}if(e.target.id==='set_ra'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.ra;return toast('Ra must be above 0')}SET.ra=v}else if(e.target.id==='set_rak'){const v=+e.target.value;if(!(v>0)){e.target.value=SET.raK;return toast('k must be above 0')}SET.raK=v}else if(e.target.name==='set_pref')SET.pref=e.target.value;else return;saveSettings()}}
 /* ---------- Phase 9: normalise the speeds-and-feeds data (one-time migration) ----------
    lib/baseline: rows with identical values that differ in one key column are merged into one row whose cell lists the
@@ -7635,7 +7678,9 @@ function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Live databas
 <li><b>Deploy → New deployment</b> → gear icon → <b>Web app</b>. Execute as: <b>Me</b>. Who has access: <b>Anyone</b>. Deploy, allow the permissions Google asks for, and copy the <b>Web app URL</b>.</li>
 <li>Reload the Sheet. A <b>CNC Shop</b> menu appears → <b>Set write key</b> → choose a key (at least 6 characters).</li>
 <li>In the app on the PC with your most up-to-date data: <b>Settings → Live database</b> → paste the URL and the write key → <b>Save &amp; test</b> → reload → <b>Upload this PC’s data</b>.</li>
-<li>On every other PC: just open the app. It loads the live data. Type the write key in Settings only on PCs that should be able to save.</li></ol>
+<li>On every other PC: just open the app. It loads the live data. Type the write key in Settings only on PCs that should be able to save.</li>
+<li><b>Profiles:</b> Settings → Profiles → add yourself as an Administrator (2-digit account, 3-digit PIN), then each coworker as Editor or Viewer. They press <b>Sign in</b> at the top. Editors log and change only their own cuts; only administrators can tick Verified.</li></ol>
+<p class="mu"><b>When the script file changes</b> (e.g. a new feature): open the Apps Script editor, paste the new <code>apps-script/Code.gs</code> over the old, save, then <b>Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy</b>. The URL stays the same. Don’t press <b>Run</b> in the editor — the functions are called by the app and the Sheet menu, and Run gives errors such as “Cannot call SpreadsheetApp.getUi() from this context”.</p>
 <p class="mu">The header chip shows <b>Live</b> when saved, <b>Saving…</b> while sending, <b>Offline — n changes waiting</b> when the database can’t be reached (they are sent automatically later), and <b>View only</b> on a PC without the write key. If another PC saves while you have the app open, the chip offers a reload. Each day a full copy is saved to Google Drive → <i>CNC Shop backups</i> (last 30 kept). The readable Sheet tabs (tools, materials, cycles…) are rewritten automatically whenever the app saves that table — don’t edit them by hand any more; edit in the app.</p></div><div class="card"><h2>Where things are</h2><ul><li><b>Shop floor</b>: Speeds &amp; Feeds, Log cut, Cut database.</li><li><b>Data</b>: <b>Cutting data</b> (Sources, Bands, Baselines, Material limits) · <b>Cycles</b> (Cycle pages, Cycle tree) · <b>Library</b> (tools, materials, holders, machines, tooling audit, change log) · <b>Rules</b> · <b>Formulas</b>.</li><li><b>AI</b>: Ask AI, Learn AI, Prompts (the instructions each AI uses).</li><li><b>App</b>: Settings (API key, Google Sheet, backup / restore), To-do, this guide.</li>
 <li><b>Locks</b>: every editing page (Sources, Bands, Baselines, Material limits, Cycle pages, Cycle tree, Rules, Prompts, Library data) opens <b>locked</b> — view only, filters and downloads still work. Press <b>Unlock to edit</b>; when done press <b>Save &amp; lock</b>, which saves anything pending, tidies the rows (numbers rounded the same way, tables sorted) and locks the page again. Saving Rules or Cycle pages with their own Save button locks them too.</li>
 <li><b>New materials and cutter types</b> are picked up automatically (at start-up and when you edit the library): they get generic band tables in Bands (catalogue, else typical model — marked <i>Generic (auto)</i>), blank tables in each custom source, and a blank Material limits row marked <i>new · auto</i>. Check them, then download the CSVs for the Sheet.</li></ul></div>
@@ -7687,7 +7732,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-15.7';
+const APP_V='2026-10-15.8';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
