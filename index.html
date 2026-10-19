@@ -4529,6 +4529,251 @@ function extra(c){const defs=allParamDefs(),o=cpCanon(c.params);Object.keys(defs
 const setupLine=c=>`${c.material} | Tool: ${c.tool} | Vc: ${c.vc??''} | RPM: ${c.rpm??''} | Fz: ${c.fz??''} | Feed: ${c.feed??''} | DOC: ${c.doc??''} | WOC: ${c.woc??''}${c.cycle?' | Cycle: '+c.cycle:''}${extra(c)?' | Cycle settings: '+extra(c):''} | Notes: ${c.notes||''}`;
 
 /* ---------- speeds-and-feeds engine context ---------- */
+/*V9M-BEGIN*/
+/* ===================== v9 MIGRATION (Phase 2 step 1, 2026-10-19) =====================
+   Builds the new v9 tables from the current library WITHOUT touching it. Pure function: V9M.build({L, matInfo, sfxOf})
+   returns { tables: { name: rows[] }, warn: [..], counts: { name: n } }. Library → v9 migration runs it as a dry run
+   and, on Apply, writes each table to lib/<name> (old tables stay as they are). Decisions: v9 proposal, approved 2026-10-19. */
+const V9M = (() => {
+  const num = v => v === '' || v == null || isNaN(+v) ? null : +v;
+  const today = () => new Date().toISOString().slice(0, 10);
+  /* material groups: kc1.1 / mc (DECISION-23), typical model values kept from the engine's BASE table */
+  const GROUPS = [
+    ['P1', 'steel < 28 HRC', 1500, .25, 180, 200, .6], ['P2', 'pre-hardened / alloy steel 28–40 HRC', 2100, .25, 120, 140, .5],
+    ['H1', 'hardened steel 40–50 HRC', 3000, .25, 80, 90, .35], ['H2', 'hardened steel > 50 HRC', 3800, .25, 50, 60, .25],
+    ['M', 'stainless steel', 2800, .21, 100, 120, .5], ['K', 'cast iron', 1100, .28, 150, 170, .6],
+    ['N1', 'aluminium', 700, .25, 400, 500, 1.1], ['N2', 'copper / brass', 800, .25, 250, 300, .9],
+    ['S1', 'titanium', 1400, .23, 55, 65, .45], ['S2', 'nickel alloy', 2800, .25, 25, 30, .35],
+    ['PL', 'plastics', 300, .25, 250, 300, 1.3], ['C', 'composites', 600, .25, 150, 200, .8], ['G', 'graphite', 300, .25, 300, 400, 1]];
+  const KC_SRC = { P1: 'Sandvik via Wikipedia (unalloyed steel)', M: 'Sandvik via Wikipedia (stainless)', K: 'Sandvik via Wikipedia (grey cast iron)', S1: 'Sandvik via Wikipedia (titanium)' };
+  const MAT_KC = { 'D2 TOOL STEEL': 2900 };
+  /* Sheet tool Type → v9 tool_type (DECISION-38 B) */
+  const TYPE = { 'End Mill': 'end_mill_square', 'Ball End Mill': 'end_mill_ball', 'Lollipop Mill': 'end_mill_lollipop', 'T-Slot Cutter': 'tslot',
+    'Woodruff Cutter': 'tslot', 'Slitting Saw': 'slitting_saw', 'Carbide Drill': 'drill_carbide', 'HSS Drill': 'drill_hss', 'Spot Drill': 'spot_drill',
+    'Thread Mill': 'thread_mill', 'Face Mill': 'high_feed_mill', 'Reamer': 'reamer', 'Chamfer Mill': 'chamfer' };
+  const NECK_OK = ['end_mill_square', 'end_mill_ball', 'drill_carbide', 'drill_hss', 'reamer', 'thread_mill', 'boring_bar', 'dovetail', 'chamfer', 'engraver'];
+  const NECK_INTRINSIC = ['tslot', 'end_mill_lollipop'];
+  /* user decision 2026-10-19: tool "1 LS HSS" is a Ø5 long-series carbide drill */
+  const TOOL_FIX = { '1 LS HSS': { Type: 'Carbide Drill', 'Diameter (mm)': 5, family: 'CD' } };
+  const DEFAULTS = {
+    end_mill_square: { kappa_r_deg: [90, 0], corner_radius_mm: [0, 0] }, end_mill_ball: { ball_radius_mm: ['D/2', 0] },
+    end_mill_lollipop: { sphere_diameter_mm: ['D', 1], undercut_angle_deg: [270, 0] },
+    drill_carbide: { point_angle_deg: [140, 0], web_thickness_mm: ['0.15D', 0], chisel_edge_mm: ['0.1D', 0] },
+    drill_hss: { point_angle_deg: [118, 0], web_thickness_mm: ['0.15D', 0], chisel_edge_mm: ['0.1D', 0] },
+    spot_drill: { point_angle_deg: [90, 1] },
+    reamer: { lead_chamfer_angle_deg: [45, 0], lead_length_mm: ['0.1D', 0], flute_form: ['straight', 0], tolerance_class: ['H7', 0], stock_mm: ['table', 0] },
+    thread_mill: { pitch_mm: [null, 1], thread_form: ['ISO M', 0], profile_angle_deg: [60, 0], rows: ['multi', 0], max_thread_depth_mm: ['flute', 0], internal_only: [true, 0] },
+    face_mill: { body_diameter_mm: ['D', 0], insert_count: ['flutes', 0], kappa_r_deg: [45, 0], axial_rake_deg: [0, 0] },
+    high_feed_mill: { body_diameter_mm: ['D', 0], insert_count: ['flutes', 0], kappa_r_deg: [15, 0], effective_radius_mm: ['0.1D', 0], max_ap_mm: [null, 1] },
+    boring_bar: { bar_diameter_mm: [null, 1], insert_radius_mm: [0.4, 0], kappa_r_deg: [95, 0] },
+    tslot: { disc_diameter_mm: ['D', 1], disc_width_mm: [null, 1], neck_diameter_mm: [null, 1], neck_length_mm: [null, 1] },
+    slitting_saw: { disc_diameter_mm: ['D', 1], disc_width_mm: [null, 1], bore_mm: [null, 0], teeth: ['flutes', 0] },
+    dovetail: { dovetail_angle_deg: [null, 1], neck_diameter_mm: [null, 1], tip_width_mm: [null, 0] },
+    chamfer: { tip_angle_deg: [90, 1], tip_diameter_mm: [0, 0] }, engraver: { tip_angle_deg: [null, 1], tip_diameter_mm: [null, 1], neck_diameter_mm: [null, 0] } };
+  /* profiles P00–P20 (DECISION-16, 17, 18): [id, name, toolpath, {op: [Vc, fz, ae, ap]}] — fz never includes chip thinning */
+  const R = (v, f, ae, ap) => [v, f, ae, ap], ALL = x => ({ rough: x, semi: x, finish: x });
+  const PROFILES = [
+    ['P00', 'Standard (neutral)', 'none', ALL(R(1, 1, null, null))],
+    ['P01', 'Dynamic roughing 10 %', 'trochoidal', { rough: R(1.05, 1, .05, 2) }],
+    ['P02', 'Dynamic roughing 5 %', 'trochoidal', { rough: R(1.05, 1, .05, 2) }],
+    ['P03', 'High-feed shallow', 'dynamic', { rough: R(1.1, 1, .4, .15) }],
+    ['P04', 'Traditional roughing', 'none', { rough: R(1, 1, .5, 1) }],
+    ['P05', 'Pocket roughing', 'helix', ALL(R(.95, 1, .55, .75))],
+    ['P06', 'Plunge roughing', 'plunge', { rough: R(.85, 1, .1, null) }],
+    ['P07', 'Shape-offset roughing', 'none', { rough: R(1, 1, .25, .5) }],
+    ['P08', '3D surfacing', 'none', { rough: R(1, 1, .15, .5), semi: R(1.05, 1, .08, .1), finish: R(1.05, 1, .05, .05) }],
+    ['P09', 'Wall contour, full flute', 'none', { rough: R(.95, 1, .1, 1), semi: R(.95, 1, .08, 1), finish: R(.95, 1, .08, 1) }],
+    ['P10', 'Spiral contour', 'none', { rough: R(1, 1, .05, .3), semi: R(1.05, 1, .04, .15), finish: R(1.05, 1, .03, .1) }],
+    ['P11', 'Plane / floor', 'none', { rough: R(1, 1, .4, .2), semi: R(1.05, 1, .35, .1), finish: R(1, 1, .3, .05) }],
+    ['P12', 'Corner and pencil rest', 'none', { semi: R(1, 1, .05, .2), finish: R(1, 1, .03, .1) }],
+    ['P13', 'Swarf and flank', 'none', { semi: R(1, 1, .05, null), finish: R(1, 1, .05, null) }],
+    ['P14', 'Drilling', 'none', { rough: R(1, 1, 1, null), semi: R(.95, 1, 1, null), finish: R(.85, 1, 1, null) }],
+    ['P15', 'Helical interpolation', 'helix', { rough: R(1, 1, .6, .5), semi: R(1.05, 1, .3, .25), finish: R(1.05, 1, .05, .1) }],
+    ['P16', 'Reaming and boring', 'none', { ream: R(1, 1, null, null), bore: R(1, 1, null, null) }],
+    ['P17', 'Threading', 'helix', { thread: R(1, 1, null, null) }],
+    ['P18', 'Chamfer and edge', 'none', { semi: R(1, 1, null, null), finish: R(1, 1, null, null) }],
+    ['P19', 'Face milling', 'none', ALL(R(1, 1, .75, null))],
+    ['P20', 'Slotting', 'none', ALL(R(.9, .85, 1, .5))]];
+  /* sub-cycle → profile + engagement class + action (DECISION-11, 12, 13, 14, 16) */
+  const DYN = ['roughing.trochoidal', 'roughing.arbitrary-trochoidal', 'ax5.rest-rough', 'tube.rough', 'mb.rough'];
+  function mapCycle(k, parent) {
+    if (k === 'roughing.new-2' || k === 'new-family') return ['', '', 'remove'];
+    if (k === 'roughing.new') return ['P02', 'dynamic', 'remove (now profile P02)'];
+    if (k === 'roughing.arbitrary-trochoidal') return ['P01', 'dynamic', 'remove (now profile P01 in roughing.arbitrary)'];
+    if (k === 'roughing.arbitrary-hf-shallow') return ['P03', 'traditional', 'remove (now profile P03 in roughing.arbitrary)'];
+    if (DYN.includes(k)) return ['P01', 'dynamic', 'keep'];
+    if (/^roughing\.hf-shallow/.test(k)) return ['P03', 'traditional', 'keep'];
+    if (k === 'roughing.traditional' || k === 'roughing.arbitrary') return ['P04', 'traditional', 'keep'];
+    if (k === 'roughing.pocket' || /^pocketing\.(circular|rectangular|inclined|general)$/.test(k)) return ['P05', 'pocket', 'keep'];
+    if (k === 'pocketing.face') return ['P19', 'traditional', 'keep'];
+    if (k === 'roughing.plunge' || k === 'mb.plunge-rough') return ['P06', 'plunge', 'keep'];
+    if (k === 'roughing.shape-offset') return ['P07', 'traditional', 'keep'];
+    if (/^(tube\.rough|mb\.blade-rough-3d)$/.test(k)) return ['P04', 'traditional', 'keep'];
+    if (k === 'finishing.plane') return ['P11', 'finish', 'keep; parent → Finishing (3D)'];
+    if (/^ax5\.(top|iso-top)$/.test(k)) return ['P11', 'finish', 'keep'];
+    if (/^(finishing\.(pencil|corner-rest|auto-rest)|rest\.|ax5\.(corner-rest|rest$))/.test(k)) return ['P12', 'finish', 'keep'];
+    if (/^finishing\.|^ax5\.(profile|z-level|equidistant|free-path|rework|shape-offset-finish|tangent|prismatic-fillet|radial|tangent-plane|halfpipe)$|^tube\.(finish|rest)$|^mb\.(hub|point|fillet|platform)$|^ax5\.blade-(point|top)$/.test(k)) return ['P08', 'finish', 'keep'];
+    if (/^contouring\.spiral$/.test(k)) return ['P10', 'finish', 'keep'];
+    if (/^contouring\./.test(k)) return ['P09', 'finish', 'keep'];
+    if (/^ax5\.swarf|^ax5\.blade-(flank|swarf)$|^mb\.(flank|edge)$|^edges\.cutting-edge-swarf-5x$/.test(k)) return ['P13', 'finish', 'keep'];
+    if (k === 'edges.tslot-3d') return ['P20', 'edge', 'keep; parent → Slotting'];
+    if (/^edges\./.test(k)) return ['P18', 'edge', 'keep'];
+    if (/^drilling\.helical/.test(k)) return ['P15', 'hole', 'keep'];
+    if (/^drilling\./.test(k)) return ['P14', 'hole', 'keep'];
+    if (/^(reaming|boring)\./.test(k)) return ['P16', 'hole', 'keep'];
+    if (/^threading\./.test(k)) return ['P17', 'thread', 'keep'];
+    if (/^probing\./.test(k)) return ['', 'probe', 'keep (no cutting data)'];
+    return ['P00', 'finish', 'keep'];
+  }
+  const NEW_CYCLES = [['slotting', 'Slotting', '', 'P20', 'traditional'], ['slotting.full', 'Full slot', 'Slotting', 'P20', 'traditional'],
+    ['slotting.tslot-2d', 'T-slot (2.5D)', 'Slotting', 'P20', 'traditional'], ['slotting.keyseat', 'Keyseat / woodruff', 'Slotting', 'P20', 'traditional'],
+    ['slotting.saw', 'Slitting saw', 'Slotting', 'P20', 'traditional'], ['engraving.text', 'Engraving', 'Edges & chamfer', 'P18', 'edge'],
+    ['edges.back-chamfer', 'Back chamfer / deburr', 'Edges & chamfer', 'P18', 'edge']];
+  /* strategies (DECISION-34 B, 35 A, 36 A, 07 B) */
+  const RULES = [
+    ['EN-01', 'entry', "toolpath in ('pocket','slot') and closed_pocket and not center_cutting", "block straight plunge; show 'Helix or ramp entry'", 'mandatory'],
+    ['EN-02', 'entry', "entry in ('helix','ramp')", "clamp ramp_deg <= ramp_max(iso)  # N 5, P/K 3, M/S/H 1.5", 'enforced'],
+    ['EN-03', 'entry', "work_hardening and op == 'finish'", "show 'Arc in and arc out; no dwell at contact'", 'advisory'],
+    ['EN-04', 'exit', "tool_type in ('drill_carbide','drill_hss') and through_hole", "show 'Feed −30 % for the last 1×Ø before breakthrough'", 'advisory'],
+    ['RO-01', 'roughing', "ap > ap_max_traditional", "set toolpath = 'dynamic'", 'enforced'],
+    ['RO-02', 'roughing', "profile == 'P03'", "clamp ap <= max_ap_mm", 'enforced'],
+    ['RO-03', 'roughing', "Pc > 0.8 * spindle_kw or T > 0.8 * spindle_torque", "show 'Reduce ap or ae' with Pc and T", 'enforced'],
+    ['RO-04', 'roughing', "iso == 'S2'", "show 'Vary ap between passes (notch line)'", 'advisory'],
+    ['RO-05', 'roughing', "tool_family == 'DM' and iso in ('P1','P2','H1','H2','M','K','S1','S2')", "block 'Diamond/DLC tool in ferrous or Ti/Ni alloy'", 'mandatory'],
+    ['CO-01', 'corner', "internal_corner_radius < 1.5 * tool_radius", "show 'Corner feed −30 % or use a smaller rest tool'", 'advisory'],
+    ['CO-02', 'corner', "engagement_class == 'finish' and sub_cycle in ('finishing.corner-rest','ax5.corner-rest','rest.corner')", "show 'Reference tool Ø ≥ 1.5 × current Ø'", 'advisory'],
+    ['WF-01', 'wall', "op == 'semi'", "show 'Leave 0.2–0.5 mm stock by Ø band'", 'advisory'],
+    ['WF-02', 'wall', "op == 'finish' and floor", "show 'Floor finish with corner-radius tool, ae ≤ 0.5·Ø'", 'advisory'],
+    ['WF-03', 'wall', "ap > flute_length", "clamp ap <= flute_length", 'enforced'],
+    ['TW-01', 'thin_wall', "wall_t / wall_h < 0.1", "show 'Step down alternately both sides; light ae; climb'", 'advisory'],
+    ['TW-02', 'thin_wall', "iso == 'N1' and thin_wall", "show 'Expect exit burrs; plan a deburr pass'", 'advisory'],
+    ['HS-01', 'hsm', "rpm_calc > rpm_max", "clamp rpm <= rpm_max; keep fz; show real Vc", 'enforced'],
+    ['HS-02', 'hsm', "toolpath in ('trochoidal','dynamic')", "show 'Constant engagement; no full-width moves'", 'advisory'],
+    ['HS-03', 'hsm', "hex < h_min and work_hardening", "set fz = fz * h_min / hex", 'enforced'],
+    ['HM-01', 'hard', "iso in ('H1','H2') and coating == 'Uncoated'", "block 'Use coated carbide'", 'mandatory'],
+    ['HM-02', 'hard', "hrc > 35 and sub_cycle == 'threading.tap'", "block 'Thread mill instead of tap'", 'mandatory'],
+    ['HM-03', 'hard', "iso == 'H2'", "clamp ae <= 0.05 * D; show 'Air or dry with coated tool'", 'enforced'],
+    ['FI-01', 'finishing', "op == 'finish'", "show 'Semi-finish to equal stock first'", 'advisory'],
+    ['FI-02', 'finishing', "tool_type == 'end_mill_ball' and op == 'finish'", "show 'Tilt 5–15° off ball centre; rpm on Deff'", 'advisory'],
+    ['FI-03', 'finishing', "iso == 'N1' and op == 'finish'", "show '0.1–0.3 mm pass at full Vc'", 'advisory'],
+    ['SP-01', 'spring_pass', "op == 'finish' and tolerance_tight and not work_hardening", "show 'One spring pass at the same offset'", 'advisory'],
+    ['SP-02', 'spring_pass', "work_hardening", "block spring pass; show 'Firm feed instead of a skim'", 'enforced'],
+    ['CL-01', 'coolant', "iso in ('S1','S2')", "set coolant = 'HPC'; block dry", 'mandatory'],
+    ['CL-02', 'coolant', "iso == 'M'", "set coolant = 'flood' (minimum)", 'mandatory'],
+    ['CL-03', 'coolant', "iso == 'PL' and not abrasive_filled", "show 'Air blast or MQL; avoid flood (swelling)'", 'enforced'],
+    ['CL-04', 'coolant', "material in ('PEEK GF30','PEEK CF30')", "show 'Dust extraction: glass/carbon dust hazard'", 'mandatory'],
+    ['CL-05', 'coolant', "iso in ('S1','S2') and coolant in ('dry','mql')", "scale Vc * 0.75", 'enforced'],
+    ['CL-06', 'coolant', "tool_type in ('drill_carbide','drill_hss') and depth / D > 5", "set coolant = 'through-spindle'", 'enforced'],
+    ['CL-07', 'coolant', "iso == 'N1' and op == 'finish'", "show 'MQL or air for finishing'", 'advisory'],
+    ['BL-CAP', 'roughing', "baseline.was_capped", "clamp Vc <= 2 * typical_Vc; clamp fz <= 2 * typical_fz; show 'Catalogue value capped at 2× typical'", 'enforced']];
+  /* new stepdown caps (DECISION-21 A) */
+  const NEW_CAPS = [['*H1', 'traditional', .5], ['*H1', 'dynamic', 1], ['*H2', 'dynamic', .5], ['*S1', 'dynamic', 1], ['*S2', 'dynamic', .75], ['*PL', 'dynamic', 1]];
+  const BASIS = s => { s = String(s || ''); return /^Override/.test(s) ? 'override_copy' : /similar tool/.test(s) ? 'catalogue_similar' : /scaled/.test(s) ? 'catalogue_scaled'
+    : /^Catalogue/.test(s) ? 'catalogue' : /^Reference/.test(s) ? 'reference_table' : /^Typical/.test(s) ? 'typical_model' : /^Standard/.test(s) ? 'group_median' : s ? 'other' : 'manual'; };
+  function hardness(h) {
+    h = String(h || ''); const m = h.match(/M\s*(\d+)(?:\s*[-–]\s*(\d+))?/i), x = h.match(/(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?\s*(HRC|HB)/i);
+    if (x) return [+x[1], x[2] ? +x[2] : +x[1], x[3].toUpperCase()];
+    if (m) return [+m[1], m[2] ? +m[2] : +m[1], 'HRM'];
+    return [null, null, ''];
+  }
+  function build(ctx) {
+    const L = ctx.L, warn = [], T = {}, mi = m => (ctx.matInfo ? ctx.matInfo(m) : { iso: '' });
+    /* material groups + material factors */
+    const mats = (L.materials || []).filter(m => m && m.Material);
+    T.material_groups = GROUPS.map(([tag, name, kc, mc, vr, vf, hx]) => ({ group_id: tag, group_name: name, iso_group_tag: tag, kc1_1: kc, mc,
+      kc_source: KC_SRC[tag] || 'estimate', typical_vc_rough: vr, typical_vc_finish: vf, typical_hex_pct: hx,
+      members_json: JSON.stringify(mats.filter(m => mi(m).iso === tag).map(m => m.Material)) }));
+    T.material_factors = mats.map(m => { const [a, b, u] = hardness(m.Hardness), iso = mi(m).iso;
+      if (!a) warn.push(`Material ${m.Material}: hardness “${m.Hardness || ''}” not parsed`);
+      return { material: m.Material, iso_group: iso, hardness_min: a, hardness_max: b, hardness_unit: u, kc1_1_override: MAT_KC[m.Material] || '',
+        mc_override: '', work_hardening: ['M', 'S1', 'S2'].includes(iso) || /work[- ]?harden/i.test((m.Guidance || '') + ' ' + (m.Notes || '')) };
+    });
+    /* diameter bands */
+    const bands = (L.bands || []).filter(b => b && isFinite(+b.lo)).slice().sort((a, b) => a.lo - b.lo);
+    T.diameter_bands = bands.map((b, i) => ({ band_id: 'B' + String(i + 1).padStart(2, '0'), label: b.label, lo_mm: +b.lo, hi_mm: +b.hi, rigidity_ap_max_ratio: num(b.apDmax) ?? '' }));
+    const bandId = lo => { const b = T.diameter_bands.find(x => Math.abs(x.lo_mm - lo) < 1e-6); return b ? b.band_id : null; };
+    /* material × tool family × band baselines */
+    const HOLE = ['CD', 'SP', 'RM', 'HSS'], mset = new Set(mats.map(m => m.Material)); let noBand = 0, noMat = new Set();
+    T.material_tool_baselines = (L.matbands || []).filter(r => r && r.material && r.cutter).map((r, i) => {
+      const grp = String(r.material).startsWith('@'), bid = bandId(+r.lo), note = String(r.note || ''), raw = note.match(/raw for this range: Vc ([\d.]+), f\/edge ([\d.]+)/);
+      if (!bid) noBand++; if (!grp && !mset.has(r.material)) noMat.add(r.material);
+      return { baseline_id: 'MB' + String(i + 1).padStart(5, '0'), material: grp ? '' : r.material, group_id: grp ? String(r.material).slice(1) : '', tool_family: r.cutter,
+        band_id: bid || '', Vc_base: num(r.Vc), fz_base: num(r.fz), fz_unit: HOLE.includes(r.cutter) && /per rev/i.test(note) ? 'per_rev' : 'per_tooth',
+        value_basis: 'chip_thickness', Vc_raw: raw ? +raw[1] : '', fz_raw: raw ? +raw[2] : '', was_capped: /capped/.test(r.src || ''), estimate_basis: BASIS(r.src),
+        source_note: note, seed_set: r.source || 'manual', is_active: String(r.off) !== 'true', last_reviewed: today() };
+    });
+    if (noBand) warn.push(`${noBand} baseline rows have a Ø range that matches no band`);
+    if (noMat.size) warn.push(`Baselines name unknown materials: ${[...noMat].join(', ')}`);
+    /* profiles */
+    T.multiplier_profiles = PROFILES.map(([id, name, tp]) => ({ profile_id: id, profile_name: name, is_neutral: id === 'P00', toolpath_required: tp, notes: id === 'P20' ? 'starting values (estimate)' : '' }));
+    T.profile_op = []; PROFILES.forEach(([id, , , ops]) => Object.keys(ops).forEach(op => { const [v, f, ae, ap] = ops[op];
+      T.profile_op.push({ profile_id: id, op_class: op, Vc_mult: v, fz_mult: f, ae_ratio: ae ?? '', ap_ratio: ap ?? '', ap_cap: ap != null && ap >= 1 ? 'flute_length' : 'none' }); }));
+    /* cycle map: every keyed sub-cycle → profile, engagement class, action */
+    const cyc = (L.cycles || []).filter(c => c && c.key);
+    T.cycle_map = cyc.map(c => { const [p, ec, act] = c.parent ? mapCycle(c.key, c.parent) : mapCycle(c.key, '');
+      return { key: c.key, label: c.label || c.Cycle || '', parent: c.parent || '', default_profile_id: c.parent ? p : '', engagement_class: c.parent ? ec : '', default_rule_set_id: 'default', action: c.parent ? act : (c.key === 'new-family' ? 'remove' : 'keep (family)') };
+    }).concat(NEW_CYCLES.filter(([k]) => !cyc.some(c => c.key === k)).map(([k, l, par, p, ec]) => ({ key: k, label: l, parent: par, default_profile_id: par ? p : '', engagement_class: par ? ec : '', default_rule_set_id: 'default', action: 'add' })));
+    const fall = T.cycle_map.filter(r => r.parent && r.default_profile_id === 'P00' && r.engagement_class !== 'probe');
+    if (fall.length) warn.push(`${fall.length} sub-cycles fell back to the neutral profile: ${fall.map(r => r.key).join(', ')}`);
+    /* cycle reference text */
+    T.cycle_reference = (L.cycles || []).filter(c => c && !c.key && c.Cycle).map(c => ({ cycle_name: c.Cycle, category: c.Category || '', purpose: c.Purpose || '',
+      best_for: c['Best For'] || '', capabilities: c['Key Capabilities'] || '', drawbacks: c['Drawbacks / Limits'] || '', gotchas: c.Gotchas || '', tips: c.Tips || '' }));
+    /* operations: stepdown caps from the baseline tab (wildcards, tags instead of key lists) + new caps */
+    const ops = []; let oi = 0; const oid = () => 'OP' + String(++oi).padStart(4, '0');
+    (L.baseline || []).filter(r => r && (r.material || r.apDmax != null)).forEach(r => {
+      const subs = String(r.subcycle || '*').split(',').map(s => s.trim()).filter(Boolean), dyn = subs.some(s => DYN.includes(s));
+      const sub = subs.length === 1 && subs[0] === '*' ? '*' : dyn ? 'tag:dynamic' : subs.join(', ');
+      String(r.material || '*').split(',').map(s => s.trim()).forEach(mat => ops.push({ operation_id: oid(), material_ref: mat.startsWith('*') && mat.length > 1 ? '@' + mat.slice(1) : mat,
+        tool_type: r.tool || '*', sub_cycle: sub, op_class: r.op || '*', band_scope: r.band && r.band !== '*' ? r.band : '*', ap_max_ratio: num(r.apDmax) ?? '',
+        ae_max_ratio: num(r.aeDmax) ?? '', Vc: num(r.Vc) ?? '', fz: num(r.fz) ?? '', apD: num(r.apD) ?? '', aeD: num(r.aeD) ?? '', coolant: r.coolant || '',
+        rule_set_id: 'default', estimate_basis: 'baseline tab', note: r.note || '', last_reviewed: today() }));
+    });
+    NEW_CAPS.forEach(([m, cls, v]) => { const sub = cls === 'dynamic' ? 'tag:dynamic' : '*', mref = '@' + m.slice(1);
+      if (!ops.some(o => o.material_ref === mref && o.sub_cycle === sub && o.op_class === 'rough'))
+        ops.push({ operation_id: oid(), material_ref: mref, tool_type: '*', sub_cycle: sub, op_class: 'rough', band_scope: '*', ap_max_ratio: v, ae_max_ratio: '', Vc: '', fz: '', apD: '', aeD: '', coolant: '',
+          rule_set_id: 'default', estimate_basis: 'v9 DECISION-21 (estimate)', note: `${m.slice(1)}: ${cls} roughing ≤ ${v}×Ø`, last_reviewed: today() }); });
+    T.operations = ops;
+    /* rules */
+    T.rules_engine = RULES.map(([code, cat, trig, act, pri], i) => ({ rule_id: 'R' + String(i + 1).padStart(3, '0'), rule_set_id: 'default', strategy_code: code, category: cat,
+      trigger_expression: trig, action_expression: act, priority: pri, note: '', last_reviewed: today() }));
+    /* tools (v9 view keyed by Tool Code; the tools tab itself is not changed in this step) */
+    let est = 0, untyped = [];
+    T.tools_v9 = (L.tools || []).filter(t => t && t['Tool Code']).map(t0 => {
+      const fix = TOOL_FIX[t0['Tool Code']] || {}, t = Object.assign({}, t0, fix), tt = TYPE[t.Type] || '', fam = fix.family || (ctx.sfxOf ? ctx.sfxOf(t['Tool Code']) : '');
+      if (!tt) untyped.push(t['Tool Code']);
+      const D = num(t['Diameter (mm)']), flute = num(t['Flute Length (mm)']) ?? num(t['Cutting Length (mm)']), reach = num(t['Reach (mm)']), shank = num(t['Shank Dia (mm)']), nl0 = num(t['Neck Length (mm)']);
+      const neckable = NECK_OK.includes(tt), intrinsic = NECK_INTRINSIC.includes(tt);
+      const necked = (neckable || tt === 'end_mill_lollipop') && D && reach && flute != null && reach > flute + 0.01;
+      let nd = null, nl = null, ne = false;
+      if (necked) { nl = nl0 ?? +(reach - flute).toFixed(2); nd = +(D < 3 ? 0.95 * D : D - 0.2).toFixed(2); ne = true; est++; }
+      const hss = tt === 'drill_hss' || (!fix.family && /HSS/i.test(fam + ' ' + (t.Type || ''))), coat = t.Coating || '';
+      const geo = {};
+      if (tt === 'end_mill_square') { geo.kappa_r_deg = 90; geo.corner_radius_mm = num(t['Corner Radius (mm)']) ?? 0; }
+      if (tt === 'end_mill_ball' && D) geo.ball_radius_mm = D / 2;
+      if (tt === 'end_mill_lollipop' && D) geo.sphere_diameter_mm = D;
+      if (tt === 'tslot' || tt === 'slitting_saw') { geo.disc_diameter_mm = D; geo.disc_width_mm = num(t['Cutting Length (mm)']); if (tt === 'tslot') { geo.neck_diameter_mm = null; geo.neck_length_mm = null; } }
+      if (tt === 'chamfer' || tt === 'spot_drill') { const a = String(t.Notes || '').match(/(\d+)\s*°/); if (a) geo[tt === 'chamfer' ? 'tip_angle_deg' : 'point_angle_deg'] = +a[1]; }
+      if (tt === 'thread_mill') { const p = String(t.Description || '').match(/M[\d.]+\s*[x×]\s*([\d.]+)/i); geo.pitch_mm = p ? +p[1] : null; geo.thread_form = 'ISO M'; }
+      if (tt === 'high_feed_mill') { geo.body_diameter_mm = D; geo.insert_count = num(t.Flutes); geo.max_ap_mm = num(t['Max DOC (mm)']); }
+      return { tool_code: t['Tool Code'], description: t.Description || '', tool_type: tt, tool_family: fam, diameter_mm: D, flutes: num(t.Flutes),
+        tool_material: hss ? 'HSS' : /PCD|diamond/i.test(t.Description || '') ? 'PCD' : 'carbide', coating: coat, flute_length_mm: flute, overall_length_mm: num(t['Overall Length (mm)']),
+        max_ap_mm: num(t['Max DOC (mm)']), overhang_mm: reach ?? '', is_long_necked: !!(necked && !intrinsic), shank_diameter_mm: shank ?? '',
+        neck_diameter_mm: nd ?? '', neck_length_mm: nl ?? '', neck_estimated: ne, geometry_json: JSON.stringify(geo), catalogue_ref: t['Catalogue Ref'] || '', last_reviewed: today() };
+    });
+    if (untyped.length) warn.push(`Tools with no v9 type: ${untyped.join(', ')}`);
+    if (est) warn.push(`${est} necked tools have an estimated neck Ø (0.95·D below Ø3, D − 0.2 above) — check against the catalogue`);
+    const badNeck = T.tools_v9.filter(t => t.neck_diameter_mm !== '' && t.shank_diameter_mm !== '' && t.neck_diameter_mm >= t.shank_diameter_mm).length;
+    if (badNeck) warn.push(`${badNeck} necked tools have neck Ø ≥ shank Ø (shank not a step) — modelled as uniform`);
+    T.tool_type_defaults = []; Object.keys(DEFAULTS).forEach(tt => Object.keys(DEFAULTS[tt]).forEach(f => T.tool_type_defaults.push({ tool_type: tt, field: f,
+      default_value: DEFAULTS[tt][f][0] == null ? '' : String(DEFAULTS[tt][f][0]), required: !!DEFAULTS[tt][f][1] })));
+    T.spindle_setup = [{ k_spindle_N_per_m: 50e6, f_spindle_hz: 900, damping_ratio: 0.04, holder_factor_shrink: 1, holder_factor_hydraulic: 0.9, holder_factor_collet: 0.75,
+      E_carbide_GPa: 600, rho_carbide: 14.5, E_HSS_GPa: 210, rho_HSS: 8.1, zeta_tool: 0.02, source: 'estimate (v9 DECISION-27/28)' }];
+    const counts = {}; Object.keys(T).forEach(k => counts[k] = T[k].length);
+    return { tables: T, warn, counts };
+  }
+  return { build, TABLES: ['material_groups', 'material_factors', 'diameter_bands', 'material_tool_baselines', 'multiplier_profiles', 'profile_op', 'cycle_map', 'cycle_reference', 'operations', 'rules_engine', 'tools_v9', 'tool_type_defaults', 'spindle_setup'] };
+})();
+/*V9M-END*/
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
 let SET={ra:1.6,pref:'balanced',raK:1,tiers:null,engage:null,geo:null,srcOrder:null,locks:null,srcStyle:null,known:null};
 /* 2026-10-14 calculator engagement adjustment (lib/settings.engage): Vc boost at light ae, fz ease at deep ap */
@@ -6477,11 +6722,11 @@ const UNDO=[];
 async function undoLast(){const u=UNDO.pop();if(!u)return toast('Nothing to undo');const rows=L[u.table],i=rows.indexOf(u.row);if(i<0){drawLibData();return toast('That row was deleted — cannot undo')}
  if(u.from===''||u.from==null)delete u.row[u.field];else u.row[u.field]=u.from;
  logChange(u.table,u.id,u.field,u.to,u.from,'Undo');saveLib(u.table);await flushLib();saveCLOG();drawLibData();renderLog();renderCheat();fillQB();toast(`Undid ${u.field} on ${u.id}`)}
-function renderLib(){if(CUR!=='lib')return;hostPage('lib');if(!['data','audit','cat','log'].includes(LS))LS='data';
-  const seg=`<div class="seg noprint" id="lseg">${[['data','Data'],['audit','Tooling audit'],['cat','Catalogue audit'],['log','Change log']].map(([k,l])=>`<button data-ls="${k}" class="${k===LS?'on':''}">${l}</button>`).join('')}</div>`;
+function renderLib(){if(CUR!=='lib')return;hostPage('lib');if(!['data','audit','cat','log','v9'].includes(LS))LS='data';
+  const seg=`<div class="seg noprint" id="lseg">${[['data','Data'],['audit','Tooling audit'],['cat','Catalogue audit'],['log','Change log'],['v9','v9 migration']].map(([k,l])=>`<button data-ls="${k}" class="${k===LS?'on':''}">${l}</button>`).join('')}</div>`;
   $('#lib').innerHTML=`<div class="row" style="margin-bottom:12px">${seg}</div><div id="lbody"></div>`;
   $('#lseg').onclick=e=>{const k=e.target.dataset.ls;if(k){LS=k;renderLib()}};
-  if(LS==='data')drawLibData();else if(LS==='audit')drawAudit();else if(LS==='cat')drawCatAudit();else drawCLOG();setTimeout(sz,0)}
+  if(LS==='data')drawLibData();else if(LS==='audit')drawAudit();else if(LS==='cat')drawCatAudit();else if(LS==='v9')drawV9();else drawCLOG();setTimeout(sz,0)}
 function drawLibData(){const q=LF.toLowerCase(),cols=LD[LK],rows=L[LK].map((r,i)=>[r,i]).filter(([r])=>!q||JSON.stringify(r).toLowerCase().includes(q));
   $('#lbody').innerHTML=`<div class="card lib"><h2>Library editor</h2><p class="mu">Edits sync to the database (lib/${LK}); drop-downs, Speeds &amp; Feeds and AI use them straight away. Add exact hyperMILL cycle names under “cycles”. ${LK==='tools'?'<b>Flute Length (mm)</b> is an optional new column: when filled it replaces Max DOC in the geometry card and audit.':''}${LK==='baseline'?' <b>Baseline</b>: one row per override. material = exact name, <code>*P2</code> (ISO family) or <code>*</code>; tool = suffix or <code>*</code>; subcycle = key (e.g. roughing.trochoidal) or <code>*</code>; op = rough / semi / finish / drill / ream / bore / thread / probe or <code>*</code>; band = band label or <code>*</code>. Vc m/min, fz mm/tooth, apD / aeD ×Ø, <b>apDmax</b> = stepdown limit ×Ø. Most specific row wins, field by field. Leave a cell blank to fall through.':''}${LK==='bands'?' <b>Bands</b> (mm): each hi + 0.01 must equal the next lo. apDmax = roughing stepdown limit ×Ø for that band. The table is only saved when it is contiguous.':''}</p><div class="row"><select id="lk" style="max-width:160px">${opt(Object.keys(LD),LK)}</select><input id="lf" placeholder="Filter… (e.g. a tool code)" value="${esc(LF)}"><button class="b" id="ladd">Add row</button><button class="b s" id="lundo"${UNDO.length?'':' disabled'} title="${UNDO.length?esc('Undo '+UNDO[UNDO.length-1].field+' on '+UNDO[UNDO.length-1].id):'Nothing to undo'}">Undo last change</button></div>
   <div class="row" style="margin-top:8px"><button class="b s" id="lbak">Download backup</button><button class="b s" id="lres">Restore from backup…</button><input type="file" id="lresf" accept=".json,application/json" hidden></div><div id="lresc"></div><p id="ls" class="mu"></p><div class="tw"><table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows.slice(0,LLIM).map(([r,i])=>`<tr>${cols.map(c=>`<td><textarea rows="1" data-li="${i}" data-lc="${esc(c)}">${esc(r[c])}</textarea></td>`).join('')}<td><button class="b s sm" data-ld="${i}" title="Delete row">✕</button></td></tr>`).join('')}</tbody></table></div><p class="mu">${rows.length>LLIM?`Showing ${LLIM} of ${rows.length} — filter to narrow. <button class="b s sm" id="lmore">Show 100 more</button>`:rows.length+' rows'}</p></div>`;
@@ -6493,6 +6738,20 @@ $('#lib').onchange=async e=>{const d=e.target.dataset;if(d.li==null)return;const
  const id=r['Tool Code']||r.Material||r.Cycle||r['Holder Code']||r.Machine||(LK==='baseline'?[r.material,r.tool,r.subcycle,r.op,r.band].map(x=>x||'*').join(' | '):LK==='bands'?r.label:'')||('row '+d.li);logChange(LK,id,d.lc,old,v,'Library editor');UNDO.push({table:LK,rowIndex:+d.li,row:r,id,field:d.lc,from:old,to:v});if(UNDO.length>20)UNDO.shift();if($('#lundo')){$('#lundo').disabled=false;$('#lundo').title='Undo '+d.lc+' on '+id}if(LK==='tools'){resolveFlags(r['Tool Code'],d.lc,'Library editor');saveAM()}
  saveLib();saveCLOG();renderLog();renderCheat();fillQB()};
 $('#lib').onclick=e=>{const d=e.target.dataset;if(d.ld!=null){if(e.target.dataset.sure!=='1'){e.target.dataset.sure='1';e.target.textContent='Sure?';setTimeout(()=>{if(e.target.isConnected){e.target.dataset.sure='';e.target.textContent='✕'}},2500);return}L[LK].splice(+d.ld,1);saveLib();drawLibData();renderLog();renderCheat();fillQB()}};
+
+/* ---------- Library → v9 migration (Phase 2 step 1): dry run, then Apply writes the new tables beside the old ones ---------- */
+let V9R=null;
+function drawV9(){const admin=LIVE.state==='off'||ROLE()==='admin';if(!V9R)try{V9R=V9M.build({L,matInfo:SF.matInfo,sfxOf:AUD.sfxOf})}catch(e){V9R={tables:{},counts:{},warn:['Dry run failed: '+(e.message||e)]}}
+ const c=V9R.counts,rows=V9M.TABLES.map(k=>`<tr><td>${k}</td><td class="n">${c[k]??0}</td></tr>`).join('');
+ $('#lbody').innerHTML=`<div class="card"><h2>v9 migration</h2><p class="mu">Dry run of the new v9 tables built from your current library. Nothing is changed until you press Apply; your existing tables stay as they are.</p>
+ <div class="tw"><table><thead><tr><th>New table</th><th>Rows</th></tr></thead><tbody>${rows}</tbody></table></div>
+ ${V9R.warn.length?`<div class="note w">${V9R.warn.map(esc).join('<br>')}</div>`:''}
+ <div class="row" style="margin-top:8px"><button class="b s" id="v9re">Run dry run again</button>${admin?'<button class="b" id="v9ap">Apply (downloads a backup first)</button>':'<span class="mu">Only an administrator can apply.</span>'}</div><p id="v9m" class="mu"></p></div>`;
+ $('#v9re').onclick=()=>{V9R=null;drawV9()};if($('#v9ap'))$('#v9ap').onclick=applyV9}
+async function applyV9(){if(OFFLINE||!db)return toast('Offline — not applied');const b=$('#v9ap');if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Sure? Click again to apply';return}
+ b.disabled=true;$('#v9m').textContent='Saving a backup…';await backupLib();
+ try{for(const k of V9M.TABLES){$('#v9m').textContent='Writing '+k+'…';await writeLib(k,V9R.tables[k]||[]);logChange(k,'(v9)','created','',(V9R.tables[k]||[]).length+' rows','v9 migration','Phase 2 step 1')}
+  saveCLOG();$('#v9m').textContent='Applied: '+V9M.TABLES.length+' new tables written.';toast('v9 tables written')}catch(e){$('#v9m').textContent='Stopped: '+(e.message||e);b.disabled=false}}
 /* ---- backup / restore of the whole library ---- */
 const today=()=>new Date().toISOString().slice(0,10);
 async function backupLib(){if(!dl)return toast('Downloads unavailable here');await flushLib();
