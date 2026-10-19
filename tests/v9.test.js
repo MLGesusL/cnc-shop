@@ -44,4 +44,21 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
     profile_op: [Object.assign({ profile_id: 'PX', op_class: 'rough' }, po)], cycle_map: [], operations: [] };
   const rec = V9E.recommend(T, { material: 'X', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, op: 'rough', profile: 'PX', ldTier: 1 });
   near(rec.ae, 0.75, 1e-9, 'range: recommended ae'); near(rec.ap, 20, 1e-9, 'range: ap held at ap max'); near(rec.Vc, 100, 1e-9, 'range: Vc at the start point (start ×1)'); }
+/* 2026-10-19 bull-nose axial chip thinning and hyperMILL multipliers */
+{ const m = V9E.mults({ D: 12, R: 2, ae: 6, ap: 0.5, fz: 0.1, iso: 'P2' });
+  near(m.kappaDeg, Math.acos(1.5 / 2) * 180 / Math.PI, 1e-9, 'bull: κ = arccos((R − ap)/R)');
+  near(m.sAx, 2 / Math.sqrt(2 * 2 * 0.5 - 0.25), 1e-9, 'bull: s_axial = R / √(2·R·ap − ap²)');
+  near(m.sRad, 1, 1e-9, 'bull: ae ≥ ½ cutting Ø → no radial thinning');
+  near(m.Dc, 12 - 4 + 2 * Math.sqrt(4 - 2.25), 1e-9, 'bull: cutting Ø on the corner arc');
+  near(m.hex, 0.1 / m.sAx, 1e-9, 'bull: h_ex = fz · sin κ');
+  near(m.rampDeg, 3, 0, 'ramp angle P'); near(V9E.rampDeg('M'), 1.5, 0, 'ramp angle M'); near(V9E.rampDeg('N1'), 5, 0, 'ramp angle N');
+  near(V9E.mults({ D: 12, R: 2, ae: 6, ap: 3 }).sAx, 1, 0, 'bull: ap ≥ R → no axial thinning');
+  const c = V9E.mults({ D: 12, R: 2, ae: 0.6, ap: 0.3 }); ok(c.capped && Math.abs(c.sTot - V9E.K.cthMax) < 1e-9, 'bull: combined held at the cap');
+  near(V9E.mults({ D: 10, ball: true, ae: 0.2, ap: 0.2, tilt: 15 }).sAx, 10 / (10 * Math.sin((15 + Math.acos(0.96) * 180 / Math.PI) * Math.PI / 180)), 1e-9, 'ball: tilt reduces axial thinning');
+  const r2 = V9E.calc({ D: 12, z: 4, Vc: 150, fz: 0.3, ae: 6, ap: 0.5, cornerR: 2, op: 'rough', iso: 'P2', kc11: 2100, mc: 0.25, nmax: 12000, eta: 0.8, tool: { type: 'end_mill_square', material: 'carbide' }, spindleKw: 15 });
+  near(r2.hex, 0.3 / r2.mx.sAx, 1e-9, 'calc: h_ex uses the corner-arc κ'); near(r2.loadPct, 100 * r2.Pc / 15, 1e-9, 'calc: spindle load %');
+  const T = { material_tool_baselines: [{ material: '', group_id: 'P2', tool_family: 'BX', band_id: 'B1', Vc_base: 150, fz_base: 0.1, fz_unit: 'per_tooth', is_active: true }], diameter_bands: [{ band_id: 'B1', label: '10–16', lo_mm: 10, hi_mm: 16 }],
+    profile_op: [{ profile_id: 'HF', op_class: 'rough', Vc_mult: 1, fz_mult: 1, ae_ratio: 0.5, ap_ratio: 0.04 }], cycle_map: [], operations: [] };
+  const rec = V9E.recommend(T, { material: 'X', iso: 'P2', family: 'BX', type: 'end_mill_square', D: 12, z: 4, op: 'rough', profile: 'HF', R: 2, ldTier: 1 });
+  near(rec.fz, 0.1 * V9E.cthAx(0.48, 2), 1e-9, 'recommend: bull-nose starting fz includes axial thinning'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);

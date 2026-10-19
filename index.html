@@ -472,7 +472,14 @@ body.edon main{padding-bottom:150px}body.edon .toast{bottom:calc(96px + env(safe
 .sgops{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}
 .sgop{border:1px solid var(--bd2);border-radius:var(--r);background:var(--sub);padding:8px 10px}
 .sgoph{font-size:16px;margin-bottom:4px}
-table.sgt{width:auto;font-size:15px;margin:0}table.sgt th,table.sgt td{border:0;padding:3px 6px;min-width:0;background:transparent}
+table.hmx{margin:10px 0;padding:10px 12px;border:1px solid var(--bd,#ccd);border-radius:10px}
+.hmx h4{margin:0 0 6px;font-size:17px}
+table.hmxt{width:100%;font-size:16px;margin:0}
+table.hmxt th,table.hmxt td{border:0;border-top:1px solid var(--bd,#dde);padding:6px 8px;min-width:0;background:transparent;vertical-align:top;white-space:normal}
+table.hmxt th{text-align:left;font-weight:600;color:var(--tx)}
+table.hmxt td.n{white-space:nowrap;text-align:right}
+table.hmxt td:last-child{color:var(--mu);font-size:14px}
+.sgt{width:auto;font-size:15px;margin:0}table.sgt th,table.sgt td{border:0;padding:3px 6px;min-width:0;background:transparent}
 table.sgt thead th{font-size:13px;color:var(--mu);font-weight:500;position:static;background:transparent}
 table.sgt tbody th{font-weight:600;color:var(--tx);white-space:nowrap;text-align:left}
 table.sgt input{min-height:38px;padding:4px 8px;text-align:right}
@@ -4644,7 +4651,8 @@ const V9E = (() => {
   const PI = Math.PI, fin = x => typeof x === 'number' && isFinite(x), pos = x => fin(x) && x > 0;
   const MAT = { carbide: [600e3, 14.5e-6], HSS: [210e3, 8.1e-6], powder_metal: [230e3, 8.0e-6], PCD: [600e3, 14.5e-6] }; /* E N/mm², ρ kg/mm³ */
   /* engine constants, editable in Cutting data → Machines & physics (stored on the spindle_setup row) */
-  const K = { cthMax: 2.5, ldT1: 3, ldT2: 5, ldF1: .75, ldF2: .5, hminWH: .003, hminWHabs: .005, hmin: .0015, hminAbs: .003, deflF: .01, deflS: .03, deflR: .05, hfShrink: 1, hfHyd: .9, hfCollet: .75 };
+  const K = { cthMax: 2.5, ldT1: 3, ldT2: 5, ldF1: .75, ldF2: .5, hminWH: .003, hminWHabs: .005, hmin: .0015, hminAbs: .003, deflF: .01, deflS: .03, deflR: .05, hfShrink: 1, hfHyd: .9, hfCollet: .75,
+    cornerPct: 70, rampPct: 50, rampN: 5, rampPK: 3, rampMSH: 1.5 }; /* 2026-10-19: corner −30 % (rule CO-01), ramp angles (rule EN-02); ramp feed 50 % is an estimate */
   const TAYLOR_N = { HSS: .125, powder_metal: .125, carbide: .25, carbide_coated: .3, PCD: .5 };
   const COOL = { /* DECISION-25 */ flood: { S: 1, M: 1, P: 1, K: 1, H: 1, O: 1 }, hpc: { S: 1.1, M: 1.1, P: 1.05, K: 1.05, H: 1, O: 1 },
     mql: { S: .9, M: .9, P: .95, K: .95, H: 1, O: 1 }, air: { S: .85, M: .85, P: .9, K: .9, H: 1, O: 1 }, dry: { S: .75, M: .75, P: .9, K: .9, H: 1, O: 1 } };
@@ -4663,7 +4671,8 @@ const V9E = (() => {
   const ldTier = x => isOff('ldTier') || x <= K.ldT1 ? 1 : x <= K.ldT2 ? K.ldF1 : K.ldF2;
   function setConst(o) { o = o || {}; const n = v => v === '' || v == null || !isFinite(+v) ? null : +v;
     Object.keys(OFF).forEach(k => delete OFF[k]); try { const c = typeof o.checks_json === 'string' ? JSON.parse(o.checks_json || '{}') : o.checks_json || {}; Object.keys(c).forEach(k => { if (c[k] === false) OFF[k] = true; }); } catch (e) {}
-    [['cthMax', 'cth_max'], ['ldT1', 'ld_t1'], ['ldT2', 'ld_t2'], ['ldF1', 'ld_f1'], ['ldF2', 'ld_f2'], ['hminWH', 'hmin_wh_ratio'], ['hminWHabs', 'hmin_wh_mm'], ['hmin', 'hmin_ratio'], ['hminAbs', 'hmin_mm'], ['deflF', 'defl_finish_mm'], ['deflS', 'defl_semi_mm'], ['deflR', 'defl_rough_mm'], ['hfShrink', 'holder_factor_shrink'], ['hfHyd', 'holder_factor_hydraulic'], ['hfCollet', 'holder_factor_collet']].forEach(([k, f]) => { const v = n(o[f]); if (v != null && v > 0) K[k] = v; });
+    [['cthMax', 'cth_max'], ['ldT1', 'ld_t1'], ['ldT2', 'ld_t2'], ['ldF1', 'ld_f1'], ['ldF2', 'ld_f2'], ['hminWH', 'hmin_wh_ratio'], ['hminWHabs', 'hmin_wh_mm'], ['hmin', 'hmin_ratio'], ['hminAbs', 'hmin_mm'], ['deflF', 'defl_finish_mm'], ['deflS', 'defl_semi_mm'], ['deflR', 'defl_rough_mm'], ['hfShrink', 'holder_factor_shrink'], ['hfHyd', 'holder_factor_hydraulic'], ['hfCollet', 'holder_factor_collet'],
+      ['cornerPct', 'corner_feed_pct'], ['rampPct', 'ramp_feed_pct'], ['rampN', 'ramp_deg_N'], ['rampPK', 'ramp_deg_PK'], ['rampMSH', 'ramp_deg_MSH']].forEach(([k, f]) => { const v = n(o[f]); if (v != null && v > 0) K[k] = v; });
     const E = n(o.E_carbide_GPa), r = n(o.rho_carbide), Eh = n(o.E_HSS_GPa), rh = n(o.rho_HSS); if (E > 0) MAT.carbide[0] = MAT.PCD[0] = E * 1e3; if (r > 0) MAT.carbide[1] = MAT.PCD[1] = r * 1e-6; if (Eh > 0) MAT.HSS[0] = Eh * 1e3; if (rh > 0) MAT.HSS[1] = rh * 1e-6;
     try { const c = typeof o.coolant_json === 'string' ? JSON.parse(o.coolant_json || '{}') : o.coolant_json || {}; Object.keys(c).forEach(m => { if (COOL[m]) Object.keys(c[m]).forEach(g => { const v = n(c[m][g]); if (v > 0) COOL[m][g] = v; }); }); } catch (e) {}
     try { const t = typeof o.taylor_json === 'string' ? JSON.parse(o.taylor_json || '{}') : o.taylor_json || {}; Object.keys(t).forEach(m => { const v = n(t[m]); if (v > 0) TAYLOR_N[m] = v; }); } catch (e) {} }
@@ -4676,6 +4685,22 @@ const V9E = (() => {
   const cthRad = (ae, D) => { const r = ae / D; return r > 0 && r < .5 ? 1 / Math.sqrt(1 - Math.pow(1 - 2 * r, 2)) : 1; };
   const cthAx = (ap, R) => R > 0 && ap > 0 && ap < R ? 1 / Math.sqrt(1 - Math.pow((R - ap) / R, 2)) : 1;
   const deff = (ap, D, tiltDeg) => { if (!(ap > 0) || ap >= D / 2 && !tiltDeg) return D; const b = (tiltDeg || 0) * PI / 180; return D * Math.sin(Math.min(PI / 2, b + Math.acos(Math.max(-1, (D - 2 * ap) / D)))); };
+  /* 2026-10-19 bull-nose (toroidal) cutter: with ap < corner R only part of the corner arc cuts. Lead angle at the top of the cut
+     κ = arccos((R − ap) / R); cutting Ø there = D − 2R + 2·√(R² − (R − ap)²). */
+  const dBull = (ap, D, R) => R > 0 && ap > 0 && ap < R ? D - 2 * R + 2 * Math.sqrt(R * R - (R - ap) * (R - ap)) : D;
+  const rampDeg = iso => { iso = String(iso || ''); return /^N/.test(iso) ? K.rampN : /^(M|S|H)/.test(iso) ? K.rampMSH : K.rampPK; };
+  /* hyperMILL feed multipliers for one cut: s_rad (radial thinning, on the Ø actually cutting), s_axial = 1 / sin κ (bull-nose
+     corner arc or ball nose, tilt included), S_total = s_rad · s_axial held at the chip-thinning cap. h_ex = fz / S_raw. */
+  function mults(q) {
+    const D = q.D, ap = q.ap, ae = q.ae, ball = !!q.ball, R = ball ? D / 2 : (q.R || 0), kr = (q.kappaDeg || 90) * PI / 180;
+    let Dc = D, sk = 1;
+    if (ball) { Dc = deff(ap, D, q.tilt); sk = Dc / D; }
+    else if (R > 0 && ap > 0 && ap < R) { Dc = dBull(ap, D, R); sk = Math.sqrt(1 - Math.pow((R - ap) / R, 2)); }
+    sk = Math.max(1e-6, Math.min(sk, Math.sin(kr)));
+    const sRad = pos(ae) ? cthRad(ae, Dc) : 1, sAx = 1 / sk, raw = sRad * sAx, sTot = Math.min(K.cthMax, raw);
+    return { D, Dc, R, ball, aeD: pos(ae) ? ae / Dc : NaN, sRad, kappaDeg: Math.asin(Math.min(1, sk)) * 180 / PI, sAx, raw, sTot, capped: raw > K.cthMax + 1e-9,
+      hex: pos(q.fz) ? q.fz / raw : NaN, axialOn: sAx > 1 + 1e-9, cornerPct: K.cornerPct, rampPct: K.rampPct, rampDeg: rampDeg(q.iso) };
+  }
   /* tool segments from the tip: [from, to, d] (mm). Flutes at 0.8·D, neck, shank. Lollipop / T-slot add a tip mass. */
   function segments(t, stick) {
     const D = t.D, tt = t.type || '', L = stick, segs = [], notes = [];
@@ -4716,9 +4741,13 @@ const V9E = (() => {
     const o = { notes: [], warn: [] }, D = I.D, z = I.z || 1, kr = (I.kappaDeg || 90) * PI / 180, tt = I.tool.type || '';
     const ball = /ball/.test(tt), R = ball ? D / 2 : (I.cornerR || 0);
     o.Dcut = ball ? deff(I.ap, D, I.tilt) : D;
-    o.phi = phiS(I.ae, o.Dcut); o.Nstar = nStar(z, I.ae, o.Dcut);
-    o.cthRad = cthRad(I.ae, o.Dcut); o.cthAx = cthAx(I.ap, R); o.cth = Math.min(K.cthMax, o.cthRad * o.cthAx);
-    o.hm = hm(I.fz, I.ae, o.Dcut, kr); o.hex = hex(I.fz, I.ae, o.Dcut, kr);
+    /* 2026-10-19: the chip is worked out on the Ø actually cutting (ball: tilt included; bull-nose with ap < R: the corner arc)
+       and with the lead angle κ of that arc, so h_ex / Ks / the rubbing check see the real, thinner chip */
+    o.mx = mults({ D, R, ball, ae: I.ae, ap: I.ap, tilt: I.tilt, fz: I.fz, iso: I.iso, kappaDeg: I.kappaDeg });
+    const Dg = o.mx.Dc, kEff = Math.asin(Math.min(1, 1 / o.mx.sAx));
+    o.phi = phiS(I.ae, Dg); o.Nstar = nStar(z, I.ae, Dg);
+    o.cthRad = o.mx.sRad; o.cthAx = o.mx.sAx; o.cth = o.mx.sTot;
+    o.hm = hm(I.fz, I.ae, Dg, kEff); o.hex = hex(I.fz, I.ae, Dg, kEff);
     o.Ks = ks(I.kc11, I.mc, o.hm, I.gamma0);
     o.nCalc = 1000 * I.Vc / (PI * o.Dcut); o.n = I.nmax > 0 ? Math.min(o.nCalc, I.nmax) : o.nCalc; o.capped = o.n < o.nCalc - .5;
     o.VcAct = PI * o.Dcut * o.n / 1000; o.Vf = (I.perRev ? I.fz : I.fz * z) * o.n;
@@ -4727,6 +4756,7 @@ const V9E = (() => {
     o.Q = I.ap * I.ae * o.Vf / 1000; o.Pc = I.ap * I.ae * o.Vf * o.Ks / (60e6 * (I.eta || .8)); o.T = o.n > 0 ? 9549 * o.Pc / o.n : NaN;
     if (/drill|spot/.test(tt)) { const eps = (I.pointDeg || 140) * PI / 180, fn = I.perRev ? I.fz : I.fz * z, kcd = ks(I.kc11, I.mc, fn / 2 * Math.sin(eps / 2), 0);
       o.Pc = fn * o.VcAct * D * kcd / 240000; o.T = o.n > 0 ? 9549 * o.Pc / o.n : NaN; o.thrust = .5 * kcd * D / 2 * fn * Math.sin(eps / 2); o.Q = PI * D * D / 4 * o.Vf / 1000; }
+    if (pos(I.spindleKw)) o.loadPct = 100 * o.Pc / I.spindleKw; if (pos(I.spindleNm)) o.torquePct = 100 * o.T / I.spindleNm;
     if (isOff('power')) o.powerOff = true;
     else if (pos(I.spindleKw) && o.Pc > .8 * I.spindleKw) o.warn.push(`Power ${o.Pc.toFixed(1)} kW is over 80 % of the ${I.spindleKw} kW spindle`);
     if (!isOff('power') && pos(I.spindleNm) && o.T > .8 * I.spindleNm) o.warn.push(`Torque ${o.T.toFixed(0)} N·m is over 80 % of the ${I.spindleNm} N·m spindle`);
@@ -4837,7 +4867,9 @@ const V9E = (() => {
     const rm = rangeAt(po, rg.aeNom);
     const Vc = +b.Vc_base * rm.vc * vCool(q.iso, q.coolant);
     if (vCool(q.iso, q.coolant) !== 1) out.why.push('coolant ×' + vCool(q.iso, q.coolant));
-    const cth = fin(ae) && !isOff('thinning') ? Math.min(K.cthMax, cthRad(ae, q.D) * (fin(ap) ? cthAx(ap, q.R || 0) : 1)) : 1;
+    /* 2026-10-19: same multipliers as the calculator — bull-nose axial thinning when the starting ap is under the corner R */
+    const mx = fin(ae) ? mults({ D: q.D, R: q.R || 0, ball: /ball/.test(q.type || ''), ae, ap: fin(ap) ? ap : 0, iso: q.iso }) : null;
+    const cth = mx && !isOff('thinning') ? mx.sTot : 1; out.mx = mx;
     out.Vc = Vc; out.fz = fz * rm.fz * cth * ld; out.po = po; out.fzBase = fz; out.cth = cth; out.ae = ae; out.ap = ap; out.apMax = apMax; out.perRev = perRev;
     out.VcBase = +b.Vc_base; out.basis = b.estimate_basis; out.capped = b.was_capped === true || b.was_capped === 'true'; if (out.capped) out.why.push('catalogue value capped at 2× typical');
     return out;
@@ -4884,7 +4916,7 @@ const V9E = (() => {
     const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
     return best ? { profile_id: best[0].split('|')[0], engagement_class: best[0].split('|')[1], inherited: true } : { profile_id: 'P00', engagement_class: 'finish', inherited: true };
   }
-  return { K, COOL, TAYLOR_N, MAT, CHECKS, isOff, setConst, ldTier, calc, rules, evalExpr, recommend, range, rangeAt, cycleProfile, ruleVars, VARS, vCool, holderFactor, segments, beam, twoMass, cthRad, cthAx, hm, ks, deff, phiS, nStar };
+  return { K, COOL, TAYLOR_N, MAT, CHECKS, isOff, setConst, ldTier, calc, rules, evalExpr, recommend, range, rangeAt, cycleProfile, ruleVars, VARS, vCool, holderFactor, segments, beam, twoMass, cthRad, cthAx, hm, ks, deff, phiS, nStar, dBull, mults, rampDeg };
 })();
 /*V9E-END*/
 /*V9M-BEGIN*/
@@ -6183,7 +6215,7 @@ ${st(1,'Job &amp; machine',fs(['date','job','machine','material','coolant']))}
 ${st(2,'Tool &amp; holder',fs(['tool','holder','stickout'])+'<div id="tg"></div>')}
 ${st(3,'Cycle',`<div hidden>${fs(['cycle','operation'])}</div><div id="lgtag"><label>Family › hyperMILL cycle › Operation › Sub-cycle <span class="mu">— each list only offers what fits the choice before it; the Ø band is set from the tool when you save</span></label>${tpHtml('log',LOGTAG)}<div id="lgtagerr"></div></div>`,'the hyperMILL cycle you used')}
 ${st(4,'Cutting data',fs(['vc','fz','doc','woc','stepover'])+`<div id="lgaf"></div><div class="out"><div>RPM<b id="o_rpm">–</b></div><div>Feed mm/min<b id="o_feed">–</b></div><div>MRR cm³/min<b id="o_mrr">–</b></div><div style="flex:1;min-width:200px">Tool<b id="o_tool" style="font-size:13px">–</b></div></div>`,'what you actually ran')}
-${st(5,'hyperMILL cycle settings','<div id="cp"></div>','as on the cycle’s dialog')}
+${st(5,'hyperMILL cycle settings','<div id="cpmult"></div><div id="cp"></div>','as on the cycle’s dialog')}
 ${st(6,'Result',fs(['result'])+`<div style="margin-top:10px"><label>Notes</label><textarea id="f_notes" rows="2"></textarea></div>
 <p class="row"><button class="b" id="save">Save to database</button> <button class="b s" id="dup" title="Copy the most recent cut with this tool (or this material and operation), except the date">Duplicate last</button> <button class="b s" id="cpl">Copy setup line</button> <span id="msg" class="mu"></span></p>`)}
 <div id="prev"></div></div>
@@ -6259,9 +6291,14 @@ function lgAuto(){const box=$('#lgaf');if(!box)return;const m=$('#f_material').v
  box.innerHTML=`<div class="note lgafn">${srcB(r.src,r.meta)} <b>Recommended</b>: Vc ${f(r.vc)} m/min · fz ${fzF(r.fz)} mm${r.ap!=null?' · ap '+f(r.ap,2)+' mm':''}${r.ae!=null?' · ae '+f(r.ae,2)+' mm':''}${r.capped?' (RPM capped)':''} <span class="mu">— ${esc(r.basedOn||'')}</span><br><small class="mu">${n?'Tinted fields were filled from this — type over any of them to log what you actually ran.':'Your typed values are kept.'}</small> ${off?'<button class="b s sm" id="lgafon" type="button">Auto-fill again</button>':LG_AUTO.some(k=>{const el=$('#f_'+k);return el&&el.dataset.auto})?'<button class="b s sm" id="lgafclr" type="button">Clear auto-filled values</button>':''}</div>`}
 function calc(){lgAuto();{const lt=logTag(),lo=lt.operation&&legacyOp(lt.operation),fo=$('#f_operation');if(lo&&fo&&fo.value!==lo&&!(lo==='Drill'&&/^(Drill|Tap)$/.test(fo.value))&&!(lt.operation==='finish'&&/^(Face|Chamfer)$/.test(fo.value))&&!(lt.operation==='rough'&&fo.value==='Slot'))fo.value=lo}drawCP();drawTG();drawSG();const t=tool($('#f_tool').value),vc=num($('#f_vc').value),fz=num($('#f_fz').value);
   const D=t?t['Diameter (mm)']:NaN,Z=t?t.Flutes:NaN,rpm=vc*1000/(Math.PI*D),feed=rpm*fz*Z,mrr=feed*num($('#f_doc').value)*num($('#f_woc').value)/1000;
-  $('#o_rpm').textContent=f(rpm);$('#o_feed').textContent=f(feed);$('#o_mrr').textContent=f(mrr,1);$('#o_tool').textContent=t?`${t.Description} (Ø${D}, ${Z}fl)`:'unknown tool code';
+  $('#o_rpm').textContent=f(rpm);$('#o_feed').textContent=f(feed);$('#o_mrr').textContent=f(mrr,1);drawLogMult(t,vc,fz,feed);$('#o_tool').textContent=t?`${t.Description} (Ø${D}, ${Z}fl)`:'unknown tool code';
   const p=findCuts({material:$('#f_material').value,tool:$('#f_tool').value}).slice(0,5);
   $('#prev').innerHTML=p.length?`<h3>Past cuts, same material + tool</h3>`+tbl(p):''}
+/* 2026-10-19: Log cut step 5 — the hyperMILL feed multipliers for the cut as entered (bull-nose axial thinning included) */
+function drawLogMult(t,vc,fz,vf){const h=$('#cpmult');if(!h)return;let html='';try{const code=$('#f_tool').value,tl=t&&v9ToolOf(code),ap=num($('#f_doc').value),ae=num($('#f_woc').value);
+  if(tl&&tl.D>0&&!/drill|spot|reamer|tap/.test(tl.type||'')&&(ap>0||ae>0)){const m=L.materials.find(x=>x.Material===$('#f_material').value),iso=m?SF.matInfo(m).iso:'',ball=/ball/.test(tl.type||'');
+   const mx=V9E.mults({D:tl.D,R:ball?tl.D/2:(tl.R||+t['Corner Radius (mm)']||0),ball,ae:ae>0?ae:NaN,ap:ap>0?ap:0,fz:fz>0?fz:NaN,iso,kappaDeg:isFinite(tl.kappa)?tl.kappa:90});
+   html=multHtml({mx,fz:fz>0?fz:NaN,Vc:vc>0?vc:NaN,vf:isFinite(vf)?vf:NaN,ap:ap>0?ap:NaN,ctx:'log'})}}catch(e){console.error(e)}h.innerHTML=html}
 /* suggested starting point from the cheat-sheet engine */
 /* on phones the suggestion sits in a sticky bar just above Save (#sgm); on wider screens it stays under the form fields (#sg) */
 const MQ=matchMedia('(max-width:860px)');MQ.addEventListener&&MQ.addEventListener('change',()=>{if($('#sg'))drawSG()});
@@ -6756,7 +6793,7 @@ const CALC_FIELDS=[
  {key:'rpm',label:'RPM',unit:'rpm',solve:'formula',formula:'vc * 1000 / (pi * D)',solve_back:'vf / (fz * Z)'},
  {key:'vf',label:'Vf',unit:'mm/min',solve:'formula',formula:'rpm * fz * Z'},
  {key:'Q',label:'Q',unit:'cm³/min',solve:'formula',formula:'vf * ae * ap / 1000'},
- {key:'P',label:'Power',unit:'kW',solve:'formula',formula:'Q * kc / (60000 * 0.8)'},
+ {key:'P',label:'Power',unit:'kW',solve:'formula',formula:'Q * ks / (60000 * eta)'},
  {key:'aeD',label:'ae ×D',solve:'formula',formula:'ae / D'},
  {key:'apD',label:'ap ×D',solve:'formula',formula:'ap / D'},
  {key:'ra',label:'Ra target',unit:'µm',solve:'derived_input',default:1.6,hidden_if:'1 - is_ball'}];
@@ -6792,7 +6829,11 @@ function c6Defaults(){const v=CALCV,t=tool(v.tool),out={vals:{},src:{},t,warn:''
    out.vals.fz=s.perRev?s.fz/(Z>0?Z:1):s.fz;out.src.fz='v9';if(isFinite(s.ae)){out.vals.ae=Math.min(s.ae,D);out.src.ae='v9'}if(isFinite(s.ap)){out.vals.ap=s.ap;out.src.ap='v9'}if(out.warn&&r&&r.warn)out.warn=''}}}catch(e){console.error('v9 start',e)}
  out.raK=out.raK||(+SET.raK||1);return out}
 function c6Scope(){const d=C6.def||{},t=d.t||{},v=CALCV,mc=L.machines.find(x=>x.Machine===v.mach)||{};
- return Object.assign({},C6.st,{rpm_max:capOf(v.mach),kc:v9Kc(d.info&&d.info.iso,v.mat).kc,k:d.raK||1,is_ball:d.ball?1:0,stickout:gn(v.so),reach:gn(t['Reach (mm)']),cut_len:gn(t['Cutting Length (mm)']),
+ const K9=v9Kc(d.info&&d.info.iso,v.mat);
+ /* 2026-10-19: ks = Kienzle specific force at this cut's mean chip (kc1.1 · hm^−mc) — the same value as the physics panel; kc alone is the 1 mm chip value */
+ const ks=(()=>{try{const g=c6Geo(),D=C6.st[(c6Row('D')||{}).key]||g.D,fz=C6.st[(c6Row('fz')||{}).key],ae=C6.st[(c6Row('ae')||{}).key]??C6.st.ae_ball,ap=C6.st[(c6Row('ap')||{}).key]||0;if(!(D>0&&fz>0&&ae>0))return K9.kc;
+  const mx=V9E.mults({D,R:g.R||0,ball:!!d.ball,ae,ap}),kE=Math.asin(Math.min(1,1/mx.sAx));return V9E.ks(K9.kc,K9.mc,V9E.hm(fz,ae,mx.Dc,kE),0)}catch(e){return K9.kc}})();
+ return Object.assign({},C6.st,{rpm_max:capOf(v.mach),kc:K9.kc,ks,eta:gn(mc.eta)>0?gn(mc.eta):.8,k:d.raK||1,is_ball:d.ball?1:0,stickout:gn(v.so),reach:gn(t['Reach (mm)']),cut_len:gn(t['Cutting Length (mm)']),
   power_limit:gn(C6.adv.plimit)>0?gn(C6.adv.plimit):gn(mc['Spindle Power (kW)']),defl_limit:gn(C6.adv.dlimit),reground:C6.adv.cond==='reground'?1:0,dynamic:C6.adv.strategy==='dynamic'?1:0})}
 const c6Row=k=>calcFields().find(r=>r.key.toLowerCase()===String(k).toLowerCase());
 /* fresh state for a new selection: defaults from the engine, the Sheet's default column, then every formula */
@@ -6827,7 +6868,7 @@ function c6Settle(hold){for(let pass=0;pass<3;pass++){let moved=false;
 function c6Engage(){const d=C6.def;C6.adj=null;if(!d||!d.vals)return;const g=c6Geo(),D=g.D;if(!(D>0))return;
  const rA=c6Row('ae'),rP=c6Row('ap'),rV=c6Row('Vc'),rF=c6Row('fz');if(!rA||!rP)return;
  const ae=C6.st[rA.key],ap=C6.st[rP.key],ae0=d.vals.ae,ap0=d.vals.ap,E=engCfg(CALCV.tag.cycleFamily||''),ball=!!d.ball,R=g.R||0;if(!(ae>0)||!(ae0>0))return;
- const thin=(a,p)=>{const de=ball&&p>0?SF.deffOf(p,D):D;return Math.max(1/(E.thinMax>1?E.thinMax:1),(p>0?(ball?SF.sAx(p,D/2):SF.sAx(p,R)):1)*SF.sRad(a,de))};
+ const thin=(a,p)=>{const de=ball&&p>0?SF.deffOf(p,D):V9E.dBull(p,D,R);return Math.max(1/(E.thinMax>1?E.thinMax:1),(p>0?(ball?SF.sAx(p,D/2):SF.sAx(p,R)):1)*SF.sRad(a,de))};
  /* 2026-10-19: a sub-cycle with an ae range slides its own Vc × / fz × along that range instead of the general boost / slotting factors */
  const v9r=d.v9&&d.v9.po&&d.v9.range&&(isFinite(d.v9.range.aeMin)||isFinite(d.v9.range.aeMax))?d.v9.po:null,m1=v9r?V9E.rangeAt(v9r,ae/D):null,m0=v9r?V9E.rangeAt(v9r,ae0/D):null;
  const rvk=v9r&&m0.vc>0?m1.vc/m0.vc:1,rfk=v9r&&m0.fz>0?m1.fz/m0.fz:1;
@@ -7189,16 +7230,34 @@ function v9Run(){const v=CALCV,d=C6.def||{},T=V9T(),st=C6.st,g=k=>{const r=c6Row
 const v9Act=a=>{a=String(a||'').replace(/\s*#.*$/,'');const sh=a.match(/show '([^']*)'/),bl=a.match(/^block '([^']*)'/);if(bl)return 'Not allowed: '+bl[1];
  const parts=a.replace(/show '[^']*'/,'').replace(/^block '[^']*'/,'').split(';').map(x=>x.trim()).filter(Boolean).map(x=>x.replace(/^set (\w+) = '?([^']*)'?/,(m,k,v)=>k.replace(/_/g,' ')+': '+v).replace(/^clamp (.+?) <= (.+)$/,'limit $1 to $2').replace(/^scale (\w+) \* ([\d.]+)/,'$1 ×$2').replace(/^block (.+)$/,'no $1'));
  return [sh&&sh[1],...parts].filter(Boolean).join(' — ')};
+/* 2026-10-19: hyperMILL feed multipliers (radial / axial chip thinning, corner and ramp overrides) for one cut — shown in the
+   calculator and on Log cut's cycle settings. x = {mx (V9E.mults), fz, Vc, vf, ap}. */
+function multHtml(x){const m=x&&x.mx;if(!m||!(m.D>0))return '';const pc=v=>isFinite(v)?Math.round(v*100)+' %':'–',xx=v=>isFinite(v)?'×'+(+v).toFixed(2):'–',off=V9E.isOff('thinning');
+ const rad=isFinite(m.aeD)?(m.sRad>1+1e-9?`ae ${f(m.aeD*m.Dc,2)} mm = ${(m.aeD).toFixed(3)} × Ø${f(m.Dc,2)}`:`ae ≥ ½ Ø — no radial thinning`):'enter ae';
+ const ax=m.ball?(m.axialOn?`ball nose: cutting Ø ${f(m.Dc,2)} mm at ap ${f(x.ap,2)} — κ ${f(m.kappaDeg,1)}°`:'ball nose: full Ø cutting'):
+  m.R>0?(m.axialOn?`ap ${f(x.ap,2)} mm < corner R ${f(m.R,2)} — κ = arccos((R − ap)/R) = ${f(m.kappaDeg,1)}°`:`ap ${isFinite(x.ap)?f(x.ap,2):'–'} mm ≥ corner R ${f(m.R,2)} — whole radius cutting, no axial thinning`):
+  m.axialOn?`lead angle κ ${f(m.kappaDeg,1)}°`:'square corner — no axial thinning';
+ const fz0=isFinite(x.fz)?x.fz/m.sTot:NaN,vfR=isFinite(x.vf)?x.vf*m.rampPct/100:NaN,vcAt=m.Dc<m.D-1e-6&&!m.ball&&isFinite(x.Vc)?x.Vc*m.Dc/m.D:NaN;
+ const row=(l,v,h)=>`<tr><th scope="row">${l}</th><td class="n"><b>${v}</b></td><td>${h}</td></tr>`;
+ return `<div class="hmx"><h4>hyperMILL feed multipliers <small class="mu">— chip thinning and overrides for this cut</small></h4><div class="tw"><table class="hmxt"><tbody>
+  ${row('Radial thinning s<sub>rad</sub>',`${xx(m.sRad)} <small>(${pc(m.sRad)})</small>`,esc(rad)+' · 1 / √(1 − (1 − 2·ae/Ø)²)')}
+  ${row('Axial thinning s<sub>axial</sub>',`${xx(m.sAx)} <small>(${pc(m.sAx)})</small>`,esc(ax)+(m.axialOn?' · 1 / sin κ':''))}
+  ${row('Combined S<sub>total</sub>',`${xx(m.sTot)} <small>(${pc(m.sTot)})</small>`,m.capped?`s<sub>rad</sub> × s<sub>axial</sub> = ×${(+m.raw).toFixed(2)}, held at the ×${V9E.K.cthMax} cap (Cutting data → Machines &amp; physics)`:'s<sub>rad</sub> × s<sub>axial</sub>')}
+  ${isFinite(x.fz)?row('Chip h<sub>ex</sub> at this fz',f(m.hex,4)+' mm',`fz ${f(x.fz,4)} ÷ ×${(+m.raw).toFixed(2)} · fz without thinning ${f(fz0,4)} mm`):''}
+  ${isFinite(vcAt)?row('Vc at the cut',f(vcAt,0)+' m/min',`cutting Ø ${f(m.Dc,2)} mm on the corner arc (RPM is set on the full Ø${f(m.D,2)})`):''}
+  ${row('Internal corners',m.cornerPct+' %','feed override where the engagement goes over 90° (corner R under 1.5 × tool radius)')}
+  ${row('Ramp / helix entry',`≤ ${m.rampDeg}° · ${m.rampPct} %`,`max ramp angle for this material · feed ${m.rampPct} % of Vf${isFinite(vfR)?' = '+nf(vfR)+' mm/min':''}`)}
+ </tbody></table></div><p class="mu">${x.ctx==='log'?'For the cut as entered above: h<sub>ex</sub> is the chip your fz really makes. ':off?'<b>Chip thinning is switched off</b> (Machines &amp; physics) — the starting fz does not include S<sub>total</sub>. ':'The starting fz <b>already includes</b> S<sub>total</sub>: if you type it into hyperMILL, do not apply these multipliers again. '}Corner, ramp and cap values: Cutting data → Machines &amp; physics.</p></div>`}
 function v9PanelHtml(){let R=null;try{R=v9Run()}catch(e){console.error(e);return `<div class="note e" style="margin:8px">Physics failed: ${esc(e.message||e)}</div>`}if(!R)return '';
  const {o,rl,tl,I}=R,pr={mandatory:'e',enforced:'w',advisory:''};
  const ban=rl.fired.map(r=>`<div class="note ${pr[r.priority]||''}" style="margin:4px 0"><b>${esc(r.strategy_code)}</b> ${esc(v9Act(r.action_expression))} <small class="mu">${esc(r.priority)}</small></div>`).join('');
  const chip=(l,v,bad)=>`<span class="tag"${bad?' style="color:var(--bad);border-color:var(--bad)"':''}>${l} <b>${v}</b></span>`;
  const segs=(o.segs||[]).map(([a,b,dd])=>`Ø${f(dd,2)}×${f(b-a,1)}`).reverse().join(' · ');
  const chat=o.chatterOff?'<span class="mu">chatter check switched off</span>':o.aLim!=null?`stable depth ${f(o.aLim,3)} mm · ap ÷ that = ${f(o.ratio,1)} — <b>${esc(o.tier)}</b>`:o.drillAdvisory?'Drill: advice only':'';
- return `<details id="v9pd"${C6.v9Open===false?'':' open'} style="margin-top:10px"><summary><b>Strategies &amp; physics</b> <small class="mu">— warnings, power, chatter, deflection</small></summary>
+ return `${/drill|spot|reamer|tap/.test(tl.type||'')?'':multHtml({mx:o.mx,fz:I.fz,Vc:I.Vc,vf:o.Vf,ap:I.ap})}<details id="v9pd"${C6.v9Open===false?'':' open'} style="margin-top:10px"><summary><b>Strategies &amp; physics</b> <small class="mu">— warnings, power, chatter, deflection</small></summary>
  ${ban}${rl.errors.length?`<div class="note w">Rules not read: ${esc(rl.errors.join('; '))} — Cutting data → Strategy rules</div>`:''}
- <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${chip('RPM',nf(o.n)+(o.capped?' ⚠':''),o.capped)}${chip('Vf',nf(o.Vf)+' mm/min')}${chip('Q',f(o.Q,1)+' cm³/min')}${chip('Power',f(o.Pc,2)+' kW',!o.powerOff&&I.spindleKw>0&&o.Pc>.8*I.spindleKw)}${chip('Torque',f(o.T,1)+' N·m',!o.powerOff&&I.spindleNm>0&&o.T>.8*I.spindleNm)}${o.thrust?chip('Thrust',nf(o.thrust)+' N'):''}${o.life?chip('Tool life',f(o.life,2)+'× baseline',o.life<.5):''}${chip('Chip h_ex',f(o.hex,4)+' mm',o.rubbing)}${chip('Ks',nf(o.Ks)+' N/mm²')}</div>
- <p class="mu" style="margin:2px 0">Chip thinning ×${f(o.cthRad,2)} radial${o.cthAx>1?' × '+f(o.cthAx,2)+' axial':''} (capped at 2.5) on Ø${f(o.Dcut,2)} — the cutting Ø, not the neck${o.rubbing?` · <span class="bad">chip ${f(o.hex,4)} mm is under the ${f(o.hMin,4)} mm minimum — the edge will rub</span>`:''}.</p>
+ <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${chip('RPM',nf(o.n)+(o.capped?' ⚠':''),o.capped)}${chip('Vf',nf(o.Vf)+' mm/min')}${chip('Q',f(o.Q,1)+' cm³/min')}${chip('Power',f(o.Pc,2)+' kW',!o.powerOff&&I.spindleKw>0&&o.Pc>.8*I.spindleKw)}${chip('Torque',f(o.T,1)+' N·m',!o.powerOff&&I.spindleNm>0&&o.T>.8*I.spindleNm)}${isFinite(o.loadPct)?chip('Spindle load',Math.round(o.loadPct)+' %',o.loadPct>80):chip('Spindle load','enter kW in Machines',false)}${o.thrust?chip('Thrust',nf(o.thrust)+' N'):''}${o.life?chip('Tool life',f(o.life,2)+'× baseline',o.life<.5):''}${chip('Chip h_ex',f(o.hex,4)+' mm',o.rubbing)}${chip('Ks',nf(o.Ks)+' N/mm²')}</div>
+ <p class="mu" style="margin:2px 0">Chip thinning ×${f(o.cthRad,2)} radial${o.cthAx>1?' × '+f(o.cthAx,2)+' axial':''} (capped at ${V9E.K.cthMax}) on Ø${f(o.mx?o.mx.Dc:o.Dcut,2)} — the cutting Ø, not the neck${o.rubbing?` · <span class="bad">chip ${f(o.hex,4)} mm is under the ${f(o.hMin,4)} mm minimum — the edge will rub</span>`:''}.</p>
  ${o.segs?`<p style="margin:6px 0"><b>Chatter</b> — ${esc(o.model)}: ${esc(segs)} mm (holder → tip)${tl.neckEst?' <span class="tag" title="Enter Neck Dia (mm) in Library → tools">neck Ø estimated</span>':''} · L/D equivalent ${f(o.LDeq,1)}${o.ldTier<1?` (ap, fz ×${o.ldTier})`:''}<br>
  Modes: ${o.modes.map(m=>`${nf(m.f)} Hz, ${f(m.k/1000,2)} N/µm${m===o.gov?' (governs)':''}`).join(' · ')} · ${chat}<br>
  ${o.chatterOff?'':`Stable-pocket speeds: ${o.pockets.length?o.pockets.map(p=>`${nf(p.lo)}–${nf(p.hi)} rpm`).join(', '):'none within the spindle range'} · `}Deflection ≈ ${f(o.defl,3)} mm (${o.deflOff?'check switched off':esc(String(o.deflTol))+' mm limit'})</p>`:''}
@@ -7294,8 +7353,13 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
  const preview=v=>{const r=V9E.range(v),lo=r.aeMin,hi=r.aeMax,nom=r.aeNom,at=x=>V9E.rangeAt(v,x),bad=isFinite(lo)&&isFinite(hi)&&lo>hi;
   if(bad)return `<span class="bad">ae min is larger than ae max</span>`;
   const ct=x=>x>0&&x<.5?Math.min(V9E.cthRad(x,1),V9E.K.cthMax):1;
-  if(!(isFinite(lo)||isFinite(hi))){const x=isFinite(nom)?nom:null,m=at(x||0);return `Vc ×${f2(m.vc)} · fz ×${f2(m.fz)}${x&&ct(x)>1?` (+ chip thinning ×${ct(x).toFixed(2)})`:''}${x?` · ae ${f2(x)}×Ø`:''}<br><span class="mu">No ae range — the multipliers stay flat.</span>`}
-  const pts=[lo,nom,hi].filter(x=>isFinite(x)&&x>0);return pts.map(x=>{const m=at(x);return `ae ${f2(x)}×Ø → Vc ×${f2(m.vc)}, fz ×${f2(m.fz)}${ct(x)>1?` <span class="mu">(+ thinning ×${ct(x).toFixed(2)})</span>`:''}`}).join('<br>')};
+  if(!(isFinite(lo)||isFinite(hi))){const x=isFinite(nom)?nom:null,m=at(x||0);return `Vc ×${f2(m.vc)} · fz ×${f2(m.fz)}${x&&ct(x)>1?` (+ radial s<sub>rad</sub> ×${ct(x).toFixed(2)})`:''}${x?` · ae ${f2(x)}×Ø`:''}<br><span class="mu">No ae range — the multipliers stay flat.</span>${axPrev(v)}`}
+  const pts=[...new Set([lo,nom,hi].filter(x=>isFinite(x)&&x>0))];return pts.map(x=>{const m=at(x);return `ae ${f2(x)}×Ø → Vc ×${f2(m.vc)}, fz ×${f2(m.fz)}${ct(x)>1?` <span class="mu">(+ radial s<sub>rad</sub> ×${ct(x).toFixed(2)})</span>`:''}`}).join('<br>')+axPrev(v)};
+ /* 2026-10-19: bull-nose axial thinning s_axial = 1 / sin κ at this sub-cycle's ap, for common corner radii (ap and R as × Ø) */
+ const axPrev=v=>{const r=V9E.range(v),n=x=>x===''||x==null||!isFinite(+x)?NaN:+x;if(isFinite(r.apMin)&&isFinite(r.apMax)&&r.apMin>r.apMax)return '<br><span class="bad">ap min is larger than ap max</span>';
+  const aps=[...new Set([r.apMin,n(v.ap_ratio),r.apMax].filter(x=>isFinite(x)&&x>0))].sort((a,b)=>a-b);if(!aps.length)return '';
+  const RS=[.05,.1,.2,.25].filter(R=>aps[0]<R);if(!RS.length)return '';
+  return '<br><span class="mu">Bull-nose axial s<sub>axial</sub> at '+aps.map(a=>'ap '+f2(a)+'×Ø').join(' / ')+': '+RS.map(R=>`R ${R}×Ø ${aps.map(a=>'×'+V9E.cthAx(a,R).toFixed(2)).join(' / ')}`).join(' · ')+' (added to fz with s<sub>rad</sub>, capped ×'+V9E.K.cthMax+')</span>'};
  const opsOf=(c,fam)=>fam.fixedOp?[fam.fixedOp==='ream'?'ream':fam.fixedOp==='bore'?'bore':fam.fixedOp]:(c.usableAs||[]);
  const so=(attr,list,cur)=>`<select ${attr}>${list.map(([v,l])=>`<option value="${esc(v)}"${String(cur)===v?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
  const opBlock=(pid,op)=>{const i=poI(pid,op),v=i>=0?PO[i]:{},ph=po(pid,op),eff=i>=0?v:ph,inp=(f,phx)=>{const own=i>=0?v[f]:'',pl=i<0&&ph[f]!=null&&ph[f]!==''?ph[f]:phx;return v9Num(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="${f}" aria-label="${esc(op+' '+f)}"`,own,pl==null?'':pl,88)};
@@ -7422,10 +7486,11 @@ function drawV9Phys(){if(!(L.spindle_setup||[]).length)L.spindle_setup=[{k_spind
  <div class="card" data-sec="mach:engine"><h2>Engine limits</h2><div class="g">
  ${sv('cth_max','Chip thinning cap',K.cthMax,'×')}${sv('ld_t1','Long tool from L/D',K.ldT1)}${sv('ld_f1','… ap and fz ×',K.ldF1)}${sv('ld_t2','Very long tool from L/D',K.ldT2)}${sv('ld_f2','… ap and fz ×',K.ldF2)}
  ${sv('hmin_wh_ratio','Rubbing min chip (work-hardening) ×Ø',K.hminWH)}${sv('hmin_wh_mm','… but at least','0.005','mm')}${sv('hmin_ratio','Rubbing min chip (others) ×Ø',K.hmin)}${sv('hmin_mm','… but at least','0.003','mm')}
- ${sv('defl_finish_mm','Deflection limit finish',K.deflF,'mm')}${sv('defl_semi_mm','Deflection limit semi',K.deflS,'mm')}${sv('defl_rough_mm','Deflection limit rough',K.deflR,'mm')}</div>${fac('engine')}<p class="mu" id="v9pmsg"></p></div>`;
+ ${sv('defl_finish_mm','Deflection limit finish',K.deflF,'mm')}${sv('defl_semi_mm','Deflection limit semi',K.deflS,'mm')}${sv('defl_rough_mm','Deflection limit rough',K.deflR,'mm')}
+ ${sv('corner_feed_pct','Internal-corner feed',K.cornerPct,'% of Vf')}${sv('ramp_feed_pct','Ramp / helix feed',K.rampPct,'% of Vf')}${sv('ramp_deg_N','Max ramp angle — aluminium, plastics (N)',K.rampN,'°')}${sv('ramp_deg_PK','… steel, cast iron (P, K)',K.rampPK,'°')}${sv('ramp_deg_MSH','… stainless, Ti / Ni, hardened (M, S, H)',K.rampMSH,'°')}</div>${fac('engine')}<p class="mu" id="v9pmsg"></p></div>`;
  v9H('mach').onclick=async e=>{const b=e.target.closest('button');if(b&&b.dataset.v9chkall){for(const [k] of V9E.CHECKS)if(chk[k]===false)await setChk(k,true);FX_LIST.forEach(([k])=>{if(FXo[k]===false)setFx(k,true)});return drawV9Phys()}
   if(!b||!b.dataset.v9pfac)return;const g=b.dataset.v9pfac,FS=V9M.FACTORY.spindle;
-  const keys={spindle:['k_spindle_N_per_m','f_spindle_hz','damping_ratio','zeta_tool','holder_factor_shrink','holder_factor_hydraulic','holder_factor_collet'],toolmat:['E_carbide_GPa','rho_carbide','E_HSS_GPa','rho_HSS','taylor_json'],coolant:['coolant_json'],engine:['cth_max','ld_t1','ld_f1','ld_t2','ld_f2','hmin_wh_ratio','hmin_wh_mm','hmin_ratio','hmin_mm','defl_finish_mm','defl_semi_mm','defl_rough_mm']}[g]||[];
+  const keys={spindle:['k_spindle_N_per_m','f_spindle_hz','damping_ratio','zeta_tool','holder_factor_shrink','holder_factor_hydraulic','holder_factor_collet'],toolmat:['E_carbide_GPa','rho_carbide','E_HSS_GPa','rho_HSS','taylor_json'],coolant:['coolant_json'],engine:['cth_max','ld_t1','ld_f1','ld_t2','ld_f2','hmin_wh_ratio','hmin_wh_mm','hmin_ratio','hmin_mm','defl_finish_mm','defl_semi_mm','defl_rough_mm','corner_feed_pct','ramp_feed_pct','ramp_deg_N','ramp_deg_PK','ramp_deg_MSH']}[g]||[];
   for(const k of keys){const to=/_json$/.test(k)?'':FS[k]!=null?FS[k]:'';if(String(S[k]??'')!==String(to)){const old=S[k];S[k]=to;await v9Saved('spindle_setup',k,k,old??'',to,'factory')}}drawV9Phys()};
  const msg=t=>{const m=$('#v9pmsg');if(m)m.textContent=t};
  const setChk=async(k,on)=>{let c={};try{c=JSON.parse(S.checks_json||'{}')}catch(x){}const old=S.checks_json||'';if(on)delete c[k];else c[k]=false;S.checks_json=Object.keys(c).length?JSON.stringify(c):'';await v9Saved('spindle_setup','checks',k,on?'off':'on',on?'on':'off');void old};
@@ -8407,7 +8472,8 @@ function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Live databas
 <div class="card"><h2>Speeds &amp; Feeds</h2><ul><li>Every recommendation comes from one engine:
 <ol><li><b>Baseline</b>: Vc and fz for the material (or its ISO group) › cutter family › Ø band (Cutting data → Baselines). fz is the chip load per tooth at full engagement; drills, reamers and spot drills are per rev.</li>
 <li><b>Profile</b> of the sub-cycle (Cutting data → Profiles): Vc ×, fz ×, ae and ap as × cutting Ø for rough / semi / finish. With no sub-cycle picked, the standard profile for the operation is used.</li>
-<li><b>Chip thinning</b> from the ae you actually use (and from ap below a ball or corner radius), capped at 2.5 — always on the cutting Ø, never the neck.</li>
+<li><b>Chip thinning</b> from the ae you actually use (and from ap below a ball or corner radius), capped at 2.5 — always on the cutting Ø, never the neck. <b>Bull-nose</b>: with ap under the corner R only part of the radius cuts; its lead angle κ = arccos((R − ap)/R) thins the chip, so fz is raised by s<sub>axial</sub> = 1 / sin κ, and the radial thinning is worked out on the smaller Ø cutting at the top of the corner arc.</li>
+<li><b>hyperMILL feed multipliers</b> (under the calculator, and in Log cut step 5 for the cut you entered): s<sub>rad</sub>, s<sub>axial</sub> and S<sub>total</sub> as × and %, the real chip h<sub>ex</sub>, Vc at the corner arc, the internal-corner feed (70 %) and the ramp / helix angle and feed. The calculator’s fz already includes S<sub>total</sub> — don’t apply it twice in hyperMILL. Corner and ramp values are set in Cutting data → Machines &amp; physics → Engine limits.</li>
 <li><b>Coolant</b> factor (dry, MQL or air in stainless, titanium and nickel alloys costs Vc) and the <b>stepdown limits</b> (Cutting data → Limits &amp; bands): the material's cap, the small-Ø rigidity cap, the flute length.</li>
 <li><b>Stick-out</b> (calculator): long or necked tools cut ap and fz to ×0.75 above an equivalent L/D of 3 and ×0.5 above 5.</li>
 <li><b>RPM</b> is capped at the machine's spindle; fz stays, the real Vc is shown with ⚠.</li></ol></li>
@@ -8491,7 +8557,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-19.8';
+const APP_V='2026-10-19.9';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
