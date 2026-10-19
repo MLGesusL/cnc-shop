@@ -69,4 +69,13 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
   near(V9E.rangeAt(po, 0.075, 1.5).apFz, 0.9, 1e-9, 'ap: straight line'); ok(V9E.rangeAt(po, 0.075, 3).apAbove && Math.abs(V9E.rangeAt(po, 0.075, 3).apFz - 0.8) < 1e-9, 'ap: held and flagged above max');
   near(V9E.rangeAt({ ap_min: 2, ap_max: 1.5, fz_mult_aplo: 2 }, NaN, 1).apFz, 1, 0, 'ap: min > max is ignored');
   near(V9E.range({ ap_min: 0.5, ap_max: 1.5 }).apNom, 1, 1e-9, 'ap: blank start = middle'); }
+/* 2026-10-19 sub-cycle values per ISO group / material: material › group › all, field by field */
+{ const rows = [{ profile_id: 'PX', op_class: 'rough', Vc_mult: 1, fz_mult: 1, ae_ratio: 0.1, ap_ratio: 1 },
+    { profile_id: 'PX', op_class: 'rough', scope: '@M', Vc_mult: 0.8, ae_ratio: '' }, { profile_id: 'PX', op_class: 'rough', scope: 'SS 316', fz_mult: 0.9 }];
+  const g = V9E.poFor(rows, 'PX', 'rough', 'SS 304', 'M'), m = V9E.poFor(rows, 'PX', 'rough', 'SS 316', 'M'), p = V9E.poFor(rows, 'PX', 'rough', 'EN8', 'P1');
+  ok(g.Vc_mult === 0.8 && g.fz_mult === 1 && g.ae_ratio === 0.1, 'scope: ISO group overrides only its filled fields');
+  ok(m.Vc_mult === 0.8 && m.fz_mult === 0.9 && m._layers.join() === '@M,SS 316', 'scope: material on top of its group');
+  ok(p.Vc_mult === 1 && !p._layers.length, 'scope: other groups use the standard row');
+  const T = { material_tool_baselines: [{ material: '', group_id: 'M', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }], diameter_bands: [{ band_id: 'B1', label: '6–10', lo_mm: 6, hi_mm: 10 }], profile_op: rows, cycle_map: [], operations: [] };
+  near(V9E.recommend(T, { material: 'SS 316', iso: 'M', family: 'BX', type: 'end_mill_square', D: 10, z: 4, op: 'rough', profile: 'PX', ldTier: 1 }).Vc, 80, 1e-9, 'scope: recommend uses the group Vc ×'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);

@@ -480,7 +480,7 @@ table.hmxt th{text-align:left;font-weight:600;color:var(--tx)}
 table.hmxt td.n{white-space:nowrap;text-align:right}
 table.hmxt td:last-child{color:var(--mu);font-size:14px}
 .sgt{width:auto;font-size:15px;margin:0}
-.sgapt{margin-top:6px}.sgnote{font-size:13px;margin:2px 0 4px}table.sgt th,table.sgt td{border:0;padding:3px 6px;min-width:0;background:transparent}
+.sgapt{margin-top:6px}.sgscope{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.sgscope select{max-width:360px}.sgopov{outline:2px solid var(--ac);outline-offset:2px}.sgov{font-size:13px}.sgnote{font-size:13px;margin:2px 0 4px}table.sgt th,table.sgt td{border:0;padding:3px 6px;min-width:0;background:transparent}
 table.sgt thead th{font-size:13px;color:var(--mu);font-weight:500;position:static;background:transparent}
 table.sgt tbody th{font-weight:600;color:var(--tx);white-space:nowrap;text-align:left}
 table.sgt input{min-height:38px;padding:4px 8px;text-align:right}
@@ -4843,8 +4843,9 @@ const V9E = (() => {
     if (!b) { out.err = `No baseline for ${q.family} in ${q.material} (Ø${band.label})`; return out; }
     out.baseline = b; out.band = band;
     const cm = (T.cycle_map || []).find(c => c.key === q.sub) || null, prof = cycleProfile(T, q.sub, q.parent);
-    const pid = q.profile || prof.profile_id, po = (T.profile_op || []).find(p => p.profile_id === pid && p.op_class === q.op) || (T.profile_op || []).find(p => p.profile_id === pid) || { Vc_mult: 1, fz_mult: 1 };
+    const pid = q.profile || prof.profile_id, po = poFor(T.profile_op, pid, q.op, q.material, q.iso);
     out.profile = pid; out.engagement = prof.engagement_class; out.inherited = prof.inherited;
+    if (po._layers && po._layers.length) out.why.push('sub-cycle values for ' + po._layers.map(x => x[0] === '@' ? 'ISO ' + x.slice(1) : x).join(' + '));
     const num = v => v === '' || v == null ? NaN : +v;
     let fz = +b.fz_base; if (b.fz_unit === 'per_rev' && !/drill|spot|reamer/.test(q.type || '')) fz = fz / (q.z || 1);
     const perRev = b.fz_unit === 'per_rev' && /drill|spot|reamer/.test(q.type || '');
@@ -4923,6 +4924,18 @@ const V9E = (() => {
     }
     return out;
   }
+  /* 2026-10-19 sub-cycle values per material: a profile_op row may carry scope '' (all materials), '@<ISO group>' or a material
+     name. The values used = the all-materials row, then the ISO-group row's filled-in fields, then the material row's on top.
+     A blank field in an override inherits; layers says which levels took part. */
+  const PO_META = ['profile_id', 'op_class', 'scope'];
+  const poScope = r => String(r && r.scope || '');
+  function poFor(rows, pid, op, material, iso) {
+    rows = rows || []; const gen = rows.find(p => p.profile_id === pid && p.op_class === op && !poScope(p)) || rows.find(p => p.profile_id === pid && !poScope(p)) || { Vc_mult: 1, fz_mult: 1 };
+    const out = Object.assign({}, gen, { scope: '' }), layers = [];
+    [iso ? '@' + iso : null, material || null].forEach(sc => { if (!sc) return; const r = rows.find(p => p.profile_id === pid && p.op_class === op && poScope(p) === sc); if (!r) return;
+      let n = 0; Object.keys(r).forEach(k => { if (PO_META.includes(k) || r[k] === '' || r[k] == null) return; out[k] = r[k]; n++; }); if (n) layers.push(sc); });
+    out._layers = layers; return out;
+  }
   /* propagation: a sub-cycle with no cycle_map row inherits its parent family's most common profile and class */
   function cycleProfile(T, key, parent) {
     const cm = T.cycle_map || [], own = cm.find(c => c.key === key && c.default_profile_id);
@@ -4932,7 +4945,7 @@ const V9E = (() => {
     const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
     return best ? { profile_id: best[0].split('|')[0], engagement_class: best[0].split('|')[1], inherited: true } : { profile_id: 'P00', engagement_class: 'finish', inherited: true };
   }
-  return { K, COOL, TAYLOR_N, MAT, CHECKS, isOff, setConst, ldTier, calc, rules, evalExpr, recommend, range, rangeAt, cycleProfile, ruleVars, VARS, vCool, holderFactor, segments, beam, twoMass, cthRad, cthAx, hm, ks, deff, phiS, nStar, dBull, mults, rampDeg };
+  return { K, COOL, TAYLOR_N, MAT, CHECKS, isOff, setConst, ldTier, calc, rules, evalExpr, recommend, range, rangeAt, cycleProfile, ruleVars, VARS, vCool, holderFactor, segments, beam, twoMass, cthRad, cthAx, hm, ks, deff, phiS, nStar, dBull, mults, rampDeg, poFor, poScope };
 })();
 /*V9E-END*/
 /*V9M-BEGIN*/
@@ -7360,13 +7373,20 @@ function drawV9Bands(){const grps=v9Groups().filter(g=>L.materials.some(m=>SF.ma
   if(d.v9bdel!=null){if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Delete?';return}const r=MB.splice(+d.v9bdel,1)[0];await v9Saved('material_tool_baselines',`${r.material||'@'+r.group_id} › ${r.tool_family} › Ø${lbl(r.band_id)}`,'deleted',JSON.stringify(r),'');return drawV9Bands()}
   if(d.v9bdeltab){if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Delete the whole table? Click again';return}const n=MB.length;L.material_tool_baselines=MB.filter(r=>!(r.tool_family===d.v9bdeltab&&(isG?!r.material&&r.group_id===iso:r.material===V9BM)));await v9Saved('material_tool_baselines',`${V9BM} › ${d.v9bdeltab}`,'table deleted',(n-L.material_tool_baselines.length)+' rows','');return drawV9Bands()}}}
 /* ---------- Sub-cycles: the multipliers and engagement each sub-cycle applies (hyperMILL Formulas dialog layout) ---------- */
-let V9SF='',V9SOPEN=null;
+let V9SF='',V9SOPEN=null,V9SSC='';
 /* 2026-10-19: one accordion per cycle family; every sub-cycle shows a small grid per operation — ae / ap ranges (× Ø) and the
    Vc × / fz × at the low end, the start and the high end of the ae range. The calculator scales Vc and fz along that line. */
 function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).sort((a,b)=>(a.order||0)-(b.order||0)),names=fams.map(f=>f.Cycle);if(V9SF&&!names.includes(V9SF))V9SF='';
  if(!V9SOPEN)V9SOPEN=new Set(names.slice(0,1));
  const P=L.multiplier_profiles||[],PO=L.profile_op||[],T=V9T(),prof=c=>V9E.cycleProfile(T,c.key,c.parent),users=pid=>(L.cycles||[]).filter(c=>c&&c.key&&c.parent&&prof(c).profile_id===pid);
- const poI=(pid,op)=>PO.findIndex(r=>r.profile_id===pid&&r.op_class===op),po=(pid,op)=>PO[poI(pid,op)]||PO.find(r=>r.profile_id===pid)||{};
+ const noSc=r=>!V9E.poScope(r),poI=(pid,op)=>PO.findIndex(r=>r.profile_id===pid&&r.op_class===op&&noSc(r)),po=(pid,op)=>PO[poI(pid,op)]||PO.find(r=>r.profile_id===pid&&noSc(r))||{};
+ /* 2026-10-19 material scope: '' = all materials, '@P2' = ISO group, else a material name */
+ if(V9SSC&&!(V9SSC[0]==='@'?(L.material_groups||[]).some(g=>'@'+g.iso_group_tag===V9SSC):L.materials.some(m=>m.Material===V9SSC)))V9SSC='';
+ const SC=V9SSC,scIso=SC?(SC[0]==='@'?SC.slice(1):v9IsoOf(SC)):'',scMat=SC&&SC[0]!=='@'?SC:'',scName=x=>x[0]==='@'?'ISO '+x.slice(1):x;
+ const scI=(pid,op)=>SC?PO.findIndex(r=>r.profile_id===pid&&r.op_class===op&&V9E.poScope(r)===SC):-1;
+ /* what this scope inherits (the levels above it) and what is finally used */
+ const parentOf=(pid,op)=>SC?V9E.poFor(PO,pid,op,null,scMat?scIso:null):null,effOf=(pid,op)=>V9E.poFor(PO,pid,op,scMat||null,scIso||null);
+ const ovList=(pid,op)=>PO.filter(r=>r.profile_id===pid&&r.op_class===op&&V9E.poScope(r)).map(r=>V9E.poScope(r));
  const f2=x=>x==null||!isFinite(x)?'—':(+(+x).toFixed(3)).toString();
  const preview=v=>{const r=V9E.range(v),lo=r.aeMin,hi=r.aeMax,nom=r.aeNom,at=x=>V9E.rangeAt(v,x),bad=isFinite(lo)&&isFinite(hi)&&lo>hi;
   if(bad)return `<span class="bad">ae min is larger than ae max</span>`;
@@ -7382,9 +7402,12 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
   return apTxt+'<br><span class="mu">Bull-nose axial s<sub>axial</sub> at '+aps.map(a=>'ap '+f2(a)+'×Ø').join(' / ')+': '+RS.map(R=>`R ${R}×Ø ${aps.map(a=>'×'+V9E.cthAx(a,R).toFixed(2)).join(' / ')}`).join(' · ')+' (added to fz with s<sub>rad</sub>, capped ×'+V9E.K.cthMax+')</span>'};
  const opsOf=(c,fam)=>fam.fixedOp?[fam.fixedOp==='ream'?'ream':fam.fixedOp==='bore'?'bore':fam.fixedOp]:(c.usableAs||[]);
  const so=(attr,list,cur)=>`<select ${attr}>${list.map(([v,l])=>`<option value="${esc(v)}"${String(cur)===v?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
- const opBlock=(pid,op)=>{const i=poI(pid,op),v=i>=0?PO[i]:{},ph=po(pid,op),eff=i>=0?v:ph,inp=(f,phx)=>{const own=i>=0?v[f]:'',pl=i<0&&ph[f]!=null&&ph[f]!==''?ph[f]:phx;return v9Num(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="${f}" aria-label="${esc(op+' '+f)}"`,own,pl==null?'':pl,88)};
-  const rg=V9E.range(eff),aeN=isFinite(rg.aeNom)?f2(rg.aeNom):'';
-  return `<div class="sgop"><div class="sgoph"><b>${esc(OPL&&OPL[op]||op)}</b>${i<0?' <small class="mu" title="This operation has no values of its own; grey values are borrowed">borrowed</small>':''}</div>
+ const opBlock=(pid,op)=>{const gi=poI(pid,op),si=scI(pid,op),i=SC?si:gi,v=i>=0?PO[i]:{},ph=SC?parentOf(pid,op):po(pid,op),eff=SC?effOf(pid,op):gi>=0?v:ph;
+  const inp=(f,phx)=>{const own=i>=0?v[f]:'',pl=(SC||i<0)&&ph[f]!=null&&ph[f]!==''?ph[f]:phx;return v9Num(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="${f}" aria-label="${esc(op+' '+f)}"`,own,pl==null?'':pl,88)};
+  const rg=V9E.range(eff),aeN=isFinite(rg.aeNom)?f2(rg.aeNom):'',ov=ovList(pid,op);
+  const head=SC?(si>=0?` <span class="tag sgov">own values for ${esc(scName(SC))}</span> <button class="b s sm edonly" data-v9pox="${esc(pid)}|${esc(op)}" title="Delete the ${esc(scName(SC))} values for this operation — it goes back to the grey values">✕ Remove</button>`:` <small class="mu" title="Grey values come from ${esc(scMat?'ISO '+scIso+' or all materials':'all materials')}; type a value to give ${esc(scName(SC))} its own">same as ${esc(scMat&&eff._layers.length?scName(eff._layers[0]):'all materials')}</small>`)
+   :(gi<0?' <small class="mu" title="This operation has no values of its own; grey values are borrowed">borrowed</small>':'')+(ov.length?` <small class="mu" title="These materials / ISO groups have their own values for this operation — pick one at the top of the page to see or change them">· own values for ${esc(ov.map(scName).join(', '))}</small>`:'');
+  return `<div class="sgop${SC&&si>=0?' sgopov':''}"><div class="sgoph"><b>${esc(OPL&&OPL[op]||op)}</b>${head}</div>
    <table class="sgt"><thead><tr><th></th><th class="n">at min ae</th><th class="n">start</th><th class="n">at max ae</th></tr></thead><tbody>
    <tr><th scope="row">ae ×Ø</th><td class="n">${inp('ae_min','')}</td><td class="n">${inp('ae_ratio',aeN)}</td><td class="n">${inp('ae_max','')}</td></tr>
    <tr><th scope="row">Vc ×</th><td class="n">${inp('Vc_mult_lo','= start')}</td><td class="n">${inp('Vc_mult','1')}</td><td class="n">${inp('Vc_mult_hi','= start')}</td></tr>
@@ -7395,7 +7418,7 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
    <tr><th scope="row">Vc ×</th><td class="n">${inp('Vc_mult_aplo','1')}</td><td class="n mu" title="At the start ap the ae values above apply unchanged">×1</td><td class="n">${inp('Vc_mult_aphi','1')}</td></tr>
    <tr><th scope="row">fz ×</th><td class="n">${inp('fz_mult_aplo','1')}</td><td class="n mu" title="At the start ap the ae values above apply unchanged">×1</td><td class="n">${inp('fz_mult_aphi','1')}</td></tr>
    </tbody></table><div class="mu sgnote">ap × values multiply the ae values (×1 at the start ap).</div>
-   <div class="sgcap"><label>ap also held under ${so(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="ap_cap"`,[['flute_length','the flute length'],['reach','the reach'],['none','nothing else']],String(eff.ap_cap||'none'))}</label></div>
+   <div class="sgcap"><label>ap also held under ${(()=>{const L3=[['flute_length','the flute length'],['reach','the reach'],['none','nothing else']];return SC?so(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="ap_cap"`,[['','same as above ('+((L3.find(x=>x[0]===String(ph.ap_cap||'none'))||[])[1]||'nothing else')+')'],...L3],i>=0?String(v.ap_cap||''):''):so(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="ap_cap"`,L3,String(eff.ap_cap||'none'))})()}</label></div>
    <div class="sgpv">${preview(eff)}</div></div>`};
  const famHtml=fam=>{const subs=(L.cycles||[]).filter(c=>c&&c.key&&c.parent===fam.Cycle).sort((a,b)=>(a.order||0)-(b.order||0));if(!subs.length)return '';
   const pids=[...new Set(subs.map(c=>prof(c).profile_id))],fac=pids.some(pid=>V9M.FACTORY.profileOp().some(r=>r.profile_id===pid));
@@ -7408,11 +7431,13 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
     <div class="sgops">${opsOf(c,fam).map(op=>opBlock(pid,op)).join('')}</div></div>`}).join('');
   const open=V9SOPEN.has(fam.Cycle)||V9SF===fam.Cycle;
   return `<details class="card sgfam" data-sec="sub:${esc(fam.Cycle)}" data-sfam="${esc(fam.Cycle)}"${open?' open':''}><summary><span class="sgfamn">${esc(fam.label||fam.Cycle)}</span><span class="mu">${subs.length} sub-cycle${subs.length===1?'':'s'}${fam.fixedOp?' · always '+esc(fam.fixedOp):''}</span></summary>
-   ${fac?`<p class="row edonly"><button class="b s sm" data-v9sfac="${esc(fam.Cycle)}">↺ Restore factory multipliers</button><small class="mu">for the ${pids.length} value set${pids.length===1?'':'s'} this family uses — clears ranges; shared sets change for other families too</small></p>`:''}
+   ${fac?`<p class="row edonly"><button class="b s sm" data-v9sfac="${esc(fam.Cycle)}">↺ Restore factory multipliers</button><small class="mu">for the ${pids.length} value set${pids.length===1?'':'s'} this family uses — clears ranges and any ISO-group / material values; shared sets change for other families too</small></p>`:''}
    ${rows}</details>`};
  const U=engUser();
  $('#pbody').innerHTML=`<div class="card" data-sec="sub:intro"><h2>Sub-cycles</h2><p class="mu">What each sub-cycle does to the band values. For every operation set the <b>ae range</b> (× Ø) the sub-cycle is meant for — e.g. trochoidal roughing 0.05–0.1 × Ø — and the <b>Vc ×</b> and <b>fz ×</b> at the low end, the start and the high end. The calculator starts at <b>start</b>, and when you change ae it slides the multipliers along that line (outside the range it keeps the end value and warns you). Leave an end blank to keep the start value. <b>ap</b> has the same three columns: min, start and max are limits (the calculator warns outside them and never recommends past the max), and the <b>Vc ×</b> / <b>fz ×</b> at min ap and at max ap multiply the ae values — ×1 at the start ap, straight line in between (e.g. fz ×1.1 at a shallow ap, ×0.85 at full flute length). Blank = ×1. Chip thinning is worked out separately from the ae you use, so <b>fz × should not include it</b>.</p>
  <p class="mu">Sub-cycles can <b>share</b> a set of values or have their <b>own</b>: edit a shared one and every sub-cycle using it changes — press <b>Make own</b> to split one off. Grey values are borrowed from another operation of the same set.</p>
+ <div class="sgscope"><label for="v9ssc"><b>Values for</b></label><select id="v9ssc" data-nav="1">${[['','All materials (standard)'],...(L.material_groups||[]).map(g=>['@'+g.iso_group_tag,'ISO '+g.iso_group_tag+' — '+(g.group_name||'')]),...L.materials.map(m=>[m.Material,m.Material+' ('+v9IsoOf(m.Material)+')'])].map(([x,l])=>{const n=x?PO.filter(r=>V9E.poScope(r)===x).length:0;return `<option value="${esc(x)}"${x===SC?' selected':''}>${esc(l)}${n?' — '+n+' own':''}</option>`}).join('')}</select>
+ <span class="mu">${SC?`Showing <b>${esc(scName(SC))}</b>: grey values come from ${scMat?'ISO '+esc(scIso)+' or all materials':'all materials'}; type a value to give ${esc(scName(SC))} its own, clear it to inherit again. The calculator uses the material’s own value, else its ISO group’s, else the standard.`:'Pick an ISO group or a material to give it its own sub-cycle values (e.g. a lower Vc × or a smaller ae range for stainless).'}</span></div>
  <div class="row noprint"><button class="b s sm" data-nav="1" id="v9sopen">Expand all</button><button class="b s sm" data-nav="1" id="v9sclose">Collapse all</button><span class="mu" id="v9smsg"></span></div></div>
  ${fams.map(famHtml).join('')}
  <details class="card" data-sec="sub:profiles"><summary>Value sets — names and toolpaths (${P.length})</summary><p class="mu" style="margin:6px 0">Rename a value set or set the toolpath it needs (shown as a strategy). Unused sets can be deleted.</p>
@@ -7432,11 +7457,18 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
   if(d.v9cp){await setMap(d.v9cp,'default_profile_id',t.value);return drawV9Subs()}
   if(d.v9cc){await setMap(d.v9cc,'engagement_class',t.value);return msg(edOk())}
   if(d.v9pn!=null){const r=P[+d.v9pn],old=r[d.k];r[d.k]=t.value;await v9Saved('multiplier_profiles',r.profile_id,d.k,old,t.value);return msg(edOk())}
+  if(t.id==='v9ssc'){V9SSC=t.value;return drawV9Subs()}
+  if(d.v9po&&SC){let i=scI(d.v9po,d.v9op);const k=d.k;let v=t.value.trim();if(k!=='ap_cap'){if(v!==''&&(!isFinite(+v)||+v<0)){t.value=i>=0?(PO[i][k]??''):'';return msg('Numbers only (0 or more).')}v=v===''?'':+v}
+   if(i<0){if(v==='')return;PO.push({profile_id:d.v9po,op_class:d.v9op,scope:SC});i=PO.length-1}
+   const r=PO[i],old=r[k];if(v==='')delete r[k];else r[k]=v;
+   const empty=!Object.keys(r).some(x=>!['profile_id','op_class','scope'].includes(x)&&r[x]!==''&&r[x]!=null);if(empty)PO.splice(i,1);
+   await v9Saved('profile_op',`${r.profile_id} › ${r.op_class} › ${scName(SC)}`,k,old??'',empty?'(override removed)':v);msg(edOk()+' — for '+scName(SC));return drawV9Subs()}
   if(d.v9po){let i=poI(d.v9po,d.v9op);if(i<0){const src=po(d.v9po,d.v9op);PO.push(Object.assign({Vc_mult:1,fz_mult:1,ae_ratio:'',ap_ratio:'',ap_cap:'none'},src,{profile_id:d.v9po,op_class:d.v9op}));i=PO.length-1}
    const r=PO[i],k=d.k,old=r[k];let v=t.value.trim();if(k!=='ap_cap'){if(v!==''&&(!isFinite(+v)||+v<0)){t.value=old??'';return msg('Numbers only (0 or more).')}v=v===''?'':+v}r[k]=v;await v9Saved('profile_op',`${r.profile_id} › ${r.op_class}`,k,old,v);msg(edOk()+' — '+users(d.v9po).length+' sub-cycle(s) use this');return drawV9Subs()}};
  $('#pbody').onclick=async e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;
   if(b.id==='v9sopen'){V9SOPEN=new Set(names);return drawV9Subs()}if(b.id==='v9sclose'){V9SOPEN=new Set();return drawV9Subs()}
   if(b.id==='engdef'){SET.engage=null;await engSave();return drawV9Subs()}
+  if(d.v9pox){const [pid,op]=d.v9pox.split('|'),i=scI(pid,op);if(i<0)return;if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Remove?';return}const r=PO.splice(i,1)[0];await v9Saved('profile_op',`${pid} › ${op} › ${scName(SC)}`,'override removed',JSON.stringify(r),'');return drawV9Subs()}
   if(d.v9sfac){const subs=(L.cycles||[]).filter(c=>c&&c.key&&c.parent===d.v9sfac),pids=[...new Set(subs.map(c=>prof(c).profile_id))],F=V9M.FACTORY.profileOp(),done=[];let rows=L.profile_op||[];
    pids.forEach(pid=>{const fr=F.filter(r=>r.profile_id===pid);if(!fr.length)return;done.push([pid,rows.filter(r=>r.profile_id===pid),fr]);rows=rows.filter(r=>r.profile_id!==pid).concat(fr.map(r=>Object.assign({},r)))});
    if(!done.length)return msg('No factory values for these sets.');L.profile_op=rows;for(const [pid,old,fr] of done)await v9Saved('profile_op',pid,'restored to factory',JSON.stringify(old),JSON.stringify(fr));return drawV9Subs()}
@@ -7667,8 +7699,8 @@ function v9SetupState(){try{const grpsUsed=[...new Set(L.materials.filter(m=>m.M
 var ED=null;
 const ED_NAV='[data-nav],[data-v9m],#v9mach,#v9sf,[data-v9go]';
 const edSecs=root=>[...root.querySelectorAll('.card,details.mbt,[data-sec]')].filter(el=>!el.parentElement.closest('.card,details.mbt,[data-sec]'));
-function edKey(el){const t=el.dataset.sec||((el.querySelector(':scope>h2')||el.querySelector(':scope>summary')||{}).textContent||'').trim().slice(0,60);return PS+'|'+(PS==='bands'?V9BM:'')+'|'+t}
-function edLabel(el){const h=el.querySelector(':scope>summary .sgfamn')||el.querySelector(':scope>summary')||el.querySelector(':scope>h2');let t=(h&&h.textContent||'').replace(/\s+/g,' ').trim();if(el.matches('details.mbt'))t=(PS==='bands'?(V9BM.startsWith('@')?'ISO '+V9BM.slice(1):V9BM)+' › ':'')+(el.dataset.fam||'')+' — '+v9FamName(el.dataset.fam||'');return t.slice(0,80)}
+function edKey(el){const t=el.dataset.sec||((el.querySelector(':scope>h2')||el.querySelector(':scope>summary')||{}).textContent||'').trim().slice(0,60);return PS+'|'+(PS==='bands'?V9BM:PS==='sub'?V9SSC:'')+'|'+t}
+function edLabel(el){const h=el.querySelector(':scope>summary .sgfamn')||el.querySelector(':scope>summary')||el.querySelector(':scope>h2');let t=(h&&h.textContent||'').replace(/\s+/g,' ').trim();if(el.matches('details.mbt'))t=(PS==='bands'?(V9BM.startsWith('@')?'ISO '+V9BM.slice(1):V9BM)+' › ':'')+(el.dataset.fam||'')+' — '+v9FamName(el.dataset.fam||'');if(PS==='sub'&&V9SSC)t=(V9SSC.startsWith('@')?'ISO '+V9SSC.slice(1):V9SSC)+' › '+t;return t.slice(0,80)}
 function edDecorate(){const page=document.getElementById('data'),root=page&&page.querySelector('#pbody');if(!root)return;
  root.classList.remove('islocked');root.querySelectorAll(':scope > .lockbar').forEach(x=>x.remove());root.querySelectorAll('.edtools').forEach(x=>x.remove());
  if(PS!=='setup'){edSecs(root).forEach(el=>{const ctl=[...el.querySelectorAll('input,select,textarea,button')].filter(c=>!c.matches(ED_NAV)&&!c.closest('.edtools,.ruhere'));if(!ctl.length)return;
@@ -8511,7 +8543,7 @@ function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Live databas
 <p><b>Editing:</b> every section opens view-only, so nothing changes by accident. Press <b>✎ Edit</b> on the section you want; only that section becomes editable and a bar at the bottom counts your changes. <b>Review</b> lists them, <b>Save</b> writes them all at once (and to the Change log), <b>Cancel — discard</b> throws them away. Nothing is written until you press Save (Ctrl+S works too); leaving the page asks first. In edit mode <b>↺</b> buttons put values back: a Bands row to the value it had before your first edit, and Materials, Machines &amp; physics, Sub-cycles and Strategy rules to the built-in (factory) values. The mouse wheel no longer changes a number box you are scrolling past.</p><ul><li><b>Setup</b> (start here): a checklist — bands for every cutter family you own, sub-cycle values, stepdown limits, cutting force, machine power and torque, neck diameters, rules. Each step has a button to the place to fix it, and <b>Fill … rows with estimates</b> adds catalogue / typical values where a table is missing.</li>
 <li><b>Bands</b>: laid out like hyperMILL's Materials dialog. Pick an ISO group or a material on the left; each cutter family has its Ø table with Vc and fz (per rev for drills, reamers, spot drills), the RPM and feed for your tools in that range (pick a machine to cap the RPM) and where the numbers came from. A material uses its group's tables unless you <b>Override</b> one; <b>Turn override off</b> goes back to the group without deleting it. <b>+ Ø ranges for my tools</b> adds rows for any range your tools need.</li>
 <li><b>Roughing vs finishing — why there is only one band</b>: as in hyperMILL, a band is the material's cutting data for a cutter and Ø, not for an operation. Roughing and finishing differ in the <b>Sub-cycles</b> page: each sub-cycle has its own rough / semi / finish grid with Vc ×, fz × and the ae / ap it is meant for. Finishing usually gets a small Vc boost and a light ae / ap, and the light ae raises fz through chip thinning — so the finishing fz is worked out, not typed into a separate band. To make finishing slower or faster for one sub-cycle, change its <b>finish</b> Vc × / fz × there; to change it for every finishing cut in a material, change the standard set (P08).</li>
-<li><b>Sub-cycles</b>: one fold-out per cycle family. Each sub-cycle has a small grid per operation: the <b>ae range</b> (min, start, max × Ø), the <b>Vc ×</b> and <b>fz ×</b> at min ae, at the start and at max ae, and the <b>ap</b> min / start / max (× Ø) with its own <b>Vc ×</b> / <b>fz ×</b> at min ap and at max ap (multiplied onto the ae values; ×1 at the start ap — when set they replace the general deep-ap fz ease-off). The calculator starts at <b>start</b>; when you change ae it slides Vc and fz in a straight line toward the end values (e.g. trochoidal roughing 0.05–0.1 × Ø: more Vc and fz at 0.05, less at 0.1). Outside the range it keeps the end value and warns; ap max also caps the recommended stepdown. Leave an end blank to keep the start value; with no range the multipliers stay flat and the general engagement factors (bottom of the page) apply. Sub-cycles can share their values or have their own: editing shared values changes every sub-cycle that uses them; <b>Make own</b> splits one off.</li>
+<li><b>Sub-cycles</b>: one fold-out per cycle family. Each sub-cycle has a small grid per operation: the <b>ae range</b> (min, start, max × Ø), the <b>Vc ×</b> and <b>fz ×</b> at min ae, at the start and at max ae, and the <b>ap</b> min / start / max (× Ø) with its own <b>Vc ×</b> / <b>fz ×</b> at min ap and at max ap (multiplied onto the ae values; ×1 at the start ap — when set they replace the general deep-ap fz ease-off). The calculator starts at <b>start</b>; when you change ae it slides Vc and fz in a straight line toward the end values (e.g. trochoidal roughing 0.05–0.1 × Ø: more Vc and fz at 0.05, less at 0.1). Outside the range it keeps the end value and warns; ap max also caps the recommended stepdown. Leave an end blank to keep the start value; with no range the multipliers stay flat and the general engagement factors (bottom of the page) apply. Sub-cycles can share their values or have their own: editing shared values changes every sub-cycle that uses them; <b>Make own</b> splits one off. <b>Per material</b>: the <b>Values for</b> list at the top switches the page from <b>All materials</b> to one ISO group or one material. Grey values are what it inherits; type a value to give that group or material its own (only the boxes you fill in — the rest keep inheriting), clear it to inherit again, <b>✕ Remove</b> drops all its values for that operation. The calculator uses the material’s own value, else its ISO group’s, else the standard one, field by field (shown in the value’s “based on” note). On All materials, an operation that has its own values somewhere says so (“own values for ISO M, SS 316”).</li>
 <li><b>Limits &amp; physics</b> is one page in four parts — Limits, Materials, Machines &amp; physics, Strategy rules. The buttons at the top jump to a part and stay in view as you scroll; click a part's heading to fold it.</li>
 <li><b>Limits</b>: stepdown limits, each read as a sentence ("In ISO P2, any tool, every dynamic sub-cycle, rough: stepdown ≤ 1.5×Ø"); the most specific one wins. Below: the Ø ranges and the small-tool rigidity cap.</li>
 <li><b>Materials</b>: kc1.1 and mc per ISO group with optional per-material values, hardness, and whether a material work-hardens.</li>
@@ -8582,7 +8614,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-19.11';
+const APP_V='2026-10-19.12';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
