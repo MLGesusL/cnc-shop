@@ -6620,6 +6620,11 @@ function c6Defaults(){const v=CALCV,t=tool(v.tool),out={vals:{},src:{},t,warn:''
   /* Ra for ball / lollipop tools: a matching rule (Phase 2), else 1.6 µm finish / 3.2 µm semi */
   if(ball){const rr=SF.applyRules({src:{}},L.rules,{material:v.mat,iso:out.info&&out.info.iso,tool:sfx,op,band:SF.bandOf(D,L.bands)&&SF.bandOf(D,L.bands).label,diameter:D});
    out.vals.ra=rr.ra>0?rr.ra:op==='semi'?3.2:1.6;out.src.ra=rr.ra>0?'rule':'default';out.raK=rr.raK>0?rr.raK:(+SET.raK||1)}}
+ /* 2026-10-19 (user decision): the v9 engine gives the starting values — unless a specific source is picked above, or the old
+    resolver found one of your verified cuts (verified cut comes first on the source ladder) */
+ try{const r=out.r,mine=r&&/^(CUTS|DB)/.test(String(r.src||''));if(!C6.srcSel&&!mine&&v.mat){const s=v9Start(op,D,Z);out.v9=s;
+  if(s&&!s.err){const capV=capOf(v.mach)*Math.PI*D/1000;if(s.Vc>capV){out.capped={vcT:s.Vc,rpm:capOf(v.mach)};out.vals.Vc=capV}else{out.vals.Vc=s.Vc;delete out.capped}out.src.Vc='v9';
+   out.vals.fz=s.perRev?s.fz/(Z>0?Z:1):s.fz;out.src.fz='v9';if(isFinite(s.ae)){out.vals.ae=Math.min(s.ae,D);out.src.ae='v9'}if(isFinite(s.ap)){out.vals.ap=s.ap;out.src.ap='v9'}if(out.warn&&r&&r.warn)out.warn=''}}}catch(e){console.error('v9 start',e)}
  out.raK=out.raK||(+SET.raK||1);return out}
 function c6Scope(){const d=C6.def||{},t=d.t||{},v=CALCV,mc=L.machines.find(x=>x.Machine===v.mach)||{};
  return Object.assign({},C6.st,{rpm_max:capOf(v.mach),kc:(SF.KC11||{})[d.info&&d.info.iso]||2000,k:d.raK||1,is_ball:d.ball?1:0,stickout:gn(v.so),reach:gn(t['Reach (mm)']),cut_len:gn(t['Cutting Length (mm)']),
@@ -6798,7 +6803,7 @@ document.addEventListener('click',e=>{const t=e.target.closest&&e.target.closest
  const fam=CALCV.tag.cycleFamily;if(fam&&famFixed(fam))return;const ops=['rough','semi','finish'],cur=(C6.def&&C6.def.op)||'rough',nx=ops[(ops.indexOf(cur)+1)%ops.length];
  C6.op=nx;if(fam){CALCV.tag=Object.assign({},CALCV.tag,{operation:nx});const sub=CALCV.tag.subcycleKey?SUBS(fam).find(x=>x.key===CALCV.tag.subcycleKey):null;if(sub&&!(sub.usableAs||[]).includes(nx))CALCV.tag.subcycleKey='';const sp=$('.tp[data-tp="calc"]');if(sp){const tmp=document.createElement('span');tmp.innerHTML=tpHtml('calc',CALCV.tag);sp.replaceWith(tmp.firstChild)}}drawCalcOut()});
 
-function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.tag,v.mach,v.band,C6.op,C6.srcSel||'',C6.adv.coolant,(L.calc_fields||[]).length,JSON.stringify(SET.tiers||null),JSON.stringify(L.rules||[]),SET.raK,(L.baseline||[]).length])}
+function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.tag,v.mach,v.band,v.so,(L.profile_op||[]).length,(L.material_tool_baselines||[]).length,C6.op,C6.srcSel||'',C6.adv.coolant,(L.calc_fields||[]).length,JSON.stringify(SET.tiers||null),JSON.stringify(L.rules||[]),SET.raK,(L.baseline||[]).length])}
 function drawCalc6(force){const h=$('#calc6');if(!h)return;const sg=c6Sig();if(force||sg!==C6.sig){C6.sig=sg;c6Reset()}
  const a=document.activeElement,id=a&&h.contains(a)?a.id:'',raw=id?a.value:null,pos=id?(()=>{try{return a.selectionStart}catch(e){return null}})():null;h.innerHTML=calc6Html();
  /* the box being typed in keeps exactly what was typed (a space in "37 BX", the "0." of "0.05") */
@@ -6994,6 +6999,10 @@ function v9Run(){const v=CALCV,d=C6.def||{},T=V9T(),st=C6.st,g=k=>{const r=c6Row
 const v9Act=a=>{a=String(a||'').replace(/\s*#.*$/,'');const sh=a.match(/show '([^']*)'/),bl=a.match(/^block '([^']*)'/);if(bl)return 'Not allowed: '+bl[1];
  const parts=a.replace(/show '[^']*'/,'').replace(/^block '[^']*'/,'').split(';').map(x=>x.trim()).filter(x=>!/^show /.test(x)).map(x=>x.replace(/^set (\w+) = '?([^']*)'?/,(m,k,v)=>k.replace(/_/g,' ')+': '+v).replace(/^clamp (.+?) <= (.+)$/,'limit $1 to $2').replace(/^scale (\w+) \* ([\d.]+)/,'$1 ×$2').replace(/^block (.+)$/,'no $1'));
  return [sh&&sh[1],...parts].filter(Boolean).join(' — ')};
+/* v9 starting values for the calculator: baseline × profile × limits, with the L/D tier from the stick-out */
+function v9Start(op,D,Z){const v=CALCV,T=V9T(),m=L.materials.find(x=>x.Material===v.mat);if(!m||!(D>0))return null;const iso=SF.matInfo(m).iso,tl=v9Tool(v.tool),G=c6Geo();
+ let ld=1;const so=v9n(v.so);if(so>0){try{const sg=V9E.segments(Object.assign({D},tl),so),E=tl.material==='HSS'?210e3:600e3,bm=V9E.beam(sg.segs,E,14.5e-6,sg.tipMass),dRef=tl.necked&&tl.neckD>0?tl.neckD:sg.dFlute,ldq=Math.cbrt(3*E*Math.PI*dRef**4/64/bm.k)/dRef;ld=ldq<=3?1:ldq<=5?.75:.5}catch(e){}}
+ return V9E.recommend(T,{material:v.mat,iso,family:tl.family,type:tl.type,D,z:Z>0?Z:1,op,sub:v.tag.subcycleKey||'',parent:v.tag.cycleFamily||'',coolant:C6.adv.coolant,flute:tl.fluteL,R:G.R||0,ldTier:ld})}
 function v9PanelHtml(){let R=null;try{R=v9Run()}catch(e){console.error(e);return `<div class="note e" style="margin:8px">v9 physics failed: ${esc(e.message||e)}</div>`}if(!R)return '';
  const {o,rec,rl,tl,I}=R,pr={mandatory:'e',enforced:'w',advisory:''},T=V9T();
  const ban=rl.fired.map(r=>`<div class="note ${pr[r.priority]||''}" style="margin:4px 0"><b>${esc(r.strategy_code)}</b> ${esc(v9Act(r.action_expression))} <small class="mu">${esc(r.priority)}</small></div>`).join('');
@@ -7005,7 +7014,7 @@ function v9PanelHtml(){let R=null;try{R=v9Run()}catch(e){console.error(e);return
  ${ban}${rl.errors.length?`<div class="note w">Rules not read: ${esc(rl.errors.join('; '))}</div>`:''}
  <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${chip('RPM',nf(o.n)+(o.capped?' ⚠':''),o.capped)}${chip('Vf',nf(o.Vf)+' mm/min')}${o.VfProg?chip('Vf at centre',nf(o.VfProg)):''}${chip('Q',f(o.Q,1)+' cm³/min')}${chip('Power',f(o.Pc,2)+' kW',I.spindleKw>0&&o.Pc>.8*I.spindleKw)}${chip('Torque',f(o.T,1)+' N·m',I.spindleNm>0&&o.T>.8*I.spindleNm)}${o.thrust?chip('Thrust',nf(o.thrust)+' N'):''}${o.life?chip('Tool life',f(o.life,2)+'× baseline',o.life<.5):''}${chip('h_ex',f(o.hex,4)+' mm',o.rubbing)}${chip('Ks',nf(o.Ks)+' N/mm²')}</div>
  <p class="mu" style="margin:2px 0">Chip thinning ×${f(o.cthRad,2)} radial${o.cthAx>1?' × '+f(o.cthAx,2)+' axial':''} on Ø${f(o.Dcut,2)} (the cutting Ø, not the neck)${o.rubbing?` · <span class="bad">chip ${f(o.hex,4)} mm is under the ${f(o.hMin,4)} mm minimum — the edge will rub</span>`:''}.</p>
- <div class="tw"><table><thead><tr><th></th><th class="n">Vc</th><th class="n">fz</th><th class="n">ae</th><th class="n">ap</th><th>Based on</th></tr></thead><tbody><tr><td>Now</td><td class="n">${f(I.Vc,0)}</td><td class="n">${f(I.fz,4)}</td><td class="n">${f(I.ae,2)}</td><td class="n">${f(I.ap,2)}</td><td class="tx mu">current engine</td></tr>${recRow}</tbody></table></div>
+ <div class="tw"><table><thead><tr><th></th><th class="n">Vc</th><th class="n">fz</th><th class="n">ae</th><th class="n">ap</th><th>Based on</th></tr></thead><tbody><tr><td>Now</td><td class="n">${f(I.Vc,0)}</td><td class="n">${f(I.fz,4)}</td><td class="n">${f(I.ae,2)}</td><td class="n">${f(I.ap,2)}</td><td class="tx mu">${esc(Object.values(C6.src||{}).includes('v9')?'calculator (v9)':'calculator ('+((C6.def&&C6.def.r&&C6.def.r.src)||'old engine')+')')}</td></tr>${recRow}</tbody></table></div>
  ${o.segs?`<p style="margin:6px 0"><b>Chatter</b> — ${esc(o.model)}: ${esc(segs)} mm (holder → tip)${tl.neckEst?' <span class="tag">neck Ø estimated</span>':''} · L/D equivalent ${f(o.LDeq,1)}${o.ldTier<1?` (ap, fz ×${o.ldTier})`:''}<br>
  Modes: ${o.modes.map(m=>`${nf(m.f)} Hz, ${f(m.k/1000,2)} N/µm${m===o.gov?' (governs)':''}`).join(' · ')} · ${chat}<br>
  Stable-pocket speeds: ${o.pockets.length?o.pockets.map(p=>`${nf(p.lo)}–${nf(p.hi)} rpm`).join(', '):'none within the spindle range'} · Deflection ≈ ${f(o.defl,3)} mm (${esc(String(o.deflTol))} mm limit)</p>`:''}
