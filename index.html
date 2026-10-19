@@ -2349,7 +2349,7 @@ const DEFAULT_LIB = {
   srcbase: []
 };
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)],esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],matbands:[],sources:[],srcbase:[],formulas:[],prompts:[],rules:[],calc_fields:[]};
+const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],matbands:[],sources:[],srcbase:[],formulas:[],prompts:[],rules:[],calc_fields:[],material_groups:[],material_factors:[],diameter_bands:[],material_tool_baselines:[],multiplier_profiles:[],profile_op:[],cycle_map:[],cycle_reference:[],operations:[],rules_engine:[],tools_v9:[],tool_type_defaults:[],spindle_setup:[]};
 let SHEET_CFG={id:'',tabs:[]};let SHEET_HEAD={};let SHEET_SYNC={tried:false,got:[],missing:[]};/* Phase 9: each Sheet tab's header row, so exports keep the Sheet's column order */let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
 /* 2026-10-14 navigation, grouped: the shop floor first, then the data the recommendations come from, then AI and app settings */
 const NAVG=[['Shop floor',[['cheat','Speeds & Feeds','C'],['log','Log cut','+'],['cuts','Cut database','D']]],
@@ -4529,6 +4529,203 @@ function extra(c){const defs=allParamDefs(),o=cpCanon(c.params);Object.keys(defs
 const setupLine=c=>`${c.material} | Tool: ${c.tool} | Vc: ${c.vc??''} | RPM: ${c.rpm??''} | Fz: ${c.fz??''} | Feed: ${c.feed??''} | DOC: ${c.doc??''} | WOC: ${c.woc??''}${c.cycle?' | Cycle: '+c.cycle:''}${extra(c)?' | Cycle settings: '+extra(c):''} | Notes: ${c.notes||''}`;
 
 /* ---------- speeds-and-feeds engine context ---------- */
+/*V9E-BEGIN*/
+/* ===================== v9 PHYSICS ENGINE (Phase 2 steps 3–5, 2026-10-19) =====================
+   Pure functions, no DOM. Units: mm, m/min, mm/min, N, N/mm, N/mm², kW, N·m, Hz.
+   V9E.calc(input) → every v9 output (chain, power, life, L/D, chatter, deflection) + notes.
+   V9E.rules(rows, vars) → fired strategy banners, sorted mandatory › enforced › advisory, then evaluation order.
+   V9E.recommend(...) → v9 starting values from material_tool_baselines × profile × limits. */
+const V9E = (() => {
+  const PI = Math.PI, fin = x => typeof x === 'number' && isFinite(x), pos = x => fin(x) && x > 0;
+  const MAT = { carbide: [600e3, 14.5e-6], HSS: [210e3, 8.1e-6], powder_metal: [230e3, 8.0e-6], PCD: [600e3, 14.5e-6] }; /* E N/mm², ρ kg/mm³ */
+  const TAYLOR_N = { HSS: .125, powder_metal: .125, carbide: .25, carbide_coated: .3, PCD: .5 };
+  const COOL = { /* DECISION-25 */ flood: { S: 1, M: 1, P: 1, K: 1, H: 1, O: 1 }, hpc: { S: 1.1, M: 1.1, P: 1.05, K: 1.05, H: 1, O: 1 },
+    mql: { S: .9, M: .9, P: .95, K: .95, H: 1, O: 1 }, air: { S: .85, M: .85, P: .9, K: .9, H: 1, O: 1 }, dry: { S: .75, M: .75, P: .9, K: .9, H: 1, O: 1 } };
+  const coolKey = c => { c = String(c || 'flood').toLowerCase(); return /through|hpc|high/.test(c) ? 'hpc' : /mql/.test(c) ? 'mql' : /air/.test(c) ? 'air' : /dry/.test(c) ? 'dry' : 'flood'; };
+  const isoCls = iso => { iso = String(iso || ''); return /^S/.test(iso) ? 'S' : iso === 'M' ? 'M' : /^P/.test(iso) ? 'P' : iso === 'K' ? 'K' : /^H/.test(iso) ? 'H' : 'O'; };
+  const vCool = (iso, coolant) => COOL[coolKey(coolant)][isoCls(iso)];
+  const holderFactor = type => /shrink/i.test(type || '') ? 1 : /hydraul/i.test(type || '') ? .9 : .75;
+  const hMin = (iso, D) => ['M', 'S1', 'S2', 'H1', 'H2'].includes(iso) ? { h: Math.max(.005, .005 * D), enforced: true } : { h: Math.max(.003, .003 * D), enforced: false };
+  /* 4.0 helpers */
+  const phiS = (ae, D) => Math.acos(Math.max(-1, Math.min(1, 1 - 2 * Math.min(ae, D) / D)));
+  const nStar = (z, ae, D) => Math.max(1, z * phiS(ae, D) / (2 * PI));
+  const hm = (fz, ae, D, kr) => { const p = phiS(ae, D); return p > 0 ? fz * Math.sin(kr) * (2 * Math.min(ae, D) / D) / p : 0; };
+  const hex = (fz, ae, D, kr) => fz * Math.sin(Math.min(phiS(ae, D), PI / 2)) * Math.sin(kr);
+  const ks = (kc11, mc, h, g0) => kc11 * Math.pow(Math.max(h, 1e-4), -mc) * (1 - (g0 || 0) / 100);
+  const cthRad = (ae, D) => { const r = ae / D; return r > 0 && r < .5 ? 1 / Math.sqrt(1 - Math.pow(1 - 2 * r, 2)) : 1; };
+  const cthAx = (ap, R) => R > 0 && ap > 0 && ap < R ? 1 / Math.sqrt(1 - Math.pow((R - ap) / R, 2)) : 1;
+  const deff = (ap, D, tiltDeg) => { if (!(ap > 0) || ap >= D / 2 && !tiltDeg) return D; const b = (tiltDeg || 0) * PI / 180; return D * Math.sin(Math.min(PI / 2, b + Math.acos(Math.max(-1, (D - 2 * ap) / D)))); };
+  /* tool segments from the tip: [from, to, d] (mm). Flutes at 0.8·D, neck, shank. Lollipop / T-slot add a tip mass. */
+  function segments(t, stick) {
+    const D = t.D, tt = t.type || '', L = stick, segs = [], notes = [];
+    let tipMass = 0, nd = t.neckD, nl = t.neckL, fl = t.fluteL;
+    if (tt === 'tslot') { const w = t.discW > 0 ? t.discW : .1 * D; nd = pos(nd) ? nd : (pos(t.shankD) && t.shankD < D ? t.shankD * .8 : .45 * D); if (!pos(t.neckD)) notes.push('T-slot neck Ø estimated');
+      tipMass = PI * (D * D - nd * nd) / 4 * w; fl = w; nl = pos(nl) ? nl : Math.max(0, L - w); return { segs: [[0, w, D], [w, L, nd]], tipMass, notes, dFlute: D }; }
+    if (tt === 'end_mill_lollipop') { if (!pos(nd) || t.neckEst) { nd = .6 * D; notes.push('lollipop neck Ø estimated at 0.6·D'); } tipMass = PI / 6 * Math.pow(D, 3); fl = 0; }
+    const dF = /^end_mill|thread_mill|reamer|chamfer|engraver|dovetail|drill/.test(tt) ? .8 * D : D;
+    let x = 0;
+    if (pos(fl)) { const e = Math.min(fl, L); if (tt !== 'end_mill_lollipop') segs.push([0, e, dF]); x = e; }
+    if (t.necked && pos(nd) && pos(nl) && x < L) { const e = Math.min(x + nl, L); segs.push([x, e, nd]); x = e; }
+    if (x < L) segs.push([x, L, pos(t.shankD) ? t.shankD : D]);
+    if (!segs.length) segs.push([0, L, dF]);
+    return { segs, tipMass, notes, dFlute: dF };
+  }
+  const Iof = d => PI * Math.pow(d, 4) / 64;
+  /* 4.9b stepped stiffness, 4.9c Rayleigh mass (64-step Simpson on the static tip-load shape) */
+  function beam(segs, E, rho, tipMass) {
+    const L = segs[segs.length - 1][1], dAt = s => { for (const g of segs) if (s >= g[0] - 1e-9 && s <= g[1] + 1e-9) return g[2]; return segs[segs.length - 1][2]; };
+    const k = 3 * E / segs.reduce((a, [p, q, d]) => a + (q * q * q - p * p * p) / Iof(d), 0);
+    /* deflection shape: x from the holder face, curvature (L−x)/(E·I), integrate twice */
+    const N = 64, h = L / N, w = [0], th = [0], kap = i => { const xh = i * h; return (L - xh) / (E * Iof(dAt(L - xh))); };
+    for (let i = 1; i <= N; i++) { th[i] = th[i - 1] + h * (kap(i - 1) + kap(i)) / 2; w[i] = w[i - 1] + h * (th[i - 1] + th[i]) / 2; }
+    const tip = w[N]; let m = 0;
+    for (let i = 0; i <= N; i++) { const d = dAt(L - i * h), A = PI * d * d / 4, c = (i === 0 || i === N) ? 1 : i % 2 ? 4 : 2; m += c * rho * A * Math.pow(w[i] / tip, 2); }
+    m = m * h / 3 + rho * tipMass;
+    return { k, m, L };
+  }
+  /* 4.9d two-mass model: spindle (ks, ms) in series with tool (kt, mt). k in N/mm, m in kg → ω² in 1/s² needs N/m */
+  function twoMass(ksN, fs, kt, mt) {
+    const Ks = ksN * 1e3, Kt = kt * 1e3, ms = Ks / Math.pow(2 * PI * fs, 2), a = ms * mt, b = -(ms * Kt + mt * (Ks + Kt)), c = Ks * Kt, disc = Math.sqrt(Math.max(0, b * b - 4 * a * c));
+    return [(-b - disc) / (2 * a), (-b + disc) / (2 * a)].map(l => { const r = (Kt - l * mt) / Kt, nrm = Math.sqrt(ms * r * r + mt), p1 = r / nrm, p2 = 1 / nrm;
+      return { f: Math.sqrt(l) / (2 * PI), k: l / (p2 * p2) / 1e3, toolDominated: Math.abs(p2 - p1) > Math.abs(p1) }; });
+  }
+  function pockets(f, z, nmax) { const out = []; for (let k = 1; k <= 8 && out.length < 2; k++) { const n = 60 * f / (z * k); if (n <= nmax) out.push({ k, rpm: n, lo: n * .95, hi: n * 1.05 }); } return out; }
+  /* main calculation */
+  function calc(I) {
+    const o = { notes: [], warn: [] }, D = I.D, z = I.z || 1, kr = (I.kappaDeg || 90) * PI / 180, tt = I.tool.type || '';
+    const ball = /ball/.test(tt), R = ball ? D / 2 : (I.cornerR || 0);
+    o.Dcut = ball ? deff(I.ap, D, I.tilt) : D;
+    o.phi = phiS(I.ae, o.Dcut); o.Nstar = nStar(z, I.ae, o.Dcut);
+    o.cthRad = cthRad(I.ae, o.Dcut); o.cthAx = cthAx(I.ap, R); o.cth = Math.min(2.5, o.cthRad * o.cthAx);
+    o.hm = hm(I.fz, I.ae, o.Dcut, kr); o.hex = hex(I.fz, I.ae, o.Dcut, kr);
+    o.Ks = ks(I.kc11, I.mc, o.hm, I.gamma0);
+    o.nCalc = 1000 * I.Vc / (PI * o.Dcut); o.n = I.nmax > 0 ? Math.min(o.nCalc, I.nmax) : o.nCalc; o.capped = o.n < o.nCalc - .5;
+    o.VcAct = PI * o.Dcut * o.n / 1000; o.Vf = (I.perRev ? I.fz : I.fz * z) * o.n;
+    if (I.circ && pos(I.circ.Dh)) o.VfProg = o.Vf * (I.circ.internal === false ? (I.circ.Dh + D) / I.circ.Dh : (I.circ.Dh - D) / I.circ.Dh);
+    /* 4.6 power, torque */
+    o.Q = I.ap * I.ae * o.Vf / 1000; o.Pc = I.ap * I.ae * o.Vf * o.Ks / (60e6 * (I.eta || .8)); o.T = o.n > 0 ? 9549 * o.Pc / o.n : NaN;
+    if (/drill|spot/.test(tt)) { const eps = (I.pointDeg || 140) * PI / 180, fn = I.perRev ? I.fz : I.fz * z, kcd = ks(I.kc11, I.mc, fn / 2 * Math.sin(eps / 2), 0);
+      o.Pc = fn * o.VcAct * D * kcd / 240000; o.T = o.n > 0 ? 9549 * o.Pc / o.n : NaN; o.thrust = .5 * kcd * D / 2 * fn * Math.sin(eps / 2); o.Q = PI * D * D / 4 * o.Vf / 1000; }
+    if (pos(I.spindleKw) && o.Pc > .8 * I.spindleKw) o.warn.push(`Power ${o.Pc.toFixed(1)} kW is over 80 % of the ${I.spindleKw} kW spindle`);
+    if (pos(I.spindleNm) && o.T > .8 * I.spindleNm) o.warn.push(`Torque ${o.T.toFixed(0)} N·m is over 80 % of the ${I.spindleNm} N·m spindle`);
+    /* 4.7 relative life */
+    if (pos(I.VcBase)) { const n = TAYLOR_N[I.tool.material === 'carbide' && I.tool.coated ? 'carbide_coated' : I.tool.material] || .25; o.life = Math.max(.2, Math.min(5, Math.pow(I.VcBase / o.VcAct, 1 / n))); o.taylorN = n; }
+    /* h_min (N-09) */
+    const hmn = hMin(I.iso, D); o.hMin = hmn.h; o.rubbing = o.hex < hmn.h; o.rubEnforced = hmn.enforced;
+    /* chatter + deflection */
+    const [E, rho] = MAT[I.tool.material] || MAT.carbide, stick = pos(I.stick) ? I.stick : NaN;
+    if (!pos(stick)) { o.notes.push('Enter the stick-out to see chatter and deflection'); return o; }
+    const sg = segments(Object.assign({ D }, I.tool), stick); sg.notes.forEach(n => o.notes.push(n));
+    const bm = beam(sg.segs, E, rho, sg.tipMass); o.segs = sg.segs; o.kTool = bm.k; o.mEq = bm.m;
+    o.model = sg.segs.length > 2 || I.tool.necked || sg.tipMass ? 'stepped cantilever' : sg.segs.length === 2 ? 'stepped cantilever (shank + flutes)' : 'uniform cantilever';
+    const dRef = I.tool.necked && pos(I.tool.neckD) ? I.tool.neckD : sg.dFlute; o.LDeq = Math.cbrt(3 * E * Iof(dRef) / bm.k) / dRef;
+    o.ldTier = o.LDeq <= 3 ? 1 : o.LDeq <= 5 ? .75 : .5;
+    if (stick < (I.tool.reach || 0) - .01) o.warn.push(`Stick-out ${stick} mm is shorter than the tool's reach ${I.tool.reach} mm — the programmer must allow for the extra stick-out`);
+    const ksp = (I.spindle.k || 50e6) / 1e3 * holderFactor(I.holderType), modes = twoMass(ksp, I.spindle.f || 900, bm.k, bm.m);
+    o.kTot = 1 / (1 / ksp + 1 / bm.k); o.modes = modes;
+    const gov = modes.reduce((a, b) => b.k < a.k ? b : a); o.gov = gov;
+    const zeta = gov.toolDominated ? (I.zetaTool || .02) : (I.spindle.zeta || .04);
+    o.inRange = D >= .2 && D <= 125 && o.LDeq <= 25 && modes.every(m => m.f >= 100 && m.f <= 60000) && o.kTot / 1e3 >= .005 && o.kTot / 1e3 <= 500;
+    if (/drill|spot/.test(tt)) { o.drillAdvisory = true; o.notes.push('Drills: chatter shown as advice only (no stability limit)'); }
+    else { o.aLim = 2 * gov.k * zeta * (1 + zeta) / (o.Ks * o.Nstar); o.ratio = I.ap / o.aLim; o.tier = o.ratio <= 1 ? 'stable at any rpm' : o.ratio <= 3 ? 'pick a pocket speed' : 'above the guaranteed-stable depth (normal for most cuts): if it chatters, use a pocket speed or reduce ap'; }
+    o.pockets = pockets(gov.f, z, I.nmax || 12000);
+    if (tt === 'slitting_saw' || (tt === 'tslot' && pos(I.tool.discW) && I.tool.discW / D < .1)) o.notes.push('Thin disc: axial flex not modelled — keep side load light');
+    /* N-01 deflection */
+    const Ft = o.Ks * I.ap * o.hm * o.Nstar, Fr = .3 * Ft; o.F = Math.hypot(Ft, Fr); o.defl = o.F / o.kTot; o.deflTol = I.op === 'finish' ? .01 : I.op === 'semi' ? .03 : .05;
+    if (o.defl > o.deflTol) o.warn.push(`Deflection ≈ ${o.defl.toFixed(3)} mm is over the ${o.deflTol} mm ${I.op || 'rough'} tolerance`);
+    if (!o.inRange) o.warn.push('Chatter: outside model range — check the tool data');
+    return o;
+  }
+  /* ---------- rules: safe expression grammar (DECISION-35 A) ---------- */
+  function tokenize(s) {
+    const t = [], re = /\s*(?:(\d+\.?\d*(?:e[+-]?\d+)?)|'([^']*)'|"([^"]*)"|([A-Za-z_][\w.]*)|(==|!=|>=|<=|[><()+\-*\/,]))/gy; let m; s = String(s || '').replace(/#.*$/, '');
+    while (re.lastIndex < s.length && (m = re.exec(s))) { if (m[1] != null) t.push({ n: +m[1] }); else if (m[2] != null || m[3] != null) t.push({ s: m[2] != null ? m[2] : m[3] }); else if (m[4]) t.push({ id: m[4] }); else t.push({ op: m[5] }); if (!m[0].trim() && !m[5]) break; }
+    if (s.slice(re.lastIndex).trim()) throw new Error('cannot read: ' + s.slice(re.lastIndex));
+    return t;
+  }
+  function evalExpr(src, vars) {
+    const t = tokenize(src); let i = 0; const pk = () => t[i], isId = w => pk() && pk().id && pk().id.toLowerCase() === w, isOp = o => pk() && pk().op === o;
+    const val = n => { const v = n.split('.').reduce((a, k) => a == null ? undefined : a[k], vars); return v; };
+    function primary() { const x = t[i++]; if (!x) throw new Error('unexpected end');
+      if (x.n != null) return x.n; if (x.s != null) return x.s;
+      if (x.op === '(') { const v = or(); if (!isOp(')')) throw new Error('missing )'); i++; return v; }
+      if (x.op === '-') return -primary();
+      if (x.id) { const w = x.id.toLowerCase(); if (w === 'true') return true; if (w === 'false') return false; return val(x.id); }
+      throw new Error('unexpected ' + JSON.stringify(x)); }
+    function mul() { let a = primary(); while (isOp('*') || isOp('/')) { const o = t[i++].op, b = primary(); a = fin(a) && fin(b) ? (o === '*' ? a * b : a / b) : undefined; } return a; }
+    function add() { let a = mul(); while (isOp('+') || isOp('-')) { const o = t[i++].op, b = mul(); a = fin(a) && fin(b) ? (o === '+' ? a + b : a - b) : undefined; } return a; }
+    function cmp() { const a = add();
+      if (isId('in')) { i++; if (!isOp('(')) throw new Error('in needs ( )'); i++; const list = []; while (!isOp(')')) { list.push(add()); if (isOp(',')) i++; else if (!isOp(')')) throw new Error('bad list'); } i++;
+        return a != null && list.some(v => String(v).toLowerCase() === String(a).toLowerCase()); }
+      if (pk() && ['==', '!=', '>', '>=', '<', '<='].includes(pk().op)) { const o = t[i++].op, b = add(); if (a == null || b == null) return false;
+        const num = fin(+a) && fin(+b) && a !== '' && b !== '' && typeof a !== 'boolean', x = num ? +a : String(a).toLowerCase(), y = num ? +b : String(b).toLowerCase();
+        return o === '==' ? x === y : o === '!=' ? x !== y : o === '>' ? x > y : o === '>=' ? x >= y : o === '<' ? x < y : x <= y; }
+      return a; }
+    function not() { if (isId('not')) { i++; return !truthy(not()); } return cmp(); }
+    function and() { let a = not(); while (isId('and')) { i++; const b = not(); a = truthy(a) && truthy(b); } return a; }
+    function or() { let a = and(); while (isId('or')) { i++; const b = and(); a = truthy(a) || truthy(b); } return a; }
+    const truthy = v => v === true || (fin(v) && v !== 0) || (typeof v === 'string' && v !== '' && v !== 'false');
+    const r = or(); if (i < t.length) throw new Error('extra text after the expression'); return truthy(r);
+  }
+  const PRI = { mandatory: 0, enforced: 1, advisory: 2 }, ORDER = ['entry', 'exit', 'roughing', 'corner', 'wall', 'thin_wall', 'hsm', 'hard', 'finishing', 'spring_pass', 'coolant'];
+  function rules(rows, vars) {
+    const fired = [], errors = [];
+    (rows || []).forEach(r => { if (!r || !r.trigger_expression || String(r.on) === 'false') return; try { if (evalExpr(r.trigger_expression, vars)) fired.push(r); } catch (e) { errors.push((r.strategy_code || r.rule_id) + ': ' + e.message); } });
+    fired.sort((a, b) => (PRI[a.priority] ?? 3) - (PRI[b.priority] ?? 3) || ORDER.indexOf(a.category) - ORDER.indexOf(b.category));
+    return { fired, errors };
+  }
+  /* variables a trigger may use (health check) */
+  const VARS = ['iso', 'material', 'tool_type', 'tool_family', 'op', 'sub_cycle', 'profile', 'engagement_class', 'toolpath', 'coolant', 'coating', 'hrc', 'D', 'ap', 'ae', 'fz', 'Vc', 'rpm_calc', 'rpm_max', 'Pc', 'T',
+    'spindle_kw', 'spindle_torque', 'hex', 'h_min', 'work_hardening', 'flute_length', 'max_ap_mm', 'ap_max_traditional', 'depth', 'entry', 'closed_pocket', 'center_cutting', 'through_hole', 'internal_corner_radius',
+    'tool_radius', 'floor', 'wall_t', 'wall_h', 'thin_wall', 'tolerance_tight', 'abrasive_filled', 'baseline'];
+  function ruleVars(expr) { try { return tokenize(expr).filter(x => x.id && !['and', 'or', 'not', 'in', 'true', 'false'].includes(x.id.toLowerCase())).map(x => x.id.split('.')[0]); } catch (e) { return ['?' + e.message]; } }
+  /* v9 recommendation: baseline × profile × limits (DECISIONS 16–21, F-4.4, 4.5) */
+  function recommend(T, q) {
+    const out = { why: [] }, rows = T.material_tool_baselines || [], band = (T.diameter_bands || []).slice().sort((a, b) => a.lo_mm - b.lo_mm).filter(b => q.D >= b.lo_mm - 1e-9).pop();
+    if (!band) { out.err = 'Ø outside the bands'; return out; }
+    const act = r => r.is_active !== false && String(r.is_active) !== 'false';
+    let b = rows.find(r => act(r) && r.material === q.material && r.tool_family === q.family && r.band_id === band.band_id);
+    if (b) out.why.push('material row'); else { b = rows.find(r => act(r) && !r.material && r.group_id === q.iso && r.tool_family === q.family && r.band_id === band.band_id); if (b) out.why.push('ISO ' + q.iso + ' group row'); }
+    if (!b) { out.err = `No baseline for ${q.family} in ${q.material} (Ø${band.label})`; return out; }
+    out.baseline = b; out.band = band;
+    const cm = (T.cycle_map || []).find(c => c.key === q.sub) || null, prof = cycleProfile(T, q.sub, q.parent);
+    const pid = q.profile || prof.profile_id, po = (T.profile_op || []).find(p => p.profile_id === pid && p.op_class === q.op) || (T.profile_op || []).find(p => p.profile_id === pid) || { Vc_mult: 1, fz_mult: 1 };
+    out.profile = pid; out.engagement = prof.engagement_class; out.inherited = prof.inherited;
+    const num = v => v === '' || v == null ? NaN : +v;
+    let fz = +b.fz_base; if (b.fz_unit === 'per_rev' && !/drill|spot|reamer/.test(q.type || '')) fz = fz / (q.z || 1);
+    const perRev = b.fz_unit === 'per_rev' && /drill|spot|reamer/.test(q.type || '');
+    let ae = pos(num(po.ae_ratio)) ? num(po.ae_ratio) * q.D : NaN, ap = pos(num(po.ap_ratio)) ? num(po.ap_ratio) * q.D : NaN;
+    /* limits: operations (most specific first) and band rigidity */
+    const ops = (T.operations || []).filter(o => (o.op_class === '*' || o.op_class === q.op) && (o.tool_type === '*' || o.tool_type === q.type) &&
+      (o.sub_cycle === '*' || o.sub_cycle === q.sub || (o.sub_cycle === 'tag:' + prof.engagement_class)) &&
+      (o.material_ref === '*' || o.material_ref === q.material || o.material_ref === '@' + q.iso) && (!o.band_scope || o.band_scope === '*' || String(o.band_scope).split(',').map(s => s.trim()).includes(band.label)));
+    const spec = o => (o.material_ref === q.material ? 4 : o.material_ref === '*' ? 0 : 2) + (o.sub_cycle === '*' ? 0 : 2) + (o.band_scope && o.band_scope !== '*' ? 1 : 0);
+    const lim = ops.filter(o => pos(num(o.ap_max_ratio))).sort((a, b) => spec(b) - spec(a))[0];
+    let apMax = lim ? num(lim.ap_max_ratio) * q.D : Infinity; if (lim) out.why.push('ap cap ' + lim.ap_max_ratio + '×Ø (' + (lim.note || lim.operation_id) + ')');
+    if (pos(num(band.rigidity_ap_max_ratio)) && num(band.rigidity_ap_max_ratio) * q.D < apMax) { apMax = num(band.rigidity_ap_max_ratio) * q.D; out.why.push('band rigidity cap ' + band.rigidity_ap_max_ratio + '×Ø'); }
+    if (pos(q.flute) && q.flute < apMax) { apMax = q.flute; out.why.push('flute length'); }
+    out.apTraditional = (() => { const t = ops.filter(o => o.sub_cycle === '*' && pos(num(o.ap_max_ratio))).sort((a, b) => spec(b) - spec(a))[0]; return t ? num(t.ap_max_ratio) * q.D : NaN; })();
+    if (fin(ap) && ap > apMax) ap = apMax;
+    const ld = fin(q.ldTier) ? q.ldTier : 1; if (ld < 1) { if (fin(ap)) ap *= ld; out.why.push('L/D ×' + ld); }
+    const Vc = +b.Vc_base * num(po.Vc_mult || 1) * vCool(q.iso, q.coolant);
+    if (vCool(q.iso, q.coolant) !== 1) out.why.push('coolant ×' + vCool(q.iso, q.coolant));
+    const cth = fin(ae) ? Math.min(2.5, cthRad(ae, q.D) * (fin(ap) ? cthAx(ap, q.R || 0) : 1)) : 1;
+    out.Vc = Vc; out.fz = fz * num(po.fz_mult || 1) * cth * ld; out.fzBase = fz; out.cth = cth; out.ae = ae; out.ap = ap; out.apMax = apMax; out.perRev = perRev;
+    out.VcBase = +b.Vc_base; out.basis = b.estimate_basis; out.capped = b.was_capped === true || b.was_capped === 'true'; if (out.capped) out.why.push('catalogue value capped at 2× typical');
+    return out;
+  }
+  /* propagation: a sub-cycle with no cycle_map row inherits its parent family's most common profile and class */
+  function cycleProfile(T, key, parent) {
+    const cm = T.cycle_map || [], own = cm.find(c => c.key === key && c.default_profile_id);
+    if (own) return { profile_id: own.default_profile_id, engagement_class: own.engagement_class, inherited: false };
+    const sib = cm.filter(c => c.parent && parent && c.parent === parent && c.default_profile_id), cnt = {};
+    sib.forEach(c => { const k = c.default_profile_id + '|' + c.engagement_class; cnt[k] = (cnt[k] || 0) + 1; });
+    const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+    return best ? { profile_id: best[0].split('|')[0], engagement_class: best[0].split('|')[1], inherited: true } : { profile_id: 'P00', engagement_class: 'finish', inherited: true };
+  }
+  return { calc, rules, evalExpr, recommend, cycleProfile, ruleVars, VARS, vCool, holderFactor, segments, beam, twoMass, cthRad, cthAx, hm, ks, deff, phiS, nStar };
+})();
+/*V9E-END*/
 /*V9M-BEGIN*/
 /* ===================== v9 MIGRATION (Phase 2 step 1, 2026-10-19) =====================
    Builds the new v9 tables from the current library WITHOUT touching it. Pure function: V9M.build({L, matInfo, sfxOf})
@@ -4771,7 +4968,29 @@ const V9M = (() => {
     const counts = {}; Object.keys(T).forEach(k => counts[k] = T[k].length);
     return { tables: T, warn, counts };
   }
-  return { build, TABLES: ['material_groups', 'material_factors', 'diameter_bands', 'material_tool_baselines', 'multiplier_profiles', 'profile_op', 'cycle_map', 'cycle_reference', 'operations', 'rules_engine', 'tools_v9', 'tool_type_defaults', 'spindle_setup'] };
+
+  /* DECISION-32 C: seed estimates for tool families you own that have no baseline rows (thread mills and Horn slot cutters from
+     mfr.json; woodruff, saws, face and high-feed mills from the typical model). One row per ISO group already in use × band of an owned tool. */
+  const SEED = { TS: [.6, .02, 'chip_thickness'], SS: [.5, .03, 'chip_thickness'], FM: [1, .12, 'chip_thickness'], HFFM: [1, .6, 'programmed_fz'] };
+  function seed(T, tools, mfr, sfxOf) {
+    const have = new Set((T.material_tool_baselines || []).map(b => b.tool_family)), groups = [...new Set((T.material_tool_baselines || []).map(b => b.group_id).filter(Boolean))];
+    const bands = (T.diameter_bands || []).slice().sort((a, b) => a.lo_mm - b.lo_mm), bandOf = D => bands.filter(b => D >= b.lo_mm - 1e-9).pop();
+    const G = {}; GROUPS.forEach(g => G[g[0]] = g); const med = a => { a = a.filter(x => isFinite(x)).sort((x, y) => x - y); return a.length ? a[Math.floor((a.length - 1) / 2)] : NaN; };
+    const need = {}; (tools || []).forEach(t => { const f = sfxOf ? sfxOf(t['Tool Code']) : ''; if (!f || have.has(f)) return; const b = bandOf(+t['Diameter (mm)']); if (b) (need[f] = need[f] || new Set()).add(b.band_id); });
+    const ser = k => (mfr || []).find(r => r.ser === k), out = []; let i = 0;
+    Object.keys(need).forEach(fam => need[fam].forEach(bid => groups.forEach(g => {
+      const b = bands.find(x => x.band_id === bid), Dm = (b.lo_mm + b.hi_mm) / 2; let vc = NaN, fz = NaN, basis = 'chip_thickness', src = '', unit = 'per_tooth';
+      if (fam === 'TM' && ser('GW3019VS')) { const rows = ser('GW3019VS').data.filter(x => x.iso === g); vc = med(rows.map(x => (x.vc[0] + x.vc[1]) / 2));
+        const bi = Dm < 2.1 ? 0 : Dm < 4.6 ? 1 : 2; fz = med(rows.map(x => x.bands && x.bands[bi] ? (x.bands[bi][2][0] + x.bands[bi][2][1]) / 2 : NaN)); basis = 'programmed_fz'; src = 'DC Swiss GW3019VS p.32 (median of ISO ' + g + ' rows)'; }
+      else if (fam === 'PH' && ser('R108')) { const rows = ser('R108').data.filter(x => x.iso === g); vc = med(rows.map(x => (x.vc[0] + x.vc[1]) / 2)); fz = .03; src = 'Horn groove milling p.379, hm 0.01–0.05 → 0.03 (median of ISO ' + g + ' rows)'; }
+      if (!isFinite(vc) && SEED[fam] && G[g]) { const [kv, f0, bs] = SEED[fam]; vc = G[g][4] * kv; fz = f0 * G[g][6] / .6; basis = bs; src = 'typical model × ' + kv + ' (v9 seed)'; }
+      if (!isFinite(vc) || !isFinite(fz)) return;
+      out.push({ baseline_id: 'MS' + String(++i).padStart(4, '0'), material: '', group_id: g, tool_family: fam, band_id: bid, Vc_base: +vc.toFixed(1), fz_base: +fz.toFixed(4), fz_unit: unit,
+        value_basis: basis, Vc_raw: '', fz_raw: '', was_capped: false, estimate_basis: /^typical/.test(src) ? 'typical_model' : 'catalogue', source_note: src + ' — estimate', seed_set: 'v9-seed-' + today(), is_active: true, last_reviewed: today() });
+    })));
+    return out;
+  }
+  return { build, seed, TABLES: ['material_groups', 'material_factors', 'diameter_bands', 'material_tool_baselines', 'multiplier_profiles', 'profile_op', 'cycle_map', 'cycle_reference', 'operations', 'rules_engine', 'tools_v9', 'tool_type_defaults', 'spindle_setup'] };
 })();
 /*V9M-END*/
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
@@ -6583,12 +6802,12 @@ function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.tag,v.mach,
 function drawCalc6(force){const h=$('#calc6');if(!h)return;const sg=c6Sig();if(force||sg!==C6.sig){C6.sig=sg;c6Reset()}
  const a=document.activeElement,id=a&&h.contains(a)?a.id:'',raw=id?a.value:null,pos=id?(()=>{try{return a.selectionStart}catch(e){return null}})():null;h.innerHTML=calc6Html();
  /* the box being typed in keeps exactly what was typed (a space in "37 BX", the "0." of "0.05") */
- if(id){const b=document.getElementById(id);if(b){if(raw!=null)b.value=raw;b.focus();try{if(pos!=null)b.setSelectionRange(pos,pos)}catch(e){}}}}
+ if(id){const b=document.getElementById(id);if(b){if(raw!=null)b.value=raw;b.focus();try{if(pos!=null)b.setSelectionRange(pos,pos)}catch(e){}}}drawV9P()}
 /* live update without re-rendering the field being typed in */
 function c6Refresh(skip){const ck=c6Checks();calcFields().forEach(r=>{const el=document.getElementById('c6_'+r.key);if(el&&el!==skip){el.value=C6_LOUD.includes(r.key)&&ck.warn.length?'':c6Fmt(r.key,C6.st[r.key])}const s=document.querySelector(`[data-c6s="${r.key}"]`);if(s)s.innerHTML=c6Tag(r.key);
   const box=el&&el.closest('.c6f,.c6loud,.mf-v,.mf-cd,.mf-x');if(box)box.classList.toggle('lk',C6.locked.has(r.key))});
  const g=c6Geo(),ov=c6Over();$$('[data-c6xd]').forEach(e=>{const x=C6.st[e.dataset.c6xd],k=e.dataset.c6xd.toLowerCase();e.textContent=isFinite(x)&&g.D>0?`${(x/g.D).toFixed(2)} x D`:'';e.classList.toggle('bad',!!ov[k])});
- const sv=$('.c6svg');if(sv)sv.innerHTML=c6Svg()}
+ const sv=$('.c6svg');if(sv)sv.innerHTML=c6Svg();drawV9P()}
 /* typing in a number: every other box, the ×D lines, the picture and the warnings update — the box being typed in is left alone */
 document.addEventListener('input',e=>{const k=e.target.dataset&&e.target.dataset.c6;if(!k)return;c6Set(k,e.target.value);c6Refresh(e.target);const n=$('#c6notes');if(n)n.innerHTML=c6NotesHtml()});
 function c6NotesHtml(){const d=C6.def||{},ck=c6Checks(),a=C6.adj,ov=c6Over(),lim=[ov.apSub?`ap is over the sub-cycle limit (${ov.apSub}×Ø)`:'',ov.aeSub?`ae is over the sub-cycle limit (${ov.aeSub}×Ø)`:''].filter(Boolean);
@@ -6626,7 +6845,7 @@ function calcHtml(){const v=CALCV,sg=c6Sig();if(sg!==C6.sig){C6.sig=sg;c6Reset()
  return `<div class="card" id="calc"><h2>Calculator</h2><p class="mu" style="margin:0 0 8px">Type a tool code, tap the material row to choose a material, and pick the cycle family › operation › sub-cycle. Every number is live: change one and the others follow (Vc ↔ RPM, fz ↔ Vf, ae / ap ↔ Q). Tap the tool sizes to change Ø, flute length, radius or Z for this calculation. Values start from the same resolver as Log cut's Suggested start.</p>
  <div class="g"><div style="grid-column:1/-1"><label>Family › hyperMILL cycle › Operation › Sub-cycle</label>${tpHtml('calc',v.tag)}</div></div>
  ${c6AdvHtml()}
- <div id="calc6" style="margin-top:10px">${calc6Html()}</div>
+ <div id="calc6" style="margin-top:10px">${calc6Html()}</div><div id="v9p">${v9PanelHtml()}</div>
  <details id="calc_tbl" style="margin-top:12px"${C6.tblOpen?' open':''}><summary><b>All sub-cycles in this family</b> <small class="mu">— the same values for every sub-cycle, side by side</small></summary><div id="calc_out" style="margin-top:10px">${calcOut()}</div></details></div>`}
 function calcOut(){const v=CALCV,fam=v.tag.cycleFamily,t=tool(v.tool);
  if(!fam)return '<p class="mu">Choose a cycle family to start.</p>';if(!v.mat)return '<p class="mu">Choose a material.</p>';if(!t)return `<p class="mu">${v.tool?'Unknown tool code — ':''}Choose a tool from your library.</p>`;
@@ -6707,7 +6926,7 @@ document.addEventListener('click',async e=>{const d=e.target.dataset||{};
   if(d.ks){if(OFFLINE||!db)return toast('Offline — not saved');const k=K(d.ks),u={title:$('#e_t').value,tags:$('#e_g').value.split(',').map(t=>t.trim()).filter(Boolean),summary:$('#e_s').value,resources:$('#e_r').value};try{await db.collection('knowledge').doc(k.id).update(u);Object.assign(k,u);EDK=null;drawKB()}catch(x){copyToast('Save failed')}}
   if(d.kd){if(DEL!==d.kd){DEL=d.kd;drawKB()}else{if(OFFLINE||!db)return toast('Offline — not saved');try{await db.collection('knowledge').doc(d.kd).delete();KB=KB.filter(k=>k.id!==d.kd);DEL=null;$('#kn').textContent=KB.length;drawKB()}catch(x){copyToast('Delete failed')}}}});
 /* ---------- Library: Data editor | Tooling audit | Cycle parameters ---------- */
-const LD={cycles:['Category','Cycle','Purpose','Key Capabilities','Best For','Drawbacks / Limits','Tips','Gotchas'],tools:['Tool Code','Description','Type','Diameter (mm)','Flutes','Corner Radius (mm)','Coating','Max DOC (mm)','Cutting Length (mm)','Flute Length (mm)','Reach (mm)','Neck Length (mm)','Overall Length (mm)','Shank Dia (mm)','Catalogue Ref','Materials','Qty','Location','Last Regrind','Regrind Count','Notes'],materials:['Material','Condition','Hardness','Family','Notes','Guidance'],holders:['Holder Code','Description','Type','Gauge Length (mm)','Taper','Reach Factor (%)','Notes'],machines:['Machine','Max Spindle Speed (RPM)','Spindle Power (kW)','Max Torque (Nm)','Tool Capacity','X Travel (mm)','Y Travel (mm)','Z Travel (mm)','Notes'],baseline:['material','tool','subcycle','op','band','Vc','fz','apD','aeD','apDmax','coolant','note'],bands:['lo','hi','label','apDmax']};
+const LD={cycles:['Category','Cycle','Purpose','Key Capabilities','Best For','Drawbacks / Limits','Tips','Gotchas'],tools:['Tool Code','Description','Type','Diameter (mm)','Flutes','Corner Radius (mm)','Coating','Max DOC (mm)','Cutting Length (mm)','Flute Length (mm)','Reach (mm)','Neck Length (mm)','Neck Dia (mm)','Overall Length (mm)','Shank Dia (mm)','Catalogue Ref','Materials','Qty','Location','Last Regrind','Regrind Count','Notes'],materials:['Material','Condition','Hardness','Family','Notes','Guidance'],holders:['Holder Code','Description','Type','Gauge Length (mm)','Taper','Reach Factor (%)','Notes'],machines:['Machine','Max Spindle Speed (RPM)','Spindle Power (kW)','Max Torque (Nm)','Tool Capacity','X Travel (mm)','Y Travel (mm)','Z Travel (mm)','Notes'],baseline:['material','tool','subcycle','op','band','Vc','fz','apD','aeD','apDmax','coolant','note'],bands:['lo','hi','label','apDmax'],material_groups:['group_id','group_name','iso_group_tag','kc1_1','mc','kc_source','typical_vc_rough','typical_vc_finish','typical_hex_pct','members_json'],material_factors:['material','iso_group','hardness_min','hardness_max','hardness_unit','kc1_1_override','mc_override','work_hardening'],diameter_bands:['band_id','label','lo_mm','hi_mm','rigidity_ap_max_ratio'],material_tool_baselines:['baseline_id','material','group_id','tool_family','band_id','Vc_base','fz_base','fz_unit','value_basis','Vc_raw','fz_raw','was_capped','estimate_basis','seed_set','is_active','source_note'],multiplier_profiles:['profile_id','profile_name','is_neutral','toolpath_required','notes'],profile_op:['profile_id','op_class','Vc_mult','fz_mult','ae_ratio','ap_ratio','ap_cap'],cycle_map:['key','label','parent','default_profile_id','engagement_class','default_rule_set_id','action'],cycle_reference:['cycle_name','category','purpose','best_for','capabilities','drawbacks','gotchas','tips'],operations:['operation_id','material_ref','tool_type','sub_cycle','op_class','band_scope','ap_max_ratio','ae_max_ratio','rule_set_id','estimate_basis','note'],rules_engine:['rule_id','rule_set_id','strategy_code','category','trigger_expression','action_expression','priority','on','note'],tools_v9:['tool_code','description','tool_type','tool_family','diameter_mm','flutes','tool_material','coating','flute_length_mm','overall_length_mm','max_ap_mm','overhang_mm','is_long_necked','shank_diameter_mm','neck_diameter_mm','neck_length_mm','neck_estimated','geometry_json','catalogue_ref'],tool_type_defaults:['tool_type','field','default_value','required'],spindle_setup:['k_spindle_N_per_m','f_spindle_hz','damping_ratio','holder_factor_shrink','holder_factor_hydraulic','holder_factor_collet','E_carbide_GPa','rho_carbide','E_HSS_GPa','rho_HSS','zeta_tool','source']};
 let LK='tools',LS='data',LLIM=60,LF='';
 /* saveLib is debounced: edits within 400 ms share one write per table; flushLib() writes immediately */
 let SAVE_T=null;const SAVE_K=new Set();const setLS=t=>{if($('#ls'))$('#ls').textContent=t};
@@ -6723,7 +6942,7 @@ async function undoLast(){const u=UNDO.pop();if(!u)return toast('Nothing to undo
  if(u.from===''||u.from==null)delete u.row[u.field];else u.row[u.field]=u.from;
  logChange(u.table,u.id,u.field,u.to,u.from,'Undo');saveLib(u.table);await flushLib();saveCLOG();drawLibData();renderLog();renderCheat();fillQB();toast(`Undid ${u.field} on ${u.id}`)}
 function renderLib(){if(CUR!=='lib')return;hostPage('lib');if(!['data','audit','cat','log','v9'].includes(LS))LS='data';
-  const seg=`<div class="seg noprint" id="lseg">${[['data','Data'],['audit','Tooling audit'],['cat','Catalogue audit'],['log','Change log'],['v9','v9 migration']].map(([k,l])=>`<button data-ls="${k}" class="${k===LS?'on':''}">${l}</button>`).join('')}</div>`;
+  const seg=`<div class="seg noprint" id="lseg">${[['data','Data'],['audit','Tooling audit'],['cat','Catalogue audit'],['log','Change log'],['v9','v9 tables']].map(([k,l])=>`<button data-ls="${k}" class="${k===LS?'on':''}">${l}</button>`).join('')}</div>`;
   $('#lib').innerHTML=`<div class="row" style="margin-bottom:12px">${seg}</div><div id="lbody"></div>`;
   $('#lseg').onclick=e=>{const k=e.target.dataset.ls;if(k){LS=k;renderLib()}};
   if(LS==='data')drawLibData();else if(LS==='audit')drawAudit();else if(LS==='cat')drawCatAudit();else if(LS==='v9')drawV9();else drawCLOG();setTimeout(sz,0)}
@@ -6739,6 +6958,71 @@ $('#lib').onchange=async e=>{const d=e.target.dataset;if(d.li==null)return;const
  saveLib();saveCLOG();renderLog();renderCheat();fillQB()};
 $('#lib').onclick=e=>{const d=e.target.dataset;if(d.ld!=null){if(e.target.dataset.sure!=='1'){e.target.dataset.sure='1';e.target.textContent='Sure?';setTimeout(()=>{if(e.target.isConnected){e.target.dataset.sure='';e.target.textContent='✕'}},2500);return}L[LK].splice(+d.ld,1);saveLib();drawLibData();renderLog();renderCheat();fillQB()}};
 
+/* ---------- v9 tables in use: the applied lib/<table> rows, else the migration built in memory (nothing saved) ---------- */
+let V9B=null;
+function V9T(){if((L.material_tool_baselines||[]).length&&(L.profile_op||[]).length){const o={};V9M.TABLES.forEach(k=>o[k]=L[k]||[]);o._applied=true;return o}
+ if(!V9B)try{V9B=V9M.build({L,matInfo:SF.matInfo,sfxOf:AUD.sfxOf}).tables}catch(e){V9B={}}return V9B}
+const v9b=v=>v===true||v==='true'||v===1||v==='1';
+const v9n=v=>v===''||v==null||isNaN(+v)?NaN:+v;
+/* the tool as v9 sees it: tools_v9 row, with any value typed in the tools tab (Neck Dia, Neck Length, Shank, Reach) winning */
+function v9Tool(code){const T=V9T(),r=(T.tools_v9||[]).find(x=>x.tool_code===code)||{},t=tool(code)||{},g=c6Geo();let geo={};try{geo=JSON.parse(r.geometry_json||'{}')}catch(e){}
+ const nd=v9n(t['Neck Dia (mm)']),nl=v9n(t['Neck Length (mm)']);
+ return {type:r.tool_type||'',family:r.tool_family||AUD.sfxOf(code),material:r.tool_material||'carbide',coated:!!(r.coating&&!/uncoated/i.test(r.coating)),
+  fluteL:isFinite(g.L2)?g.L2:v9n(r.flute_length_mm),shankD:isFinite(v9n(t['Shank Dia (mm)']))?v9n(t['Shank Dia (mm)']):v9n(r.shank_diameter_mm),
+  necked:v9b(r.is_long_necked)||r.tool_type==='end_mill_lollipop'||isFinite(nd),neckD:isFinite(nd)?nd:v9n(r.neck_diameter_mm),neckL:isFinite(nl)?nl:v9n(r.neck_length_mm),
+  neckEst:!isFinite(nd)&&v9b(r.neck_estimated),reach:v9n(t['Reach (mm)']),discW:v9n(geo.disc_width_mm),kappa:v9n(geo.kappa_r_deg),point:v9n(geo.point_angle_deg),geo,known:!!r.tool_code}}
+function v9Run(){const v=CALCV,d=C6.def||{},T=V9T(),st=C6.st,g=k=>{const r=c6Row(k);return r?st[r.key]:NaN},G=c6Geo();
+ if(!d.t||!v.mat)return null;const m=L.materials.find(x=>x.Material===v.mat);if(!m)return null;const iso=SF.matInfo(m).iso;
+ const grp=(T.material_groups||[]).find(x=>x.iso_group_tag===iso)||{},mf=(T.material_factors||[]).find(x=>x.material===v.mat)||{};
+ const kc=v9n(mf.kc1_1_override)>0?v9n(mf.kc1_1_override):v9n(grp.kc1_1)||2000,mc=v9n(mf.mc_override)>0?v9n(mf.mc_override):v9n(grp.mc)||.25;
+ const tl=v9Tool(v.tool),mach=L.machines.find(x=>x.Machine===v.mach)||{},hold=L.holders.find(x=>x['Holder Code']===v.holder)||{},sp=(T.spindle_setup||[])[0]||{};
+ const D=isFinite(g('D'))?g('D'):G.D,z=isFinite(g('Z'))?g('Z'):G.Z,op=d.op||'rough',ae=isFinite(g('ae'))?g('ae'):g('ae_ball'),ap=g('ap'),Vc=g('Vc'),fz=g('fz');
+ const perRev=/drill|spot|reamer/.test(tl.type);
+ const rec=V9E.recommend(T,{material:v.mat,iso,family:tl.family,type:tl.type,D,z:z||1,op,sub:v.tag.subcycleKey||'',parent:v.tag.cycleFamily||'',coolant:C6.adv.coolant,flute:tl.fluteL,R:G.R||0,ldTier:1});
+ const I={D,z:z||1,Vc,fz,ae:isFinite(ae)?ae:D,ap:isFinite(ap)?ap:0,op,iso,kc11:kc,mc,kappaDeg:isFinite(tl.kappa)?tl.kappa:90,pointDeg:tl.point,cornerR:G.R||0,perRev,
+  nmax:capOf(v.mach),stick:v9n(v.so),eta:v9n(mach.eta)||.8,spindleKw:C6.adv.plimit>0?+C6.adv.plimit:v9n(mach['Spindle Power (kW)']),spindleNm:v9n(mach['Max Torque (Nm)']),
+  tool:tl,holderType:hold.Type||'',spindle:{k:v9n(sp.k_spindle_N_per_m)||50e6,f:v9n(sp.f_spindle_hz)||900,zeta:v9n(sp.damping_ratio)||.04},zetaTool:v9n(sp.zeta_tool)||.02,VcBase:rec&&rec.VcBase};
+ if(!(D>0)||!isFinite(Vc)||!isFinite(fz))return null;
+ const o=V9E.calc(I);if(rec&&!rec.err&&isFinite(o.ldTier)&&o.ldTier<1){Object.assign(rec,V9E.recommend(T,{material:v.mat,iso,family:tl.family,type:tl.type,D,z:z||1,op,sub:v.tag.subcycleKey||'',parent:v.tag.cycleFamily||'',coolant:C6.adv.coolant,flute:tl.fluteL,R:G.R||0,ldTier:o.ldTier}))}
+ const hrc=SF.matInfo(m).hrc,cm=(T.cycle_map||[]).find(x=>x.key===v.tag.subcycleKey)||{};
+ const vars={iso,material:v.mat,tool_type:tl.type,tool_family:tl.family,op,sub_cycle:v.tag.subcycleKey||'',profile:rec&&rec.profile,engagement_class:rec&&rec.engagement||cm.engagement_class,
+  toolpath:((T.multiplier_profiles||[]).find(p=>p.profile_id===(rec&&rec.profile))||{}).toolpath_required||(C6.adv.strategy==='dynamic'?'dynamic':''),coolant:String(C6.adv.coolant||'').toLowerCase(),
+  coating:(tool(v.tool)||{}).Coating||'',hrc:isFinite(hrc)?hrc:undefined,D,ap:I.ap,ae:I.ae,fz,Vc,rpm_calc:o.nCalc,rpm_max:I.nmax,Pc:o.Pc,T:o.T,spindle_kw:I.spindleKw,spindle_torque:I.spindleNm,
+  hex:o.hex,h_min:o.hMin,work_hardening:v9b(mf.work_hardening),flute_length:tl.fluteL,max_ap_mm:v9n((tool(v.tool)||{})['Max DOC (mm)']),ap_max_traditional:rec&&rec.apTraditional,
+  abrasive_filled:/GF|CF/.test(v.mat),baseline:{was_capped:!!(rec&&rec.capped)}};
+ const rl=V9E.rules(T.rules_engine,vars);return {o,rec,rl,tl,iso,kc,mc,I}}
+const v9Act=a=>{a=String(a||'').replace(/\s*#.*$/,'');const sh=a.match(/show '([^']*)'/),bl=a.match(/^block '([^']*)'/);if(bl)return 'Not allowed: '+bl[1];
+ const parts=a.replace(/show '[^']*'/,'').replace(/^block '[^']*'/,'').split(';').map(x=>x.trim()).filter(x=>!/^show /.test(x)).map(x=>x.replace(/^set (\w+) = '?([^']*)'?/,(m,k,v)=>k.replace(/_/g,' ')+': '+v).replace(/^clamp (.+?) <= (.+)$/,'limit $1 to $2').replace(/^scale (\w+) \* ([\d.]+)/,'$1 ×$2').replace(/^block (.+)$/,'no $1'));
+ return [sh&&sh[1],...parts].filter(Boolean).join(' — ')};
+function v9PanelHtml(){let R=null;try{R=v9Run()}catch(e){console.error(e);return `<div class="note e" style="margin:8px">v9 physics failed: ${esc(e.message||e)}</div>`}if(!R)return '';
+ const {o,rec,rl,tl,I}=R,pr={mandatory:'e',enforced:'w',advisory:''},T=V9T();
+ const ban=rl.fired.map(r=>`<div class="note ${pr[r.priority]||''}" style="margin:4px 0"><b>${esc(r.strategy_code)}</b> ${esc(v9Act(r.action_expression))} <small class="mu">${esc(r.priority)}</small></div>`).join('');
+ const chip=(l,v,bad)=>`<span class="tag"${bad?' style="color:var(--bad);border-color:var(--bad)"':''}>${l} <b>${v}</b></span>`;
+ const segs=(o.segs||[]).map(([a,b,dd],i,A)=>`Ø${f(dd,2)}×${f(b-a,1)}`).reverse().join(' · ');
+ const recRow=rec&&!rec.err?`<tr><td>v9 start</td><td class="n">${f(rec.Vc,0)}</td><td class="n">${f(rec.fz,4)}${rec.perRev?' /rev':''}</td><td class="n">${f(rec.ae,2)}</td><td class="n">${f(rec.ap,2)}</td><td class="tx mu">${esc(rec.profile)} ${esc(((T.multiplier_profiles||[]).find(p=>p.profile_id===rec.profile)||{}).profile_name||'')}${rec.inherited?' (inherited from family)':''} · ${esc(rec.why.join(' · '))}</td></tr>`:`<tr><td>v9 start</td><td colspan="5" class="mu">${esc(rec&&rec.err||'no baseline')}</td></tr>`;
+ const chat=o.aLim!=null?`a_lim ${f(o.aLim,3)} mm · ap/a_lim ${f(o.ratio,1)} — <b>${esc(o.tier)}</b>`:o.drillAdvisory?'Drill: advice only':'';
+ return `<details id="v9pd"${C6.v9Open===false?'':' open'} style="margin-top:10px"><summary><b>v9 physics</b> <small class="mu">— strategies, power, chatter, deflection${T._applied?'':' (preview: v9 tables not applied yet)'}</small></summary>
+ ${ban}${rl.errors.length?`<div class="note w">Rules not read: ${esc(rl.errors.join('; '))}</div>`:''}
+ <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${chip('RPM',nf(o.n)+(o.capped?' ⚠':''),o.capped)}${chip('Vf',nf(o.Vf)+' mm/min')}${o.VfProg?chip('Vf at centre',nf(o.VfProg)):''}${chip('Q',f(o.Q,1)+' cm³/min')}${chip('Power',f(o.Pc,2)+' kW',I.spindleKw>0&&o.Pc>.8*I.spindleKw)}${chip('Torque',f(o.T,1)+' N·m',I.spindleNm>0&&o.T>.8*I.spindleNm)}${o.thrust?chip('Thrust',nf(o.thrust)+' N'):''}${o.life?chip('Tool life',f(o.life,2)+'× baseline',o.life<.5):''}${chip('h_ex',f(o.hex,4)+' mm',o.rubbing)}${chip('Ks',nf(o.Ks)+' N/mm²')}</div>
+ <p class="mu" style="margin:2px 0">Chip thinning ×${f(o.cthRad,2)} radial${o.cthAx>1?' × '+f(o.cthAx,2)+' axial':''} on Ø${f(o.Dcut,2)} (the cutting Ø, not the neck)${o.rubbing?` · <span class="bad">chip ${f(o.hex,4)} mm is under the ${f(o.hMin,4)} mm minimum — the edge will rub</span>`:''}.</p>
+ <div class="tw"><table><thead><tr><th></th><th class="n">Vc</th><th class="n">fz</th><th class="n">ae</th><th class="n">ap</th><th>Based on</th></tr></thead><tbody><tr><td>Now</td><td class="n">${f(I.Vc,0)}</td><td class="n">${f(I.fz,4)}</td><td class="n">${f(I.ae,2)}</td><td class="n">${f(I.ap,2)}</td><td class="tx mu">current engine</td></tr>${recRow}</tbody></table></div>
+ ${o.segs?`<p style="margin:6px 0"><b>Chatter</b> — ${esc(o.model)}: ${esc(segs)} mm (holder → tip)${tl.neckEst?' <span class="tag">neck Ø estimated</span>':''} · L/D equivalent ${f(o.LDeq,1)}${o.ldTier<1?` (ap, fz ×${o.ldTier})`:''}<br>
+ Modes: ${o.modes.map(m=>`${nf(m.f)} Hz, ${f(m.k/1000,2)} N/µm${m===o.gov?' (governs)':''}`).join(' · ')} · ${chat}<br>
+ Stable-pocket speeds: ${o.pockets.length?o.pockets.map(p=>`${nf(p.lo)}–${nf(p.hi)} rpm`).join(', '):'none within the spindle range'} · Deflection ≈ ${f(o.defl,3)} mm (${esc(String(o.deflTol))} mm limit)</p>`:''}
+ ${o.warn.map(w=>`<div class="note w" style="margin:4px 0">${esc(w)}</div>`).join('')}${o.notes.map(w=>`<div class="mu" style="font-size:13px">${esc(w)}</div>`).join('')}</details>`}
+function drawV9P(){const h=$('#v9p');if(h)h.innerHTML=v9PanelHtml()}
+document.addEventListener('toggle',e=>{if(e.target.id==='v9pd')C6.v9Open=e.target.open},true);
+/* ---------- v9 health check (orphans, gaps, unreadable rules) ---------- */
+function v9Health(T){const out=[],keys=new Set((L.cycles||[]).filter(c=>c&&c.key).map(c=>c.key)),pids=new Set((T.multiplier_profiles||[]).map(p=>p.profile_id)),mats=new Set(L.materials.map(m=>m.Material)),grp=new Set((T.material_groups||[]).map(g=>g.iso_group_tag));
+ const orph=(T.cycle_map||[]).filter(c=>!keys.has(c.key)&&!/^(add|remove)/.test(c.action||''));if(orph.length)out.push(`${orph.length} cycle_map rows point at sub-cycles that no longer exist: ${orph.slice(0,6).map(c=>c.key).join(', ')}`);
+ const nomap=[...keys].filter(k=>!(T.cycle_map||[]).some(c=>c.key===k));if(nomap.length)out.push(`${nomap.length} sub-cycles have no cycle_map row — they inherit their family's profile: ${nomap.slice(0,6).join(', ')}`);
+ const badp=(T.cycle_map||[]).filter(c=>c.default_profile_id&&!pids.has(c.default_profile_id));if(badp.length)out.push(`Unknown profile on: ${badp.map(c=>c.key+' → '+c.default_profile_id).join(', ')}`);
+ const bado=(T.operations||[]).filter(o=>o.material_ref&&o.material_ref!=='*'&&!(o.material_ref.startsWith('@')?grp.has(o.material_ref.slice(1)):mats.has(o.material_ref)));if(bado.length)out.push(`Operations name unknown materials: ${bado.map(o=>o.material_ref).join(', ')}`);
+ const untyped=(T.tools_v9||[]).filter(t=>!t.tool_type);if(untyped.length)out.push(`${untyped.length} tools have no v9 type: ${untyped.slice(0,6).map(t=>t.tool_code).join(', ')}`);
+ const fams=new Set((T.material_tool_baselines||[]).map(b=>b.tool_family)),nob=(T.tools_v9||[]).filter(t=>t.tool_family&&!fams.has(t.tool_family));if(nob.length){const by={};nob.forEach(t=>by[t.tool_family]=(by[t.tool_family]||0)+1);out.push(`${nob.length} tools have no cutting baseline yet: ${Object.entries(by).map(([k,n])=>k+' '+n).join(', ')}`)}
+ const est=(T.tools_v9||[]).filter(t=>v9b(t.neck_estimated)&&!isFinite(v9n((tool(t.tool_code)||{})['Neck Dia (mm)'])));if(est.length)out.push(`${est.length} necked tools still use an estimated neck Ø — enter Neck Dia (mm) in the tools tab to replace it`);
+ const rv=new Set(V9E.VARS);(T.rules_engine||[]).forEach(r=>{let ok=true;try{V9E.evalExpr(r.trigger_expression,{})}catch(e){ok=false;out.push(`Rule ${r.strategy_code} cannot be read: ${e.message}`)}if(ok){const u=V9E.ruleVars(r.trigger_expression).filter(x=>!rv.has(x));if(u.length)out.push(`Rule ${r.strategy_code} uses values the app does not supply yet: ${[...new Set(u)].join(', ')}`)}});
+ return out}
 /* ---------- Library → v9 migration (Phase 2 step 1): dry run, then Apply writes the new tables beside the old ones ---------- */
 let V9R=null;
 function drawV9(){const admin=LIVE.state==='off'||ROLE()==='admin';if(!V9R)try{V9R=V9M.build({L,matInfo:SF.matInfo,sfxOf:AUD.sfxOf})}catch(e){V9R={tables:{},counts:{},warn:['Dry run failed: '+(e.message||e)]}}
@@ -6746,11 +7030,13 @@ function drawV9(){const admin=LIVE.state==='off'||ROLE()==='admin';if(!V9R)try{V
  $('#lbody').innerHTML=`<div class="card"><h2>v9 migration</h2><p class="mu">Dry run of the new v9 tables built from your current library. Nothing is changed until you press Apply; your existing tables stay as they are.</p>
  <div class="tw"><table><thead><tr><th>New table</th><th>Rows</th></tr></thead><tbody>${rows}</tbody></table></div>
  ${V9R.warn.length?`<div class="note w">${V9R.warn.map(esc).join('<br>')}</div>`:''}
- <div class="row" style="margin-top:8px"><button class="b s" id="v9re">Run dry run again</button>${admin?'<button class="b" id="v9ap">Apply (downloads a backup first)</button>':'<span class="mu">Only an administrator can apply.</span>'}</div><p id="v9m" class="mu"></p></div>`;
+ <div class="row" style="margin-top:8px"><button class="b s" id="v9re">Run dry run again</button>${admin?'<button class="b" id="v9ap">Apply (downloads a backup first)</button>':'<span class="mu">Only an administrator can apply.</span>'}</div><p id="v9m" class="mu">${(L.material_tool_baselines||[]).length?'Applied: the v9 tables are in your library (edit them in Data). Apply again only to rebuild them from the old tables.':''}</p></div>
+ <div class="card"><h2>v9 health check</h2>${(()=>{const h=v9Health(V9T());return h.length?'<ul>'+h.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p class="good">No problems found.</p>'})()}${admin&&V9T()._applied&&V9M.seed(V9T(),L.tools,MFRD,AUD.sfxOf).length?'<button class="b s" id="v9seed">Add estimated baselines for tool families with none</button>':''}</div>`;
+ if($('#v9seed'))$('#v9seed').onclick=async()=>{const add=V9M.seed(V9T(),L.tools,MFRD,AUD.sfxOf);if(!add.length)return;L.material_tool_baselines=L.material_tool_baselines.concat(add);try{await writeLib('material_tool_baselines',L.material_tool_baselines);logChange('material_tool_baselines','(v9 seed)','rows','',add.length+' estimated rows','v9 tables','DECISION-32');saveCLOG();toast(add.length+' estimated baseline rows added');drawV9()}catch(e){toast('Not saved: '+(e.message||e))}};
  $('#v9re').onclick=()=>{V9R=null;drawV9()};if($('#v9ap'))$('#v9ap').onclick=applyV9}
 async function applyV9(){if(OFFLINE||!db)return toast('Offline — not applied');const b=$('#v9ap');if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='Sure? Click again to apply';return}
  b.disabled=true;$('#v9m').textContent='Saving a backup…';await backupLib();
- try{for(const k of V9M.TABLES){$('#v9m').textContent='Writing '+k+'…';await writeLib(k,V9R.tables[k]||[]);logChange(k,'(v9)','created','',(V9R.tables[k]||[]).length+' rows','v9 migration','Phase 2 step 1')}
+ try{for(const k of V9M.TABLES){$('#v9m').textContent='Writing '+k+'…';L[k]=V9R.tables[k]||[];V9B=null;await writeLib(k,L[k]);logChange(k,'(v9)','created','',(V9R.tables[k]||[]).length+' rows','v9 migration','Phase 2 step 1')}
   saveCLOG();$('#v9m').textContent='Applied: '+V9M.TABLES.length+' new tables written.';toast('v9 tables written')}catch(e){$('#v9m').textContent='Stopped: '+(e.message||e);b.disabled=false}}
 /* ---- backup / restore of the whole library ---- */
 const today=()=>new Date().toISOString().slice(0,10);
@@ -6779,7 +7065,7 @@ async function doRestore(lib){if(OFFLINE||!db)return toast('Offline — not save
  if(!lib){let n=0;try{n=await addCuts(R.fresh)}catch(e){toast(`Stopped after ${n} cuts: `+(e.message||e.code))}
   logChange('cuts','(restore)','added',0,n,`Restore from ${R.name} — cuts only`);await saveCLOG();SF.invalidate();await load();return toast(`Added ${n} cut${n===1?'':'s'} — library unchanged`)}
  try{await db.doc('lib/backup-'+ts).set({v:1,at:new Date().toISOString(),L,AM,TD})}catch(e){return toast('Safety copy failed — nothing was restored: '+(e.message||e.code))}
- let n=0;try{for(const k of Object.keys(L)){if(['matbands','sources','srcbase'].includes(k)&&!Array.isArray(b.L[k]))continue;/* a backup made before band tables existed leaves them alone */await writeLib(k,Array.isArray(b.L[k])?b.L[k]:[])}
+ let n=0;try{for(const k of Object.keys(L)){if((['matbands','sources','srcbase'].includes(k)||V9M.TABLES.includes(k))&&!Array.isArray(b.L[k]))continue;/* a backup made before band tables existed leaves them alone */await writeLib(k,Array.isArray(b.L[k])?b.L[k]:[])}
   if(b.AM)await db.doc('lib/auditmeta').set({dismissed:[],resolved:{},...b.AM,v:LIB_V});if(b.TD)await db.doc('lib/todo').set({items:[],...b.TD,v:LIB_V});
   n=await addCuts(R.fresh);
   logChange('library','(all)','restore','',b.at||'',`Restore (safety copy lib/backup-${ts})${n?`; ${n} cuts added`:''}`);await saveCLOG()}
@@ -7084,7 +7370,7 @@ $('#lib').oninput=e=>{if(e.target.tagName==='TEXTAREA'){e.target.style.height='a
 let CLOG={entries:[]},CLOGCUR=null;
 async function saveAM(){if(OFFLINE||!db)return toast('Offline — not saved');try{await db.doc('lib/auditmeta').set({...AM,v:LIB_V})}catch(x){toast('Could not save audit state')}}/* change log is a collection: one doc per batch; app edits go to app-YYYY-MM(-n), rolled over before the 256 KB doc limit */
 const AFM={'Diameter':'Diameter (mm)','Corner radius':'Corner Radius (mm)','Flutes':'Flutes','Flute length':'Flute Length (mm)','Max DOC':'Max DOC (mm)','Coating':'Coating','Description':'Description','Part number':'Description','Record':'Description'};
-const numCol=c=>/\(mm\)|Flutes|\(%\)|RPM|\(kW\)|\(Nm\)|^Qty$|Regrind Count|^(Vc|fz|apD|aeD|apDmax|lo|hi)$/.test(c);
+const numCol=c=>/\(mm\)|Flutes|\(%\)|RPM|\(kW\)|\(Nm\)|^Qty$|Regrind Count|^(Vc|fz|apD|aeD|apDmax|lo|hi)$|_mm$|_ratio$|_mult$|_base$|_raw$|^kc1_1|^mc(_override)?$|^typical_|^hardness_m|^(k_spindle_N_per_m|f_spindle_hz|damping_ratio|zeta_tool|rho_carbide|rho_HSS|E_carbide_GPa|E_HSS_GPa)$|^holder_factor|^flutes$/.test(c);
 async function saveCLOG(){if(OFFLINE||!db)return toast('Offline — not saved');if(!CLOGCUR)return;try{await db.doc('changelog/'+CLOGCUR.id).set({entries:CLOGCUR.entries})}catch(e){toast('Could not save change log')}}
 function clogDoc(){const m=new Date().toISOString().slice(0,7);if(!CLOGCUR||!CLOGCUR.id.startsWith('app-'+m)||JSON.stringify(CLOGCUR.entries).length>200000){let n=1,id='app-'+m;while(CLOGDOCS[id]&&JSON.stringify(CLOGDOCS[id]).length>200000){n++;id='app-'+m+'-'+n}CLOGDOCS[id]=CLOGDOCS[id]||[];CLOGCUR={id,entries:CLOGDOCS[id]}}return CLOGCUR}
 let CLOGDOCS={};
