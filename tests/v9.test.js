@@ -61,4 +61,12 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
     profile_op: [{ profile_id: 'HF', op_class: 'rough', Vc_mult: 1, fz_mult: 1, ae_ratio: 0.5, ap_ratio: 0.04 }], cycle_map: [], operations: [] };
   const rec = V9E.recommend(T, { material: 'X', iso: 'P2', family: 'BX', type: 'end_mill_square', D: 12, z: 4, op: 'rough', profile: 'HF', R: 2, ldTier: 1 });
   near(rec.fz, 0.1 * V9E.cthAx(0.48, 2), 1e-9, 'recommend: bull-nose starting fz includes axial thinning'); }
+/* 2026-10-19 ap axis: Vc × / fz × at min / max ap multiply the ae values, ×1 at the start ap */
+{ const po = { Vc_mult: 1.1, fz_mult: 1, ae_min: 0.05, ae_max: 0.1, ap_min: 0.5, ap_max: 2, ap_ratio: 1, Vc_mult_aplo: 1.2, fz_mult_aplo: 1.1, Vc_mult_aphi: 0.9, fz_mult_aphi: 0.8 };
+  near(V9E.range(po).apNom, 1, 1e-9, 'ap: start');
+  near(V9E.rangeAt(po, 0.075, 1).vc, 1.1, 1e-9, 'ap: ×1 at the start ap');
+  near(V9E.rangeAt(po, 0.075, 0.5).fz, 1.1, 1e-9, 'ap: fz at min ap'); near(V9E.rangeAt(po, 0.075, 2).vc, 1.1 * 0.9, 1e-9, 'ap: Vc at max ap × ae value');
+  near(V9E.rangeAt(po, 0.075, 1.5).apFz, 0.9, 1e-9, 'ap: straight line'); ok(V9E.rangeAt(po, 0.075, 3).apAbove && Math.abs(V9E.rangeAt(po, 0.075, 3).apFz - 0.8) < 1e-9, 'ap: held and flagged above max');
+  near(V9E.rangeAt({ ap_min: 2, ap_max: 1.5, fz_mult_aplo: 2 }, NaN, 1).apFz, 1, 0, 'ap: min > max is ignored');
+  near(V9E.range({ ap_min: 0.5, ap_max: 1.5 }).apNom, 1, 1e-9, 'ap: blank start = middle'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);

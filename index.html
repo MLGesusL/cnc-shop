@@ -479,7 +479,8 @@ table.hmxt th,table.hmxt td{border:0;border-top:1px solid var(--bd,#dde);padding
 table.hmxt th{text-align:left;font-weight:600;color:var(--tx)}
 table.hmxt td.n{white-space:nowrap;text-align:right}
 table.hmxt td:last-child{color:var(--mu);font-size:14px}
-.sgt{width:auto;font-size:15px;margin:0}table.sgt th,table.sgt td{border:0;padding:3px 6px;min-width:0;background:transparent}
+.sgt{width:auto;font-size:15px;margin:0}
+.sgapt{margin-top:6px}.sgnote{font-size:13px;margin:2px 0 4px}table.sgt th,table.sgt td{border:0;padding:3px 6px;min-width:0;background:transparent}
 table.sgt thead th{font-size:13px;color:var(--mu);font-weight:500;position:static;background:transparent}
 table.sgt tbody th{font-weight:600;color:var(--tx);white-space:nowrap;text-align:left}
 table.sgt input{min-height:38px;padding:4px 8px;text-align:right}
@@ -4848,7 +4849,7 @@ const V9E = (() => {
     let fz = +b.fz_base; if (b.fz_unit === 'per_rev' && !/drill|spot|reamer/.test(q.type || '')) fz = fz / (q.z || 1);
     const perRev = b.fz_unit === 'per_rev' && /drill|spot|reamer/.test(q.type || '');
     const rg = range(po);
-    let ae = fin(rg.aeNom) ? rg.aeNom * q.D : NaN, ap = pos(num(po.ap_ratio)) ? num(po.ap_ratio) * q.D : NaN;
+    let ae = fin(rg.aeNom) ? rg.aeNom * q.D : NaN, ap = fin(rg.apNom) ? rg.apNom * q.D : NaN;
     if (fin(ap) && fin(rg.apMin) && ap < rg.apMin * q.D) ap = rg.apMin * q.D;
     out.range = rg.has ? rg : null;
     /* limits: operations (most specific first) and band rigidity */
@@ -4864,7 +4865,7 @@ const V9E = (() => {
     out.apTraditional = (() => { const t = ops.filter(o => o.sub_cycle === '*' && pos(num(o.ap_max_ratio))).sort((a, b) => spec(b) - spec(a))[0]; return t ? num(t.ap_max_ratio) * q.D : NaN; })();
     if (fin(ap) && ap > apMax) { ap = apMax; out.why.push(limWhy); }
     const ld = fin(q.ldTier) ? q.ldTier : 1; if (ld < 1) { if (fin(ap)) ap *= ld; out.why.push('L/D ×' + ld); }
-    const rm = rangeAt(po, rg.aeNom);
+    const rm = rangeAt(po, rg.aeNom, fin(ap) ? ap / q.D : NaN); if (rm.apVc !== 1 || rm.apFz !== 1) out.why.push(`ap ${(ap / q.D).toFixed(2)}×Ø: Vc ×${rm.apVc.toFixed(2)}, fz ×${rm.apFz.toFixed(2)}`);
     const Vc = +b.Vc_base * rm.vc * vCool(q.iso, q.coolant);
     if (vCool(q.iso, q.coolant) !== 1) out.why.push('coolant ×' + vCool(q.iso, q.coolant));
     /* 2026-10-19: same multipliers as the calculator — bull-nose axial thinning when the starting ap is under the corner R */
@@ -4888,23 +4889,38 @@ const V9E = (() => {
     if (pos(nom) && pos(o.aeMin) && nom < o.aeMin) nom = o.aeMin;
     if (pos(nom) && pos(o.aeMax) && nom > o.aeMax) nom = o.aeMax;
     o.aeNom = pos(nom) ? nom : NaN;
+    /* start ap: ap_ratio held inside the ap range; the middle when blank */
+    let an = n(po.ap_ratio);
+    if (!pos(an) && pos(o.apMin) && pos(o.apMax)) an = (o.apMin + o.apMax) / 2; else if (!pos(an) && pos(o.apMax)) an = o.apMax; else if (!pos(an) && pos(o.apMin)) an = o.apMin;
+    if (pos(an) && pos(o.apMin) && an < o.apMin) an = o.apMin;
+    if (pos(an) && pos(o.apMax) && an > o.apMax) an = o.apMax;
+    o.apNom = pos(an) ? an : NaN;
     return o;
   }
-  function rangeAt(po, aeRatio) {
+  function rangeAt(po, aeRatio, apRatio) {
     const n = v => v === '' || v == null || !isFinite(+v) ? NaN : +v, r = range(po), x0 = r.aeNom, vc0 = fin(n(po.Vc_mult)) ? n(po.Vc_mult) : 1, fz0 = fin(n(po.fz_mult)) ? n(po.fz_mult) : 1;
-    const out = { vc: vc0, fz: fz0, below: false, above: false, r };
-    if (!pos(aeRatio)) return out;
-    if (pos(r.aeMin) && aeRatio < r.aeMin - 1e-9) out.below = true;
-    if (pos(r.aeMax) && aeRatio > r.aeMax + 1e-9) out.above = true;
-    if (!pos(x0)) return out;
+    const out = { vc: vc0, fz: fz0, below: false, above: false, apBelow: false, apAbove: false, apVc: 1, apFz: 1, r };
     const lerp = (a, ya, b, yb, x) => b - a < 1e-12 ? yb : ya + (yb - ya) * (x - a) / (b - a);
-    const side = (m0, lo, hi) => {
-      const x = Math.min(Math.max(aeRatio, pos(r.aeMin) ? r.aeMin : aeRatio), pos(r.aeMax) ? r.aeMax : aeRatio);
-      if (x < x0 && pos(r.aeMin) && fin(lo)) return lerp(r.aeMin, lo, x0, m0, x);
-      if (x > x0 && pos(r.aeMax) && fin(hi)) return lerp(x0, m0, r.aeMax, hi, x);
+    /* one axis: value m0 at the start x0, lo at mn, hi at mx; straight line between, held at the ends */
+    const line = (v, x0, mn, mx, m0, lo, hi) => {
+      const x = Math.min(Math.max(v, pos(mn) ? mn : v), pos(mx) ? mx : v);
+      if (x < x0 && pos(mn) && fin(lo)) return lerp(mn, lo, x0, m0, x);
+      if (x > x0 && pos(mx) && fin(hi)) return lerp(x0, m0, mx, hi, x);
       return m0;
     };
-    out.vc = side(vc0, n(po.Vc_mult_lo), n(po.Vc_mult_hi)); out.fz = side(fz0, n(po.fz_mult_lo), n(po.fz_mult_hi));
+    if (pos(aeRatio)) {
+      if (pos(r.aeMin) && aeRatio < r.aeMin - 1e-9) out.below = true;
+      if (pos(r.aeMax) && aeRatio > r.aeMax + 1e-9) out.above = true;
+      if (pos(x0)) { out.vc = line(aeRatio, x0, r.aeMin, r.aeMax, vc0, n(po.Vc_mult_lo), n(po.Vc_mult_hi)); out.fz = line(aeRatio, x0, r.aeMin, r.aeMax, fz0, n(po.fz_mult_lo), n(po.fz_mult_hi)); }
+    }
+    /* 2026-10-19: ap axis — Vc × / fz × at min ap and at max ap are factors on top of the ae values (×1 at the start ap) */
+    if (pos(apRatio) && !(pos(r.apMin) && pos(r.apMax) && r.apMin > r.apMax)) {
+      if (pos(r.apMin) && apRatio < r.apMin - 1e-9) out.apBelow = true;
+      if (pos(r.apMax) && apRatio > r.apMax + 1e-9) out.apAbove = true;
+      const y0 = r.apNom;
+      if (pos(y0)) { out.apVc = line(apRatio, y0, r.apMin, r.apMax, 1, n(po.Vc_mult_aplo), n(po.Vc_mult_aphi)); out.apFz = line(apRatio, y0, r.apMin, r.apMax, 1, n(po.fz_mult_aplo), n(po.fz_mult_aphi)); }
+      out.vc *= out.apVc; out.fz *= out.apFz;
+    }
     return out;
   }
   /* propagation: a sub-cycle with no cycle_map row inherits its parent family's most common profile and class */
@@ -6870,16 +6886,18 @@ function c6Engage(){const d=C6.def;C6.adj=null;if(!d||!d.vals)return;const g=c6G
  const ae=C6.st[rA.key],ap=C6.st[rP.key],ae0=d.vals.ae,ap0=d.vals.ap,E=engCfg(CALCV.tag.cycleFamily||''),ball=!!d.ball,R=g.R||0;if(!(ae>0)||!(ae0>0))return;
  const thin=(a,p)=>{const de=ball&&p>0?SF.deffOf(p,D):V9E.dBull(p,D,R);return Math.max(1/(E.thinMax>1?E.thinMax:1),(p>0?(ball?SF.sAx(p,D/2):SF.sAx(p,R)):1)*SF.sRad(a,de))};
  /* 2026-10-19: a sub-cycle with an ae range slides its own Vc × / fz × along that range instead of the general boost / slotting factors */
- const v9r=d.v9&&d.v9.po&&d.v9.range&&(isFinite(d.v9.range.aeMin)||isFinite(d.v9.range.aeMax))?d.v9.po:null,m1=v9r?V9E.rangeAt(v9r,ae/D):null,m0=v9r?V9E.rangeAt(v9r,ae0/D):null;
+ const v9r=d.v9&&d.v9.po&&d.v9.range&&(isFinite(d.v9.range.aeMin)||isFinite(d.v9.range.aeMax)||isFinite(d.v9.range.apMin)||isFinite(d.v9.range.apMax))?d.v9.po:null,m1=v9r?V9E.rangeAt(v9r,ae/D,ap>0?ap/D:NaN):null,m0=v9r?V9E.rangeAt(v9r,ae0/D,ap0>0?ap0/D:NaN):null;
+ /* 2026-10-19: a sub-cycle with Vc × / fz × at min / max ap uses those instead of the general deep-ap fz ease-off */
+ const apOwn=!!(v9r&&['Vc_mult_aplo','Vc_mult_aphi','fz_mult_aplo','fz_mult_aphi'].some(k=>v9r[k]!==''&&v9r[k]!=null&&isFinite(+v9r[k])));
  const rvk=v9r&&m0.vc>0?m1.vc/m0.vc:1,rfk=v9r&&m0.fz>0?m1.fz/m0.fz:1;
- const vk=v9r?rvk:engKv(ae,D,E)/engKv(ae0,D,E),fk=thin(ae0,ap0)/thin(ae,ap)*(ap>0&&ap0>0?engKa(ap,D,E)/engKa(ap0,D,E):1)*(v9r?rfk:engKf(ae,D,E)/engKf(ae0,D,E)),same=x=>Math.abs(x-1)<1e-6;
+ const vk=v9r?rvk:engKv(ae,D,E)/engKv(ae0,D,E),fk=thin(ae0,ap0)/thin(ae,ap)*(ap>0&&ap0>0&&!apOwn?engKa(ap,D,E)/engKa(ap0,D,E):1)*(v9r?rfk:engKf(ae,D,E)/engKf(ae0,D,E)),same=x=>Math.abs(x-1)<1e-6;
  if(rV&&!C6.locked.has(rV.key)&&isFinite(d.vals.Vc)){const base=d.capped?d.capped.vcT:d.vals.Vc,capV=capOf(CALCV.mach)*Math.PI*D/1000;C6.st[rV.key]=Math.min(base*vk,capV);C6.src[rV.key]=same(vk)?d.src.Vc:'ae adj'}
  if(rF&&!C6.locked.has(rF.key)&&isFinite(d.vals.fz)){C6.st[rF.key]=d.vals.fz*fk;C6.src[rF.key]=same(fk)?d.src.fz:'ae/ap adj'}
  /* which adjustments actually moved the numbers, for the note */
  const why=[];const t1=thin(ae0,ap0)/thin(ae,ap);if(!same(t1))why.push(t1>1?'chip thinning at the lighter cut':'less chip thinning at the heavier cut');
- if(v9r){if(!same(rvk)||!same(rfk))why.push(`sub-cycle ae range: Vc ×${(+m1.vc).toFixed(2)}, fz ×${(+m1.fz).toFixed(2)} at ${(ae/D).toFixed(3)}×Ø`)}
+ if(v9r){if(!same(rvk)||!same(rfk))why.push(`sub-cycle range: Vc ×${(+m1.vc).toFixed(2)}, fz ×${(+m1.fz).toFixed(2)} at ae ${(ae/D).toFixed(3)}×Ø${ap>0?`, ap ${(ap/D).toFixed(3)}×Ø`:''}`)}
  else{const kv=engKv(ae,D,E)/engKv(ae0,D,E);if(!same(kv))why.push(kv>1?'Vc boost at light ae':'slotting reduction')}
- const ka=ap>0&&ap0>0?engKa(ap,D,E)/engKa(ap0,D,E):1;if(!same(ka))why.push(ka<1?'fz eased for the deep ap':'fz restored at the shallower ap');
+ const ka=ap>0&&ap0>0&&!apOwn?engKa(ap,D,E)/engKa(ap0,D,E):1;if(!same(ka))why.push(ka<1?'fz eased for the deep ap':'fz restored at the shallower ap');
  if(!v9r){const kf=engKf(ae,D,E)/engKf(ae0,D,E);if(!same(kf))why.push('slotting fz reduction')}
  if(!same(vk)||!same(fk))C6.adj={vk,fk,ae,ae0,ap,ap0,why}}
 const C6_ENG=['ae','ap','ra'];
@@ -7357,9 +7375,11 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
   const pts=[...new Set([lo,nom,hi].filter(x=>isFinite(x)&&x>0))];return pts.map(x=>{const m=at(x);return `ae ${f2(x)}×Ø → Vc ×${f2(m.vc)}, fz ×${f2(m.fz)}${ct(x)>1?` <span class="mu">(+ radial s<sub>rad</sub> ×${ct(x).toFixed(2)})</span>`:''}`}).join('<br>')+axPrev(v)};
  /* 2026-10-19: bull-nose axial thinning s_axial = 1 / sin κ at this sub-cycle's ap, for common corner radii (ap and R as × Ø) */
  const axPrev=v=>{const r=V9E.range(v),n=x=>x===''||x==null||!isFinite(+x)?NaN:+x;if(isFinite(r.apMin)&&isFinite(r.apMax)&&r.apMin>r.apMax)return '<br><span class="bad">ap min is larger than ap max</span>';
-  const aps=[...new Set([r.apMin,n(v.ap_ratio),r.apMax].filter(x=>isFinite(x)&&x>0))].sort((a,b)=>a-b);if(!aps.length)return '';
-  const RS=[.05,.1,.2,.25].filter(R=>aps[0]<R);if(!RS.length)return '';
-  return '<br><span class="mu">Bull-nose axial s<sub>axial</sub> at '+aps.map(a=>'ap '+f2(a)+'×Ø').join(' / ')+': '+RS.map(R=>`R ${R}×Ø ${aps.map(a=>'×'+V9E.cthAx(a,R).toFixed(2)).join(' / ')}`).join(' · ')+' (added to fz with s<sub>rad</sub>, capped ×'+V9E.K.cthMax+')</span>'};
+  const aps=[...new Set([r.apMin,r.apNom,r.apMax].filter(x=>isFinite(x)&&x>0))].sort((a,b)=>a-b);if(!aps.length)return '';
+  const apm=aps.map(a=>{const m=V9E.rangeAt(v,NaN,a);return m.apVc!==1||m.apFz!==1?`ap ${f2(a)}×Ø → Vc ×${f2(m.apVc)}, fz ×${f2(m.apFz)} on top of the ae values`:''}).filter(Boolean);
+  const apTxt=apm.length?'<br>'+apm.join('<br>'):'';
+  const RS=[.05,.1,.2,.25].filter(R=>aps[0]<R);if(!RS.length)return apTxt;
+  return apTxt+'<br><span class="mu">Bull-nose axial s<sub>axial</sub> at '+aps.map(a=>'ap '+f2(a)+'×Ø').join(' / ')+': '+RS.map(R=>`R ${R}×Ø ${aps.map(a=>'×'+V9E.cthAx(a,R).toFixed(2)).join(' / ')}`).join(' · ')+' (added to fz with s<sub>rad</sub>, capped ×'+V9E.K.cthMax+')</span>'};
  const opsOf=(c,fam)=>fam.fixedOp?[fam.fixedOp==='ream'?'ream':fam.fixedOp==='bore'?'bore':fam.fixedOp]:(c.usableAs||[]);
  const so=(attr,list,cur)=>`<select ${attr}>${list.map(([v,l])=>`<option value="${esc(v)}"${String(cur)===v?' selected':''}>${esc(l)}</option>`).join('')}</select>`;
  const opBlock=(pid,op)=>{const i=poI(pid,op),v=i>=0?PO[i]:{},ph=po(pid,op),eff=i>=0?v:ph,inp=(f,phx)=>{const own=i>=0?v[f]:'',pl=i<0&&ph[f]!=null&&ph[f]!==''?ph[f]:phx;return v9Num(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="${f}" aria-label="${esc(op+' '+f)}"`,own,pl==null?'':pl,88)};
@@ -7369,8 +7389,12 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
    <tr><th scope="row">ae ×Ø</th><td class="n">${inp('ae_min','')}</td><td class="n">${inp('ae_ratio',aeN)}</td><td class="n">${inp('ae_max','')}</td></tr>
    <tr><th scope="row">Vc ×</th><td class="n">${inp('Vc_mult_lo','= start')}</td><td class="n">${inp('Vc_mult','1')}</td><td class="n">${inp('Vc_mult_hi','= start')}</td></tr>
    <tr><th scope="row">fz ×</th><td class="n">${inp('fz_mult_lo','= start')}</td><td class="n">${inp('fz_mult','1')}</td><td class="n">${inp('fz_mult_hi','= start')}</td></tr>
-   <tr class="sgap"><th scope="row">ap ×Ø <small class="mu">min · start · max</small></th><td class="n">${inp('ap_min','')}</td><td class="n">${inp('ap_ratio','')}</td><td class="n">${inp('ap_max','')}</td></tr>
    </tbody></table>
+   <table class="sgt sgapt"><thead><tr><th></th><th class="n">at min ap</th><th class="n">start</th><th class="n">at max ap</th></tr></thead><tbody>
+   <tr><th scope="row">ap ×Ø</th><td class="n">${inp('ap_min','')}</td><td class="n">${inp('ap_ratio',isFinite(rg.apNom)?f2(rg.apNom):'')}</td><td class="n">${inp('ap_max','')}</td></tr>
+   <tr><th scope="row">Vc ×</th><td class="n">${inp('Vc_mult_aplo','1')}</td><td class="n mu" title="At the start ap the ae values above apply unchanged">×1</td><td class="n">${inp('Vc_mult_aphi','1')}</td></tr>
+   <tr><th scope="row">fz ×</th><td class="n">${inp('fz_mult_aplo','1')}</td><td class="n mu" title="At the start ap the ae values above apply unchanged">×1</td><td class="n">${inp('fz_mult_aphi','1')}</td></tr>
+   </tbody></table><div class="mu sgnote">ap × values multiply the ae values (×1 at the start ap).</div>
    <div class="sgcap"><label>ap also held under ${so(`data-v9po="${esc(pid)}" data-v9op="${esc(op)}" data-k="ap_cap"`,[['flute_length','the flute length'],['reach','the reach'],['none','nothing else']],String(eff.ap_cap||'none'))}</label></div>
    <div class="sgpv">${preview(eff)}</div></div>`};
  const famHtml=fam=>{const subs=(L.cycles||[]).filter(c=>c&&c.key&&c.parent===fam.Cycle).sort((a,b)=>(a.order||0)-(b.order||0));if(!subs.length)return '';
@@ -7387,7 +7411,7 @@ function drawV9Subs(){const fams=(L.cycles||[]).filter(c=>c&&c.key&&!c.parent).s
    ${fac?`<p class="row edonly"><button class="b s sm" data-v9sfac="${esc(fam.Cycle)}">↺ Restore factory multipliers</button><small class="mu">for the ${pids.length} value set${pids.length===1?'':'s'} this family uses — clears ranges; shared sets change for other families too</small></p>`:''}
    ${rows}</details>`};
  const U=engUser();
- $('#pbody').innerHTML=`<div class="card" data-sec="sub:intro"><h2>Sub-cycles</h2><p class="mu">What each sub-cycle does to the band values. For every operation set the <b>ae range</b> (× Ø) the sub-cycle is meant for — e.g. trochoidal roughing 0.05–0.1 × Ø — and the <b>Vc ×</b> and <b>fz ×</b> at the low end, the start and the high end. The calculator starts at <b>start</b>, and when you change ae it slides the multipliers along that line (outside the range it keeps the end value and warns you). Leave an end blank to keep the start value. <b>ap</b> min / max are limits: the calculator warns outside them and never recommends past the max. Chip thinning is worked out separately from the ae you use, so <b>fz × should not include it</b>.</p>
+ $('#pbody').innerHTML=`<div class="card" data-sec="sub:intro"><h2>Sub-cycles</h2><p class="mu">What each sub-cycle does to the band values. For every operation set the <b>ae range</b> (× Ø) the sub-cycle is meant for — e.g. trochoidal roughing 0.05–0.1 × Ø — and the <b>Vc ×</b> and <b>fz ×</b> at the low end, the start and the high end. The calculator starts at <b>start</b>, and when you change ae it slides the multipliers along that line (outside the range it keeps the end value and warns you). Leave an end blank to keep the start value. <b>ap</b> has the same three columns: min, start and max are limits (the calculator warns outside them and never recommends past the max), and the <b>Vc ×</b> / <b>fz ×</b> at min ap and at max ap multiply the ae values — ×1 at the start ap, straight line in between (e.g. fz ×1.1 at a shallow ap, ×0.85 at full flute length). Blank = ×1. Chip thinning is worked out separately from the ae you use, so <b>fz × should not include it</b>.</p>
  <p class="mu">Sub-cycles can <b>share</b> a set of values or have their <b>own</b>: edit a shared one and every sub-cycle using it changes — press <b>Make own</b> to split one off. Grey values are borrowed from another operation of the same set.</p>
  <div class="row noprint"><button class="b s sm" data-nav="1" id="v9sopen">Expand all</button><button class="b s sm" data-nav="1" id="v9sclose">Collapse all</button><span class="mu" id="v9smsg"></span></div></div>
  ${fams.map(famHtml).join('')}
@@ -8487,7 +8511,7 @@ function renderGuide(){$('#guide').innerHTML=`<div class="card"><h2>Live databas
 <p><b>Editing:</b> every section opens view-only, so nothing changes by accident. Press <b>✎ Edit</b> on the section you want; only that section becomes editable and a bar at the bottom counts your changes. <b>Review</b> lists them, <b>Save</b> writes them all at once (and to the Change log), <b>Cancel — discard</b> throws them away. Nothing is written until you press Save (Ctrl+S works too); leaving the page asks first. In edit mode <b>↺</b> buttons put values back: a Bands row to the value it had before your first edit, and Materials, Machines &amp; physics, Sub-cycles and Strategy rules to the built-in (factory) values. The mouse wheel no longer changes a number box you are scrolling past.</p><ul><li><b>Setup</b> (start here): a checklist — bands for every cutter family you own, sub-cycle values, stepdown limits, cutting force, machine power and torque, neck diameters, rules. Each step has a button to the place to fix it, and <b>Fill … rows with estimates</b> adds catalogue / typical values where a table is missing.</li>
 <li><b>Bands</b>: laid out like hyperMILL's Materials dialog. Pick an ISO group or a material on the left; each cutter family has its Ø table with Vc and fz (per rev for drills, reamers, spot drills), the RPM and feed for your tools in that range (pick a machine to cap the RPM) and where the numbers came from. A material uses its group's tables unless you <b>Override</b> one; <b>Turn override off</b> goes back to the group without deleting it. <b>+ Ø ranges for my tools</b> adds rows for any range your tools need.</li>
 <li><b>Roughing vs finishing — why there is only one band</b>: as in hyperMILL, a band is the material's cutting data for a cutter and Ø, not for an operation. Roughing and finishing differ in the <b>Sub-cycles</b> page: each sub-cycle has its own rough / semi / finish grid with Vc ×, fz × and the ae / ap it is meant for. Finishing usually gets a small Vc boost and a light ae / ap, and the light ae raises fz through chip thinning — so the finishing fz is worked out, not typed into a separate band. To make finishing slower or faster for one sub-cycle, change its <b>finish</b> Vc × / fz × there; to change it for every finishing cut in a material, change the standard set (P08).</li>
-<li><b>Sub-cycles</b>: one fold-out per cycle family. Each sub-cycle has a small grid per operation: the <b>ae range</b> (min, start, max × Ø), the <b>Vc ×</b> and <b>fz ×</b> at min ae, at the start and at max ae, and the <b>ap</b> min / start / max (× Ø). The calculator starts at <b>start</b>; when you change ae it slides Vc and fz in a straight line toward the end values (e.g. trochoidal roughing 0.05–0.1 × Ø: more Vc and fz at 0.05, less at 0.1). Outside the range it keeps the end value and warns; ap max also caps the recommended stepdown. Leave an end blank to keep the start value; with no range the multipliers stay flat and the general engagement factors (bottom of the page) apply. Sub-cycles can share their values or have their own: editing shared values changes every sub-cycle that uses them; <b>Make own</b> splits one off.</li>
+<li><b>Sub-cycles</b>: one fold-out per cycle family. Each sub-cycle has a small grid per operation: the <b>ae range</b> (min, start, max × Ø), the <b>Vc ×</b> and <b>fz ×</b> at min ae, at the start and at max ae, and the <b>ap</b> min / start / max (× Ø) with its own <b>Vc ×</b> / <b>fz ×</b> at min ap and at max ap (multiplied onto the ae values; ×1 at the start ap — when set they replace the general deep-ap fz ease-off). The calculator starts at <b>start</b>; when you change ae it slides Vc and fz in a straight line toward the end values (e.g. trochoidal roughing 0.05–0.1 × Ø: more Vc and fz at 0.05, less at 0.1). Outside the range it keeps the end value and warns; ap max also caps the recommended stepdown. Leave an end blank to keep the start value; with no range the multipliers stay flat and the general engagement factors (bottom of the page) apply. Sub-cycles can share their values or have their own: editing shared values changes every sub-cycle that uses them; <b>Make own</b> splits one off.</li>
 <li><b>Limits &amp; physics</b> is one page in four parts — Limits, Materials, Machines &amp; physics, Strategy rules. The buttons at the top jump to a part and stay in view as you scroll; click a part's heading to fold it.</li>
 <li><b>Limits</b>: stepdown limits, each read as a sentence ("In ISO P2, any tool, every dynamic sub-cycle, rough: stepdown ≤ 1.5×Ø"); the most specific one wins. Below: the Ø ranges and the small-tool rigidity cap.</li>
 <li><b>Materials</b>: kc1.1 and mc per ISO group with optional per-material values, hardness, and whether a material work-hardens.</li>
@@ -8558,7 +8582,7 @@ load().then(function(){
   try { document.getElementById('offc').hidden = false; } catch(_){}
   try { renderAll(); } catch(_){}
 });/* ---- version check + service worker (offline use when served over https) ---- */
-const APP_V='2026-10-19.10';
+const APP_V='2026-10-19.11';
 (async()=>{try{const r=await fetch('./version.json',{cache:'no-store'});if(!r.ok)return;const v=(await r.json()).v;if(v&&v!==APP_V){const b=$('#newv');b.hidden=false;b.title=`Version ${v} is available (this is ${APP_V})`}}catch(e){}})();
 $('#newv').onclick=async()=>{await flushLib();try{if(window.caches)for(const k of await caches.keys())if(k.startsWith('cnc-'))await caches.delete(k);const g=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(g)await g.update()}catch(e){}location.reload(true)};
 /* only when self-hosted: inside Claude the page is served by Claude, which handles caching */
