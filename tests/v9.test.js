@@ -33,4 +33,15 @@ ok(V9E.evalExpr("not work_hardening or hrc > 35", { work_hardening: false }), 'n
 /* migration rules all parse */
 const mig = V9M.build({ L: { materials: [], tools: [], cycles: [], baseline: [], bands: [], matbands: [] } });
 mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, {}); n++; } catch (e) { bad++; console.log('FAIL rule', x.strategy_code, e.message); } });
+/* 2026-10-19 sub-cycle ae / ap ranges: multipliers slide along the ae range, hold at the ends, ap max caps the start */
+{ const po = { Vc_mult: 1, fz_mult: 1, ae_min: 0.05, ae_max: 0.1, ae_ratio: '', Vc_mult_lo: 1.2, Vc_mult_hi: 0.9, fz_mult_lo: 1.3, fz_mult_hi: 0.8, ap_min: 1, ap_max: 2, ap_ratio: 3 };
+  const rg = V9E.range(po); near(rg.aeNom, 0.075, 1e-9, 'range: start is the middle when blank');
+  near(V9E.rangeAt(po, 0.05).vc, 1.2, 1e-9, 'range: Vc at min ae'); near(V9E.rangeAt(po, 0.1).fz, 0.8, 1e-9, 'range: fz at max ae');
+  near(V9E.rangeAt(po, 0.0625).vc, 1.1, 1e-9, 'range: straight line between min and start');
+  near(V9E.rangeAt(po, 0.2).vc, 0.9, 1e-9, 'range: held at the end value'); ok(V9E.rangeAt(po, 0.2).above && V9E.rangeAt(po, 0.02).below, 'range: outside is flagged');
+  near(V9E.rangeAt({ Vc_mult: 1.1, fz_mult: 0.9, ae_ratio: 0.3 }, 0.1).vc, 1.1, 1e-9, 'no range: flat multipliers');
+  const T = { material_tool_baselines: [{ material: '', group_id: 'P1', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }], diameter_bands: [{ band_id: 'B1', label: '6–10', lo_mm: 6, hi_mm: 10 }],
+    profile_op: [Object.assign({ profile_id: 'PX', op_class: 'rough' }, po)], cycle_map: [], operations: [] };
+  const rec = V9E.recommend(T, { material: 'X', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, op: 'rough', profile: 'PX', ldTier: 1 });
+  near(rec.ae, 0.75, 1e-9, 'range: recommended ae'); near(rec.ap, 20, 1e-9, 'range: ap held at ap max'); near(rec.Vc, 100, 1e-9, 'range: Vc at the start point (start ×1)'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);
