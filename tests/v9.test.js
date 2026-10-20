@@ -132,4 +132,19 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
   const sf = NX.semiFromFinish(pm, ['BX']); ok(!sf.some(r => r.pass === 'finish'), 'semi from finish: finish rows dropped');
   near(sf.find(r => r.tool_family === 'BX').Vc_mult, +(1.05 / 1.1).toFixed(3), 1e-9, 'semi from finish: semi ÷ old finish keeps the semi value');
   near(NX.recommend(V9E, T, q('rough')).Vc, 100, 1e-9, 'rough uses the roughing base'); }
+
+{ /* operation tree */
+  const lib = ['3D Optimized Roughing', 'Contour Milling', '5X Swarf Cutting One Curve'];
+  const txt = 'Roughing\n    3D roughing\n        Trochoidal roughing\n            3D Optimized Roughing\nContours\n\tWall milling\n\t\tStepdown milling\n\t\t\t> Contour Milling\n\t\tSpiral milling\n';
+  const tr = NX.parseOutline(txt, lib, []), D = NX.derive(tr);
+  ok(tr.length === 2 && tr[0].kind === 'cat', 'outline: two categories');
+  const tro = D.all.find(o => o.name === 'Trochoidal roughing');
+  ok(tro && tro.endpoint && tro.hm.includes('3D Optimized Roughing'), 'outline: matching name with no children is a cycle, its parent the endpoint');
+  ok(tro.path.join('>') === 'Roughing>3D roughing>Trochoidal roughing' && tro.engChain.length === 3 && tro.engChain[0] === tro.key, 'derive: path and engagement chain self → root');
+  ok(D.endpoints.some(o => o.name === 'Spiral milling') && !D.endpoints.some(o => o.name === 'Wall milling'), 'derive: endpoints are levels with no levels under them');
+  const back = NX.parseOutline(NX.toOutline(tr), lib, tr);
+  ok(JSON.stringify(NX.derive(back).all.map(o => o.key)) === JSON.stringify(D.all.map(o => o.key)), 'outline round trip keeps the ids');
+  const T = { ops: D.all, profile_op: [{ profile_id: 'E.' + D.all.find(o => o.name === 'Wall milling').key, op_class: 'finish', ae_ratio: .3, ap_ratio: 1 }], pass_mult: [], material_tool_baselines: [{ baseline_id: 'A', material: '', group_id: 'P1', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }], diameter_bands: [{ band_id: 'B1', label: '6–12', lo_mm: 6, hi_mm: 12 }], cycle_map: [], operations: [] };
+  const r = NX.recommend(V9E, T, { op: D.byId[D.all.find(o => o.name === 'Spiral milling').key], pass: 'finish', material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, flute: 25 });
+  near(r.ae, 3, 1e-6, 'engagement inherited from the level above'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);
