@@ -527,6 +527,10 @@ table.sgt tr.sgap small{display:block;font-weight:400}
 .nxextra{margin-left:38px}.nxextra label{display:flex;gap:6px;align-items:center;font-weight:400}.nxopts{display:flex;flex-direction:column;gap:4px;margin-top:6px}
 .nxwhy{margin:8px;padding:10px 12px;border:1px solid var(--bd);border-radius:10px}.nxwhy h4{margin:0 0 6px}.nxwhy ol{margin:0;padding-left:20px}.nxwhy li{margin:2px 0;overflow-wrap:anywhere}
 @media (max-width:600px){.nxn{display:none}.nxextra{margin-left:0}}
+.nxefs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px 12px;margin-top:6px}.nxef{display:flex;flex-direction:column;gap:2px;font-size:14px;margin:0}.nxef input{width:100%!important}
+.nxopr{border-top:1px solid var(--bd);padding:10px 0;display:flex;flex-direction:column;gap:6px}.nxhm{display:flex;flex-direction:column;gap:4px}.nxhmr{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}.nxhmr>span{flex:1 1 260px}.nxax{display:inline-flex;gap:10px}.nxhm select{max-width:360px}
+.nxpt td input{width:80px}
+.nxtick{white-space:nowrap}
 </style><div class="app">
 <aside class="side"><div class="brand">CNC<span>Shop Assistant</span><small>hyperMILL, metric. Mazak, Hurco and Quaser.</small></div><nav id="nav"></nav>
 <div class="tools"><button class="b s sm" data-z="-1" title="Smaller text">A-</button><button class="b s sm" data-z="0" title="Reset text size">A</button><button class="b s sm" data-z="1" title="Larger text">A+</button><button class="b s sm" id="th" title="Theme">Auto</button></div></aside>
@@ -2485,10 +2489,10 @@ const HOSTED=['lib','data','cycles','prompts','settings'];
 function hostPage(id){HOSTED.forEach(h=>{const el=document.getElementById(h);if(el&&h!==id)el.innerHTML=''});$$('#lbody,#pbody').forEach(e=>{if(!e.closest('#'+id))e.removeAttribute('id')})}
 function renderPage(id){if(!HOSTED.includes(id))return;hostPage(id);
  if(id==='lib')return renderLib();
- const H={data:['Cutting data','Where every speed and feed comes from. Work left to right: <b>Setup</b> lists what still needs doing; <b>Bands</b> hold Vc and fz per ISO group › cutter family › Ø range; <b>Sub-cycles</b> set the ae / ap ranges and multipliers each sub-cycle applies; <b>Limits</b> cap the stepdown; <b>Materials</b> and <b>Machines &amp; physics</b> feed power, torque, chatter and deflection; <b>Strategy rules</b> warn, limit or block. Everything opens view-only — press <b>✎ Edit</b> on a section, change it, then <b>Save</b>.'],cycles:['Cycles','Each hyperMILL cycle as its dialog (the settings you log with a cut), and the cycle tree — families, operations and sub-cycles — that Log cut and Speeds &amp; Feeds use.'],rules:['Rules','The strategies engine: each rule fires on the calculator\'s current cut and shows a warning, a limit or a block under <b>Strategies &amp; physics</b>.'],prompts:['Prompts','What Ask AI and Learn AI are told before your question.'],settings:['Settings','App-wide defaults, the Google Sheet link and the local AI connection.']}[id];
+ const H={data:['Cutting data','Where every speed and feed comes from: <b>Bases</b> (Vc and chip per ISO group or material › tool family › Ø range) × <b>Engagement</b> (ae / ap ranges and multipliers per operation, style and pass) × <b>Pass tables</b> (semi-finish / finish per tool family), with chip thinning on top. <b>Operations</b> sets what the selector offers and which hyperMILL cycles belong to it. <b>Limits &amp; physics</b> is information only — it never changes a number. Everything opens view-only — press <b>✎ Edit</b> on a section, change it, then <b>Save</b>.'],cycles:['Cycles','Each hyperMILL cycle as its dialog — the settings you can log with a cut. Optional: they never change a speed or feed, Log cut keeps them folded away unless you tick <b>Show the cycle settings pages</b>, and Settings → Pages can hide this page from the menu.'],rules:['Rules','The strategies engine: each rule fires on the calculator\'s current cut and shows a warning, a limit or a block under <b>Strategies &amp; physics</b>.'],prompts:['Prompts','What Ask AI and Learn AI are told before your question.'],settings:['Settings','App-wide defaults, the Google Sheet link and the local AI connection.']}[id];
  $('#'+id).innerHTML=`<p class="mu pagelead">${H[1]}</p><div id="lbody"></div>`;
- if(id==='data'){if(!['setup','bands','sub','phys','lim','mat','mach','rules'].includes(PS))PS='setup';drawParams()}
- else if(id==='cycles'){if(!['groups','tree'].includes(PS2))PS2='groups';drawParams()}
+ if(id==='data'){if(PS==='sub')PS='eng';if(!['setup','bands','ops','eng','pass','phys','lim','mat','mach','rules'].includes(PS))PS='setup';drawParams()}
+ else if(id==='cycles'){PS2='groups';drawParams()}
  else if(id==='prompts')drawPrompts();else drawSettings();setTimeout(sz,0)}
 function goTo(t){let [pg,sub]=String(t).split(':');if(pg==='rules'){pg='data';sub='rules'}if(pg==='data'&&sub)PS=sub;if(pg==='cycles'&&sub)PS2=sub;if(pg==='lib'&&sub)LS=sub;show(pg)}
 let CUR='ask';
@@ -7595,6 +7599,106 @@ function nxLogRec(code){const S=NXS.log,op=nxOp(S.op),t=tool(code);if(!op)return
  if(!r||r.err)return r;return {vc:r.Vc,fz:r.perRev?r.fz/z:r.fz,ap:isFinite(r.ap)?r.ap:null,ae:isFinite(r.ae)?Math.min(r.ae,D):null,basedOn:r.steps.slice(0,-1).map(x=>x[1]).join(' · ')}}
 /* a logged cut's new tags as one line, e.g. "Wall milling · Spiral · Semi-finish · 3+2-axis" */
 const nxCutLabel=c=>{const o=nxOp(c.nxOp);if(!o)return c.nxOp||'';const st=NX.styleList(o).find(x=>x.key===c.nxStyle);return [o.name,st&&st.name,c.nxPass&&NX.PASSN[c.nxPass],c.nxAxes&&NX.AXN[c.nxAxes]].filter(Boolean).join(' · ')};
+/* ===================== Cutting data → Operations, Engagement, Pass tables (2026-10-20) =====================
+   Every value is editable in the usual way: ✎ Edit on a section → change → Save (or Cancel). Nothing is written before Save. */
+const nxSlug=t=>String(t||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'x';
+const NX_CLS=[['rough','milling (rough row)'],['drill','drilling'],['ream','reaming'],['bore','boring'],['thread','threading']];
+const NX_EF=[['ae_min','ae min','×Ø'],['ae_max','ae max','×Ø'],['ae_ratio','ae start','×Ø'],['ap_min','ap min','×Ø'],['ap_max','ap max','×Ø'],['ap_ratio','ap start','×Ø'],
+ ['Vc_mult','Vc ×','at start'],['fz_mult','fz ×','at start'],['Vc_mult_lo','Vc × at ae min',''],['Vc_mult_hi','Vc × at ae max',''],['fz_mult_lo','fz × at ae min',''],['fz_mult_hi','fz × at ae max',''],
+ ['Vc_mult_aplo','Vc × at ap min',''],['Vc_mult_aphi','Vc × at ap max',''],['fz_mult_aplo','fz × at ap min',''],['fz_mult_aphi','fz × at ap max','']];
+/* new engagement rows for an operation / style: copied from the operation's own rows, else neutral */
+function nxSeedEng(op,style){const pid=NX.pidOf(op,style),base=NX.pidOf(op,'');if((L.profile_op||[]).some(r=>r.profile_id===pid))return 0;
+ if(!(L.multiplier_profiles||[]).some(p=>p.profile_id===pid))L.multiplier_profiles.push({profile_id:pid,profile_name:op.name+(style?' · '+((NX.styleList(op).find(s=>s.key===style)||{}).name||style):''),is_neutral:false,toolpath_required:'none',notes:''});
+ let n=0;NX.passesOf(op).forEach(cls=>{const src=(L.profile_op||[]).find(r=>r.profile_id===base&&r.op_class===cls&&!NX.scopeList(r).length);L.profile_op.push(Object.assign({Vc_mult:1,fz_mult:1,ap_cap:'none'},src&&pid!==base?src:{},{profile_id:pid,op_class:cls,scope:''}));n++});return n}
+
+/* ---------- Operations ---------- */
+let NXOPC='';
+function drawNxOps(){const H=$('#pbody'),cats=nxCats(),cuts=k=>CUTS.filter(c=>c.nxOp===k).length,HM=HMC().map(c=>c.Cycle).sort();
+ const cat=NXOPC&&cats.some(c=>c.key===NXOPC)?NXOPC:'';
+ const axT=n=>`<span class="nxax">${NX.AXES.map(a=>`<label class="nxtick" title="${esc(NX.AXN[a])}"><input type="checkbox" data-nxax="${esc(n)}" data-v="${a}"${nxHmAxes(n).includes(a)?' checked':''}> ${a}</label>`).join('')}</span>`;
+ H.innerHTML=`<p class="mu">The operations the selector offers, in the order shown. <b>Styles</b> are the tick boxes under an operation (each style can have its own engagement values). <b>hyperMILL cycles</b> are for the record only; their 3 / 3+2 / 5 ticks decide which machining style offers the operation. Changing a cycle's ticks changes it everywhere it is listed.</p>
+ <div class="seg noprint" style="margin:8px 0">${[['','All']].concat(cats.map(c=>[c.key,c.name])).map(([k,l])=>`<button data-nav="1" data-nxopc="${k}" class="${k===cat?'on':''}">${esc(l)}</button>`).join('')}</div>
+ ${cats.filter(c=>!cat||c.key===cat).map(c=>`<div class="card" data-sec="ops:${c.key}"><h2>${esc(c.name)} <small class="mu">${NX.CAT[c.key].pass?'rough / semi-finish / finish':'no pass selector'}</small></h2>
+  ${c.ops.map(o=>`<div class="nxopr" data-nxop="${esc(o.key)}">
+   <div class="nxrow"><input data-nxe="name" value="${esc(o.name)}" aria-label="Operation name" style="flex:2 1 240px;font-weight:600"><label class="mu">order <input data-nxe="order" type="number" step="1" value="${esc(o.order)}" style="width:70px"></label>
+    ${c.key==='holes'?`<label class="mu">values as <select data-nxe="cls">${NX_CLS.map(([k,l])=>`<option value="${k}"${(o.cls||'rough')===k?' selected':''}>${esc(l)}</option>`).join('')}</select></label>`:''}
+    <label class="nxtick"><input type="checkbox" data-nxe="nospeeds"${o.nospeeds?' checked':''}> no cutting data</label>${c.key==='holes'?`<label class="nxtick"><input type="checkbox" data-nxe="circ"${o.circ?' checked':''}> arc correction</label><label class="nxtick"><input type="checkbox" data-nxe="tap"${o.tap?' checked':''}> tap (pitch)</label>`:''}
+    <small class="mu">${cuts(o.key)} logged cut${cuts(o.key)===1?'':'s'}</small><button class="b s sm" data-nxdel="${esc(o.key)}"${cuts(o.key)?' disabled title="Logged cuts use it"':''}>✕ Delete</button></div>
+   <div class="nxrow"><label style="flex:1 1 100%">Styles <small class="mu">— comma separated, blank = none (e.g. Stepdown, Spiral, Full flute)</small><input data-nxe="styles" value="${esc(NX.styleList(o).map(s=>s.name).join(', '))}"></label></div>
+   <div class="nxhm">${NX.listOf(o.hm).map(n=>`<div class="nxhmr"><span>${esc(n)}</span>${axT(n)}<button class="b s sm" data-nxhmx="${esc(n)}" title="Remove this cycle from ${esc(o.name)}">✕</button></div>`).join('')||'<span class="mu">No hyperMILL cycle linked — offered in every machining style.</span>'}
+    <select data-nxhmadd aria-label="Add a hyperMILL cycle"><option value="">+ hyperMILL cycle…</option>${opt(HM.filter(n=>!NX.listOf(o.hm).includes(n)))}</select></div></div>`).join('')}
+  <div class="row"><input data-nxnew="${c.key}" placeholder="New operation name" style="max-width:300px"><button class="b s sm" data-nxadd="${c.key}">+ Add operation</button></div></div>`).join('')}`;
+ edDecorate()}
+function nxOpsEvt(e){const t=e.target;if(!t.closest||!t.closest('#pbody')||PS!=='ops')return;
+ if(e.type==='click'){const c=t.closest('[data-nxopc]');if(c){NXOPC=c.dataset.nxopc;return drawNxOps()}}
+ const row=t.closest('[data-nxop]'),op=row?nxOp(row.dataset.nxop):null;
+ if(e.type==='change'&&t.dataset.nxax!=null){const c=HMC().find(x=>x.Cycle===t.dataset.nxax);if(!c)return;const from=nxHmAxes(c.Cycle).join(','),set=new Set(nxHmAxes(c.Cycle));if(t.checked)set.add(t.dataset.v);else set.delete(t.dataset.v);
+  c.Axes=NX.AXES.filter(a=>set.has(a)).join(',');v9Saved('cycles',c.Cycle,'Axes',from,c.Axes);return drawNxOps()}
+ if(e.type==='change'&&op&&t.dataset.nxe){const k=t.dataset.nxe;let from=op[k],to=t.type==='checkbox'?t.checked:k==='order'?+t.value:t.value.trim();
+  if(k==='styles'){from=NX.styleList(op).map(s=>s.name).join(', ');const names=to.split(',').map(x=>x.trim()).filter(Boolean),old=NX.styleList(op);
+   op.styles=names.map(n=>{const o=old.find(s=>s.name.toLowerCase()===n.toLowerCase());return o?Object.assign({},o,{name:n}):{key:nxSlug(n),name:n}});
+   op.styles.forEach(s=>{if(nxSeedEng(op,s.key))v9Saved('profile_op',NX.pidOf(op,s.key),'rows','','new engagement rows (copied from '+op.name+')')});to=names.join(', ')}
+  else{if(k==='name'&&!to)return drawNxOps();op[k]=to;if((k==='cls'||k==='nospeeds')&&!op.nospeeds&&nxSeedEng(op,''))v9Saved('profile_op',NX.pidOf(op),'rows','','new engagement rows')}
+  v9Saved('ops',op.name,k,from,to);return drawNxOps()}
+ if(e.type==='change'&&op&&t.dataset.nxhmadd!=null&&t.value){const from=NX.listOf(op.hm).join(' | ');op.hm=NX.listOf(op.hm).concat([t.value]);v9Saved('ops',op.name,'hyperMILL cycles',from,op.hm.join(' | '));return drawNxOps()}
+ if(e.type==='click'&&op&&t.dataset.nxhmx){const from=NX.listOf(op.hm).join(' | ');op.hm=NX.listOf(op.hm).filter(n=>n!==t.dataset.nxhmx);v9Saved('ops',op.name,'hyperMILL cycles',from,op.hm.join(' | '));return drawNxOps()}
+ if(e.type==='click'&&t.dataset.nxdel){const o=nxOp(t.dataset.nxdel);if(!o||CUTS.some(c=>c.nxOp===o.key))return;L.ops=L.ops.filter(x=>x!==o);v9Saved('ops',o.name,'deleted',o.name,'');return drawNxOps()}
+ if(e.type==='click'&&t.dataset.nxadd){const cat=t.dataset.nxadd,inp=t.parentElement.querySelector('[data-nxnew]'),name=(inp&&inp.value||'').trim();if(!name)return toast('Type the operation name first');
+  let key=nxSlug(name);while(nxOp(key))key+='-2';const ord=Math.max(0,...L.ops.filter(o=>o.cat===cat).map(o=>+o.order||0))+1;
+  const o={key,cat,name,order:ord,styles:[],hm:[],cls:cat==='holes'?'drill':'',nospeeds:false,circ:false,tap:false,note:''};L.ops.push(o);nxSeedEng(o,'');v9Saved('ops',name,'added','',NX.CAT[cat].name);v9Saved('profile_op',NX.pidOf(o),'rows','','neutral engagement rows');return drawNxOps()}}
+['click','change'].forEach(ev=>document.addEventListener(ev,nxOpsEvt));
+
+/* ---------- Engagement: ae / ap ranges and multipliers per operation (+ style) and pass, with values for lists of materials ---------- */
+let NXE={op:'',style:'',scope:''};
+const nxScopeName=sc=>NX.scopeList({scope:sc}).map(x=>x[0]==='@'?'ISO '+x.slice(1):x).join(' + ')||'every material';
+function drawNxEng(){const H=$('#pbody'),cats=nxCats();if(!nxOp(NXE.op)){const f=cats.flatMap(c=>c.ops).find(o=>!o.nospeeds);NXE.op=f?f.key:''}
+ const op=nxOp(NXE.op);if(!op){H.innerHTML='<p class="mu">No operations yet — Cutting data → Operations.</p>';return}
+ const sts=NX.styleList(op);if(NXE.style&&!sts.some(s=>s.key===NXE.style))NXE.style='';const pid=NX.pidOf(op,NXE.style),PO=L.profile_op||[];
+ const own=PO.some(r=>r.profile_id===pid),scopes=[...new Set(PO.filter(r=>r.profile_id===pid&&NX.scopeList(r).length).map(r=>NX.scopeList(r).join('|')))];if(NXE.scope&&!scopes.includes(NXE.scope))scopes.push(NXE.scope);
+ const G=nxGroups(),M=L.materials.map(m=>m.Material).sort();
+ const fld=(cls,f,row,def)=>{const v=row?row[f]:'';const ph=def&&def[f]!=null&&def[f]!==''?def[f]:'';return `<label class="nxef"><span>${esc((NX_EF.find(x=>x[0]===f)||[])[1]||f)}</span>${v9Num(`data-nxen="${esc(cls)}" data-k="${f}"`,v,ph,78)}</label>`};
+ const block=cls=>{const row=PO.find(r=>r.profile_id===pid&&r.op_class===cls&&(NXE.scope?NX.scopeList(r).join('|')===NXE.scope:!NX.scopeList(r).length)),def=NXE.scope?NX.engFor(PO,pid,cls,'',''):null;
+  const eff=NXE.scope?Object.assign({},def,...Object.keys(row||{}).filter(k=>row[k]!==''&&row[k]!=null).map(k=>({[k]:row[k]}))):row||{},rg=V9E.range(eff);
+  return `<div class="card" data-sec="eng:${pid}:${cls}:${NXE.scope}"><h2>${esc(NX.PASSN[cls]||({drill:'Drilling',ream:'Reaming',bore:'Boring',thread:'Threading'})[cls]||cls)} <small class="mu">${NXE.scope?'values for '+esc(nxScopeName(NXE.scope))+' — blank boxes use the grey values for every material':'values for every material'}</small></h2>
+   <div class="nxefs">${NX_EF.slice(0,8).map(([f])=>fld(cls,f,row,def)).join('')}</div>
+   <details style="margin-top:6px"${NX_EF.slice(8).some(([f])=>row&&row[f]!==''&&row[f]!=null)?' open':''}><summary class="mu">Multipliers at the ends of the ranges (they slide in a straight line between the ends and the start)</summary><div class="nxefs">${NX_EF.slice(8).map(([f])=>fld(cls,f,row,def)).join('')}</div></details>
+   <p class="mu" style="margin:6px 0 0">Start: ae ${isFinite(rg.aeNom)?f(rg.aeNom,3)+'×Ø':'–'}, ap ${isFinite(rg.apNom)?f(rg.apNom,2)+'×Ø':'–'}${isFinite(rg.apMin)&&isFinite(rg.apMax)&&rg.apMin>rg.apMax?' · <span class="bad">ap min is more than ap max</span>':''}${isFinite(rg.aeMin)&&isFinite(rg.aeMax)&&rg.aeMin>rg.aeMax?' · <span class="bad">ae min is more than ae max</span>':''}</p></div>`};
+ H.innerHTML=`<p class="mu">ae / ap ranges and Vc × / fz × for each operation, style and pass. They multiply the base (Cutting data → Bases) and slide along the range as ae and ap change; chip thinning is added on top. <b>Values for</b> lets one set cover any list of materials and ISO groups — e.g. SS 316 and 13-8PH together — with blank boxes taking the values for every material.</p>
+ <div class="nxrow noprint" style="margin:8px 0"><label>Operation <select data-nav="1" data-nxeop>${cats.map(c=>`<optgroup label="${esc(c.name)}">${c.ops.filter(o=>!o.nospeeds).map(o=>`<option value="${esc(o.key)}"${o.key===op.key?' selected':''}>${esc(o.name)}</option>`).join('')}</optgroup>`).join('')}</select></label>
+  ${sts.length?`<label>Style <select data-nav="1" data-nxest><option value="">— the operation's own values —</option>${sts.map(s=>`<option value="${esc(s.key)}"${s.key===NXE.style?' selected':''}>${esc(s.name)}${(PO.some(r=>r.profile_id===NX.pidOf(op,s.key)))?'':' (uses the operation’s)'}</option>`).join('')}</select></label>`:''}
+  <label>Values for <select data-nav="1" data-nxesc><option value="">Every material</option>${scopes.map(sc=>`<option value="${esc(sc)}"${sc===NXE.scope?' selected':''}>${esc(nxScopeName(sc))}</option>`).join('')}</select></label>
+  <button class="b s sm" data-nav="1" data-nxescadd="1">+ Values for materials…</button></div>
+ ${!own?`<div class="note w">${esc(op.name)}${NXE.style?' · '+esc((sts.find(s=>s.key===NXE.style)||{}).name):''} has no engagement values of its own${NXE.style?' — it uses the operation’s':''}. <button class="b s sm" data-nav="1" data-nxeseed="1">Give it its own values</button></div>`:NX.passesOf(op).map(block).join('')}
+ ${NXE.scope?`<p><button class="b s sm" data-nav="1" data-nxescdel="1">✕ Remove the values for ${esc(nxScopeName(NXE.scope))}</button></p>`:''}
+ <div id="nxescpick"></div>`;
+ edDecorate()}
+function nxScopePick(){const h=$('#nxescpick');if(!h)return;const G=nxGroups();
+ h.innerHTML=`<div class="card"><h2>Values for which materials?</h2><p class="mu">Tick ISO groups and / or materials. One set of values then covers all of them.</p>
+ <div class="nxticks">${G.map(g=>`<label class="nxtick"><input type="checkbox" data-nav="1" data-nxscv="@${esc(g.tag)}"> ISO ${esc(g.tag)}</label>`).join('')}</div>
+ <div class="nxticks" style="margin-top:6px">${L.materials.map(m=>m.Material).sort().map(m=>`<label class="nxtick"><input type="checkbox" data-nav="1" data-nxscv="${esc(m)}"> ${esc(m)}</label>`).join('')}</div>
+ <p class="row"><button class="b" data-nav="1" data-nxscok="1">Create</button><button class="b s" data-nav="1" data-nxscx="1">Cancel</button></p></div>`}
+function nxEngEvt(e){const t=e.target;if(!t.closest||!t.closest('#pbody')||PS!=='eng')return;const op=nxOp(NXE.op);
+ if(e.type==='change'){if(t.dataset.nxeop!=null){NXE={op:t.value,style:'',scope:''};return drawNxEng()}if(t.dataset.nxest!=null){NXE.style=t.value;NXE.scope='';return drawNxEng()}if(t.dataset.nxesc!=null){NXE.scope=t.value;return drawNxEng()}
+  if(t.dataset.nxen&&op){const cls=t.dataset.nxen,k=t.dataset.k,pid=NX.pidOf(op,NXE.style),v=t.value===''?'':+t.value;let row=L.profile_op.find(r=>r.profile_id===pid&&r.op_class===cls&&(NXE.scope?NX.scopeList(r).join('|')===NXE.scope:!NX.scopeList(r).length));
+   if(!row){row={profile_id:pid,op_class:cls,scope:NXE.scope};L.profile_op.push(row)}const from=row[k];row[k]=v;
+   v9Saved('profile_op',op.name+(NXE.style?' · '+NXE.style:'')+' · '+cls+(NXE.scope?' · '+nxScopeName(NXE.scope):''),k,from,v);return drawNxEng()}}
+ if(e.type==='click'){
+  if(t.dataset.nxeseed&&op){const n=nxSeedEng(op,NXE.style);if(n)v9Saved('profile_op',NX.pidOf(op,NXE.style),'rows','',n+' rows copied from '+op.name);return drawNxEng()}
+  if(t.dataset.nxescadd){return nxScopePick()}if(t.dataset.nxscx){$('#nxescpick').innerHTML='';return}
+  if(t.dataset.nxscok&&op){const list=[...$$('#nxescpick [data-nxscv]:checked')].map(x=>x.dataset.nxscv);if(!list.length)return toast('Tick at least one material or ISO group');
+   NXE.scope=list.join('|');drawNxEng();return toast('Now press ✎ Edit on a pass and type the values for '+nxScopeName(NXE.scope)+' — blank boxes keep the values for every material',5000)}
+  if(t.dataset.nxescdel&&op){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Sure? Click again to remove';return}const pid=NX.pidOf(op,NXE.style),sc=NXE.scope,n=L.profile_op.length;L.profile_op=L.profile_op.filter(r=>!(r.profile_id===pid&&NX.scopeList(r).join('|')===sc));v9Saved('profile_op',op.name,'values for '+nxScopeName(sc),n-L.profile_op.length+' rows','removed');NXE.scope='';return drawNxEng()}}}
+['click','change'].forEach(ev=>document.addEventListener(ev,nxEngEvt));
+
+/* ---------- Pass tables: Vc × / fz × per tool family for semi-finish and finish (rough = ×1) ---------- */
+function drawNxPass(){const H=$('#pbody'),fams=[...new Set(nxFamilies().concat((L.pass_mult||[]).map(r=>String(r.tool_family).toUpperCase())))].sort(),row=(f,p)=>(L.pass_mult||[]).find(r=>String(r.tool_family).toUpperCase()===f&&r.pass===p)||{};
+ const cell=(f,p,k)=>{const r=row(f,p);return `<td class="n">${v9Num(`data-nxpm="${esc(f)}|${p}" data-k="${k}"`,r[k],1,72)}</td>`};
+ H.innerHTML=`<p class="mu">One table per tool family: the pass multipliers used by 2.5D / Contour, Surfaces and Edges and chamfers. Roughing is always ×1; holes and misc have no pass. They multiply on top of the operation's engagement values.</p>
+ <div class="card" data-sec="pass"><h2>Pass multipliers by tool family</h2><div class="tw"><table class="nxpt"><thead><tr><th>Family</th><th class="n">Semi Vc ×</th><th class="n">Semi fz ×</th><th class="n">Finish Vc ×</th><th class="n">Finish fz ×</th><th>Note</th></tr></thead><tbody>
+ ${fams.map(f=>`<tr><th scope="row">${esc(f)} <small class="mu">${esc(NX_FAMNAME[f]||'')}</small></th>${cell(f,'semi','Vc_mult')}${cell(f,'semi','fz_mult')}${cell(f,'finish','Vc_mult')}${cell(f,'finish','fz_mult')}<td class="tx mu" style="font-size:13px">${esc(row(f,'finish').note||row(f,'semi').note||'')}</td></tr>`).join('')}
+ </tbody></table></div></div>`;edDecorate()}
+document.addEventListener('change',e=>{const t=e.target;if(!t.dataset||!t.dataset.nxpm||PS!=='pass')return;const [fam,pass]=t.dataset.nxpm.split('|'),k=t.dataset.k,v=t.value===''?'':+t.value;
+ let r=(L.pass_mult||[]).find(x=>String(x.tool_family).toUpperCase()===fam&&x.pass===pass);if(!r){r={tool_family:fam,pass,Vc_mult:1,fz_mult:1,note:''};L.pass_mult.push(r)}const from=r[k];r[k]=v;v9Saved('pass_mult',fam+' '+pass,k,from,v)});
 /* ---------- health check ---------- */
 function v9Health(T){const out=[],keys=new Set((L.cycles||[]).filter(c=>c&&c.key&&c.parent).map(c=>c.key)),pids=new Set((T.multiplier_profiles||[]).map(p=>p.profile_id)),mats=new Set(L.materials.map(m=>m.Material)),grp=new Set((T.material_groups||[]).map(g=>g.iso_group_tag));
  const tools=L.tools.filter(t=>t&&t['Tool Code']).map(t=>V9M.toolRow(t,AUD.sfxOf));
@@ -8016,7 +8120,7 @@ function edBar(){let b=$('#edbar');if(!ED||CUR!=='data'){if(b)b.remove();documen
  b.innerHTML=`<div class="edbar-in"><div class="edwhat"><b>✎ Editing ${esc(ED.label)}</b><span class="mu">${n?`${n} unsaved change${n===1?'':'s'}`:'No changes yet'}</span></div>
  ${n?`<details class="edrev"><summary>Review</summary><ol>${ED.log.map(x=>`<li><b>${esc(x.code)}</b> · ${esc(x.field)}: <s>${esc(sh(x.from))||'—'}</s> → ${esc(sh(x.to))||'—'}</li>`).join('')}</ol></details>`:''}
  <span class="edsp"></span><button class="b s" data-edcancel="1">${n?'Cancel — discard':'Close'}</button>${n?`<button class="b" data-edsave="1">Save ${n} change${n===1?'':'s'}</button>`:''}</div>`}
-function edStart(key,label){const snap={};V9M.TABLES.concat(['machines']).forEach(k=>{snap[k]=JSON.parse(JSON.stringify(L[k]||[]))});
+function edStart(key,label){const snap={};V9M.TABLES.concat(['machines','ops','pass_mult','cycles']).forEach(k=>{snap[k]=JSON.parse(JSON.stringify(L[k]||[]))});
  ED={sec:key,label,snap,engSnap:JSON.stringify(SET.engage??null),facSnap:JSON.stringify((SETDOC&&SETDOC.factors)||{}),log:[],engDirty:false,facDirty:false};drawParams();
  const el=$('#pbody .editing');if(el){const f=el.querySelector('input:not([type=checkbox]):not(:disabled),textarea:not(:disabled),select:not(:disabled)');if(f)f.focus({preventScroll:true})}}
 async function edSave(){if(!ED)return true;const E=ED;if(!E.log.length){ED=null;drawParams();return true}
@@ -8364,20 +8468,20 @@ const clone=o=>JSON.parse(JSON.stringify(o));
    Tree editor + Sub-cycles → lib/cycles · Baselines (+ Bands) → lib/baseline, lib/bands · Formulas → lib/formulas.
    Every change is logged; nothing a logged cut depends on can be renamed, moved or removed from under it. ---------- */
 let PS='setup',PS2='groups';
-const V9_STEPS=[['setup','Setup','what is left to do'],['bands','Bands','Vc · fz by Ø'],['sub','Sub-cycles','ranges · multipliers'],['phys','Limits & physics','limits · materials · machines · rules']];
+const V9_STEPS=[['setup','Setup','what is left to do'],['bands','Bases','Vc · chip by Ø'],['ops','Operations','categories · styles · cycles'],['eng','Engagement','ae / ap · multipliers'],['pass','Pass tables','semi / finish by family'],['phys','Limits & physics','information only']];
 const V9_PHP=[['lim','Limits','stepdown, Ø ranges'],['mat','Materials','cutting force'],['mach','Machines & physics','checks on / off, machines, stiffness, coolant, engine limits'],['rules','Strategy rules','warnings, limits and blocks']];
 let PHJUMP='';const PHSHUT=new Set();
 document.addEventListener('click',e=>{const h=e.target.closest&&e.target.closest('.phh');if(!h||e.target.closest('button'))return;const p=h.parentElement,k=p.dataset.ph;p.classList.toggle('shut');if(p.classList.contains('shut'))PHSHUT.add(k);else PHSHUT.delete(k);h.setAttribute('aria-expanded',!p.classList.contains('shut'))});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('phh')){e.preventDefault();e.target.click()}});
 function v9Jump(k){if(!V9_PHP.some(x=>x[0]===k))return false;PS='phys';PHJUMP=k;drawParams();return true}
-function drawParams(){if(CUR!=='cycles'&&V9_PHP.some(x=>x[0]===PS)){PHJUMP=PS;PS='phys'}const cyc=CUR==='cycles',tabs=cyc?[['groups','Cycle pages'],['tree','Cycle tree']]:V9_STEPS,cur=cyc?PS2:PS;
+function drawParams(){if(CUR!=='cycles'&&V9_PHP.some(x=>x[0]===PS)){PHJUMP=PS;PS='phys'}const cyc=CUR==='cycles',tabs=cyc?[['groups','Cycle pages']]:V9_STEPS,cur=cyc?PS2:PS;
  if(cyc)$('#lbody').innerHTML=`<div class="seg noprint" id="psub" style="margin-bottom:12px">${tabs.map(([k,l])=>`<button data-ps="${k}" class="${k===cur?'on':''}">${l}</button>`).join('')}</div><div id="pbody"></div>`;
  else{const st=v9SetupState();$('#lbody').innerHTML=`<nav class="stepper noprint" id="psub" aria-label="Cutting data steps">${tabs.map(([k,l,sub],i)=>{const ok=k==='setup'?!st.open:k==='phys'?(st.lim!==false&&st.mat!==false&&st.mach!==false&&st.rules!==false):st[k];return `<button data-ps="${k}" class="${k===cur?'on':''}${ok===false?' todo':''}"${k===cur?' aria-current="page"':''}><span class="stn" aria-hidden="true">${k==='setup'?(st.open?st.open:'✓'):ok===false?'!':'✓'}</span><span class="stl"><b>${esc(l)}</b><small>${k==='setup'?(st.open?st.open+' step'+(st.open===1?'':'s')+' to do':'all done'):ok===false?'needs attention':esc(sub)}</small></span></button>`}).join('')}</nav>${cdxBar()}<div id="pbody"></div>`;
   const cb=$('#lbody .cdx');if(cb)cb.onchange=e=>{const t=e.target;if(t.id==='cdx_iso'){CDX.iso=t.value;if(CDX.iso&&PS==='bands')V9BM='@'+CDX.iso}if(t.id==='cdx_fam')CDX.fam=t.value;if(t.id==='cdx_only')CDX.only=t.checked;drawParams()};
   const cc=$('#cdx_clr');if(cc)cc.onclick=()=>{CDX.iso='';CDX.fam='';drawParams()}}
  $('#lbody').querySelector('#psub').onclick=async e=>{const b=e.target.closest('[data-ps]'),k=b&&b.dataset.ps;if(!k||k===(cyc?PS2:PS))return;if(!cyc&&!(await edLeave()))return;if(cyc)PS2=k;else PS=k;drawParams();if(!cyc)window.scrollTo(0,0)};$('#lbody').onchange=null;$('#lbody').onclick=null;
  if(cyc){if(PS2==='tree')drawTreeEd();else drawParamGroups()}
- else if(PS==='bands')drawV9Bands();else if(PS==='sub')drawV9Subs();else if(PS==='phys')drawV9LimPhys();else drawV9Setup()}
+ else if(PS==='bands')drawV9Bands();else if(PS==='ops')drawNxOps();else if(PS==='eng')drawNxEng();else if(PS==='pass')drawNxPass();else if(PS==='phys')drawV9LimPhys();else drawV9Setup()}
 /* one page, four parts, each in its own container; the jump bar stays at the top while scrolling */
 function drawV9LimPhys(){try{const t=$('.top');if(t)document.documentElement.style.setProperty('--toph',Math.max(0,Math.round(t.getBoundingClientRect().bottom))+'px')}catch(e){}$('#pbody').innerHTML=`<nav class="phnav noprint" aria-label="Parts of this page">${V9_PHP.map(([k,l],i)=>`<button data-nav="1" data-phj="${k}">${i+1} · ${esc(l)}</button>`).join('')}</nav>
  ${V9_PHP.map(([k,l,sub],i)=>`<section class="phpart${PHSHUT.has(k)?' shut':''}" id="ph_${k}" data-ph="${k}" aria-labelledby="phh_${k}"><h2 class="phh" id="phh_${k}" role="button" tabindex="0" aria-expanded="${!PHSHUT.has(k)}" title="Click to fold this part"><span class="phn">${i+1}</span>${esc(l)} <small class="mu">${esc(sub)}</small></h2><div class="phost" id="pb_${k}"></div></section>`).join('')}`;
