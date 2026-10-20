@@ -88,8 +88,8 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
   const T = { material_tool_baselines: [{ material: '', group_id: 'M', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }, { material: '', group_id: 'P1', tool_family: 'BX', band_id: 'B1', Vc_base: 200, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }],
     diameter_bands: [{ band_id: 'B1', label: '6–10', lo_mm: 6, hi_mm: 10, rigidity_ap_max_ratio: 0.5 }], profile_op: rows, cycle_map: [], operations: [], pass_mult: [{ tool_family: 'BX', pass: 'finish', Vc_mult: 1.2, fz_mult: 0.5 }] };
   const r = NX.recommend(V9E, T, { op: Object.assign({ prof: '' }, op), pass: 'finish', material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4 });
-  near(r.Vc, 240, 1e-9, 'group only: the group base × pass Vc'); near(r.ap, 10, 1e-9, 'limits are information only (ap not capped to 0.5×Ø)'); ok(r.warn.length === 1, 'the cap is reported');
-  near(r.fz, 0.05 * 0.5 * V9E.cthRad(1, 10), 1e-9, 'chip thinning always on, after the pass fz ×');
+  near(r.Vc, 200, 1e-9, 'group only: the group base (finish = base as it is)'); near(r.ap, 10, 1e-9, 'limits are information only (ap not capped to 0.5×Ø)'); ok(r.warn.length === 1, 'the cap is reported');
+  near(r.fz, 0.05 * V9E.cthRad(1, 10), 1e-9, 'chip thinning always on');
   const sp = NX.speeds(V9E, { D: 10, z: 2, type: 'end_mill_ball', Vc: 100, fz: 0.1, ap: 0.5, tilt: 0 }); near(sp.Dc, 2 * Math.sqrt(0.5 * 9.5), 1e-9, 'ball nose: cutting Ø at ap');
   ok(NX.speeds(V9E, { D: 10, z: 2, type: 'end_mill_ball', Vc: 100, fz: 0.1, ap: 0.5, tilt: 15 }).Dc > sp.Dc, 'ball nose: tilt raises the cutting Ø');
   near(NX.speeds(V9E, { D: 6, z: 1, type: 'tap', tap: true, pitch: 1, Vc: 10, fz: 0 }).vf, 10000 / (Math.PI * 6), 1e-9, 'tap: feed = pitch × rpm');
@@ -127,7 +127,9 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
   const ops = NX.build({ profile_op: [], multiplier_profiles: [] }).ops, op = ops.find(o => o.key === 'wall'), T = { ops, profile_op: [{ profile_id: 'E.wall', op_class: 'finish', ae_ratio: .5, ap_ratio: 1 }, { profile_id: 'E.wall', op_class: 'semi', ae_ratio: .5, ap_ratio: 1 }], pass_mult: pm,
     material_tool_baselines: sp.map(r => Object.assign({}, r, r.pass === 'finish' && r.tool_family === 'BX' ? { Vc_base: 150 } : {})), diameter_bands: [{ band_id: 'B1', label: '6–12', lo_mm: 6, hi_mm: 12 }], cycle_map: [], operations: [] };
   const q = pass => ({ op, pass, material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, flute: 25 });
-  near(NX.recommend(V9E, T, q('finish')).Vc, 150, 1e-9, 'finish uses the finishing base, pass table not applied');
-  near(NX.recommend(V9E, T, q('semi')).Vc, 105, 1e-9, 'semi uses the roughing base × the semi pass table');
+  near(NX.recommend(V9E, T, q('finish')).Vc, 150, 1e-9, 'finish uses the finishing base as it is');
+  near(NX.recommend(V9E, T, q('semi')).Vc, 150 * 1.05, 1e-9, 'semi = finishing base × the semi-finish multiplier');
+  const sf = NX.semiFromFinish(pm, ['BX']); ok(!sf.some(r => r.pass === 'finish'), 'semi from finish: finish rows dropped');
+  near(sf.find(r => r.tool_family === 'BX').Vc_mult, +(1.05 / 1.1).toFixed(3), 1e-9, 'semi from finish: semi ÷ old finish keeps the semi value');
   near(NX.recommend(V9E, T, q('rough')).Vc, 100, 1e-9, 'rough uses the roughing base'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);
