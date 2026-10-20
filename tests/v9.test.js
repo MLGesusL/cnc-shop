@@ -2,7 +2,7 @@
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const pick = tag => { const m = html.match(new RegExp('/\\*' + tag + '-BEGIN\\*/([\\s\\S]*?)/\\*' + tag + '-END\\*/')); if (!m) throw new Error(tag + ' block missing'); return m[1]; };
-const V9E = new Function(pick('V9E') + ';return V9E')(), V9M = new Function(pick('V9M') + ';return V9M')();
+const V9E = new Function(pick('V9E') + ';return V9E')(), V9M = new Function(pick('V9M') + ';return V9M')(), NX = new Function(pick('NX') + ';return NX')();
 let n = 0, bad = 0; const near = (a, b, tol, msg) => { n++; if (!(Math.abs(a - b) <= tol)) { bad++; console.log('FAIL', msg, a, '≠', b); } };
 const ok = (c, msg) => { n++; if (!c) { bad++; console.log('FAIL', msg); } };
 /* 4.3 chip thinning: ae 5 % → 2.29; clamp reached near 4.2 % */
@@ -78,4 +78,23 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
   ok(p.Vc_mult === 1 && !p._layers.length, 'scope: other groups use the standard row');
   const T = { material_tool_baselines: [{ material: '', group_id: 'M', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }], diameter_bands: [{ band_id: 'B1', label: '6–10', lo_mm: 6, hi_mm: 10 }], profile_op: rows, cycle_map: [], operations: [] };
   near(V9E.recommend(T, { material: 'SS 316', iso: 'M', family: 'BX', type: 'end_mill_square', D: 10, z: 4, op: 'rough', profile: 'PX', ldTier: 1 }).Vc, 80, 1e-9, 'scope: recommend uses the group Vc ×'); }
+/* 2026-10-20 new workflow: operations, engagement lists, pass tables, limits as information, default formulas */
+{ const rows = [{ profile_id: 'E.wall', op_class: 'finish', Vc_mult: 1, fz_mult: 1, ae_ratio: 0.1, ap_ratio: 1 },
+    { profile_id: 'E.wall', op_class: 'finish', scope: 'SS 316|SS13-8PH H950', fz_mult: 0.8 }, { profile_id: 'E.wall', op_class: 'finish', scope: '@N1', Vc_mult: 1.5 }];
+  ok(NX.engFor(rows, 'E.wall', 'finish', 'SS13-8PH H950', 'H1').fz_mult === 0.8, 'engagement: one row covers materials from two ISO groups');
+  ok(NX.engFor(rows, 'E.wall', 'finish', 'AL 6082', 'N1').Vc_mult === 1.5 && NX.engFor(rows, 'E.wall', 'finish', 'EN8', 'P1').fz_mult === 1, 'engagement: group row and default');
+  const op = { key: 'wall', cat: 'contour', name: 'Wall milling', styles: [] }, rough = { key: 'troch', cat: 'rough' }, drill = { key: 'drill', cat: 'holes', cls: 'drill' };
+  ok(NX.clsOf(op, 'semi') === 'semi' && NX.clsOf(rough, 'finish') === 'rough' && NX.clsOf(drill, 'finish') === 'drill', 'pass: roughing and holes have no pass selector');
+  const T = { material_tool_baselines: [{ material: '', group_id: 'M', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }, { material: '', group_id: 'P1', tool_family: 'BX', band_id: 'B1', Vc_base: 200, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }],
+    diameter_bands: [{ band_id: 'B1', label: '6–10', lo_mm: 6, hi_mm: 10, rigidity_ap_max_ratio: 0.5 }], profile_op: rows, cycle_map: [], operations: [], pass_mult: [{ tool_family: 'BX', pass: 'finish', Vc_mult: 1.2, fz_mult: 0.5 }] };
+  const r = NX.recommend(V9E, T, { op: Object.assign({ prof: '' }, op), pass: 'finish', material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4 });
+  near(r.Vc, 240, 1e-9, 'group only: the group base × pass Vc'); near(r.ap, 10, 1e-9, 'limits are information only (ap not capped to 0.5×Ø)'); ok(r.warn.length === 1, 'the cap is reported');
+  near(r.fz, 0.05 * 0.5 * V9E.cthRad(1, 10), 1e-9, 'chip thinning always on, after the pass fz ×');
+  const sp = NX.speeds(V9E, { D: 10, z: 2, type: 'end_mill_ball', Vc: 100, fz: 0.1, ap: 0.5, tilt: 0 }); near(sp.Dc, 2 * Math.sqrt(0.5 * 9.5), 1e-9, 'ball nose: cutting Ø at ap');
+  ok(NX.speeds(V9E, { D: 10, z: 2, type: 'end_mill_ball', Vc: 100, fz: 0.1, ap: 0.5, tilt: 15 }).Dc > sp.Dc, 'ball nose: tilt raises the cutting Ø');
+  near(NX.speeds(V9E, { D: 6, z: 1, type: 'tap', tap: true, pitch: 1, Vc: 10, fz: 0 }).vf, 10000 / (Math.PI * 6), 1e-9, 'tap: feed = pitch × rpm');
+  near(NX.speeds(V9E, { D: 8, z: 3, circ: true, Dh: 12, Vc: 100, fz: 0.05 }).vf / NX.speeds(V9E, { D: 8, z: 3, Vc: 100, fz: 0.05 }).vf, 4 / 12, 1e-9, 'thread mill: arc correction internal');
+  ok(NX.speeds(V9E, { D: 1, z: 2, Vc: 150, fz: 0.01, nmax: 12000 }).warn, 'rpm over the machine only warns');
+  const b = NX.build({ profile_op: [{ profile_id: 'P09', op_class: 'finish', Vc_mult: 0.95 }], multiplier_profiles: [] });
+  ok(b.ops.length > 30 && b.legacy['contouring.spiral'].style === 'spiral' && b.profile_op.some(x => x.profile_id === 'E.wall/full-flute' && x.Vc_mult === 0.95), 'migration: operations, styles and engagement copies'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);

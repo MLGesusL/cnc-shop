@@ -2460,7 +2460,7 @@ const DEFAULT_LIB = {
   srcbase: []
 };
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)],esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],matbands:[],sources:[],srcbase:[],formulas:[],prompts:[],rules:[],calc_fields:[],material_groups:[],material_factors:[],diameter_bands:[],material_tool_baselines:[],multiplier_profiles:[],profile_op:[],cycle_map:[],cycle_reference:[],operations:[],rules_engine:[],tool_type_defaults:[],spindle_setup:[]};
+const L={materials:[],cycles:[],tools:[],holders:[],machines:[],cycleparams:[],baseline:[],bands:[],matbands:[],sources:[],srcbase:[],formulas:[],prompts:[],rules:[],calc_fields:[],material_groups:[],material_factors:[],diameter_bands:[],material_tool_baselines:[],multiplier_profiles:[],profile_op:[],cycle_map:[],cycle_reference:[],operations:[],rules_engine:[],tool_type_defaults:[],spindle_setup:[],ops:[],pass_mult:[]};
 let SHEET_CFG={id:'',tabs:[]};let SHEET_HEAD={};let SHEET_SYNC={tried:false,got:[],missing:[]};/* Phase 9: each Sheet tab's header row, so exports keep the Sheet's column order */let KB=[],LC=[],EDK=null,DEL=null,CUTS=[],db=null,sample=null,dl=null,chat=[],AM={dismissed:[]},DBOK=false;
 /* 2026-10-14 navigation, grouped: the shop floor first, then the data the recommendations come from, then AI and app settings */
 const NAVG=[['Shop floor',[['cheat','Speeds & Feeds','C'],['log','Log cut','+'],['cuts','Cut database','D']]],
@@ -4838,7 +4838,7 @@ const V9E = (() => {
     const out = { why: [] }, rows = T.material_tool_baselines || [], band = (T.diameter_bands || []).slice().sort((a, b) => a.lo_mm - b.lo_mm).filter(b => q.D >= b.lo_mm - 1e-9).pop();
     if (!band) { out.err = 'Ø outside the bands'; return out; }
     const act = r => r.is_active !== false && String(r.is_active) !== 'false';
-    let b = rows.find(r => act(r) && r.material === q.material && r.tool_family === q.family && r.band_id === band.band_id);
+    let b = q.material ? rows.find(r => act(r) && r.material === q.material && r.tool_family === q.family && r.band_id === band.band_id) : null;
     if (b) out.why.push('material row'); else { b = rows.find(r => act(r) && !r.material && r.group_id === q.iso && r.tool_family === q.family && r.band_id === band.band_id); if (b) out.why.push('ISO ' + q.iso + ' group row'); }
     if (!b) { out.err = `No baseline for ${q.family} in ${q.material} (Ø${band.label})`; return out; }
     out.baseline = b; out.band = band;
@@ -4861,17 +4861,20 @@ const V9E = (() => {
     const lim = ops.filter(o => pos(num(o.ap_max_ratio))).sort((a, b) => spec(b) - spec(a))[0];
     let apMax = lim ? num(lim.ap_max_ratio) * q.D : Infinity, limWhy = lim ? 'ap cap ' + lim.ap_max_ratio + '×Ø (' + (lim.note || lim.operation_id) + ')' : '';
     if (pos(num(band.rigidity_ap_max_ratio)) && num(band.rigidity_ap_max_ratio) * q.D < apMax) { apMax = num(band.rigidity_ap_max_ratio) * q.D; limWhy = 'small-Ø rigidity cap ' + band.rigidity_ap_max_ratio + '×Ø'; }
+    /* 2026-10-20 (user decision): limits are information only — they are reported, never applied. Only the engagement range and the flute length set ap. */
+    out.limitInfo = [];
+    if (q.limitsInfo) { if (fin(apMax) && fin(ap) && ap > apMax + 1e-9) out.limitInfo.push(limWhy + ' — ' + (apMax).toFixed(2) + ' mm (start ap ' + ap.toFixed(2) + ' mm)'); apMax = Infinity; limWhy = ''; }
     if (pos(rg.apMax) && rg.apMax * q.D < apMax) { apMax = rg.apMax * q.D; limWhy = 'sub-cycle ap ≤ ' + rg.apMax + '×Ø'; }
     if (pos(q.flute) && q.flute < apMax) { apMax = q.flute; limWhy = 'flute length'; }
     out.apTraditional = (() => { const t = ops.filter(o => o.sub_cycle === '*' && pos(num(o.ap_max_ratio))).sort((a, b) => spec(b) - spec(a))[0]; return t ? num(t.ap_max_ratio) * q.D : NaN; })();
     if (fin(ap) && ap > apMax) { ap = apMax; out.why.push(limWhy); }
     const ld = fin(q.ldTier) ? q.ldTier : 1; if (ld < 1) { if (fin(ap)) ap *= ld; out.why.push('L/D ×' + ld); }
     const rm = rangeAt(po, rg.aeNom, fin(ap) ? ap / q.D : NaN); if (rm.apVc !== 1 || rm.apFz !== 1) out.why.push(`ap ${(ap / q.D).toFixed(2)}×Ø: Vc ×${rm.apVc.toFixed(2)}, fz ×${rm.apFz.toFixed(2)}`);
-    const Vc = +b.Vc_base * rm.vc * vCool(q.iso, q.coolant);
-    if (vCool(q.iso, q.coolant) !== 1) out.why.push('coolant ×' + vCool(q.iso, q.coolant));
+    const vcool = q.noCoolant ? 1 : vCool(q.iso, q.coolant), Vc = +b.Vc_base * rm.vc * vcool; out.rm = rm;
+    if (vcool !== 1) out.why.push('coolant ×' + vcool);
     /* 2026-10-19: same multipliers as the calculator — bull-nose axial thinning when the starting ap is under the corner R */
     const mx = fin(ae) ? mults({ D: q.D, R: q.R || 0, ball: /ball/.test(q.type || ''), ae, ap: fin(ap) ? ap : 0, iso: q.iso }) : null;
-    const cth = mx && !isOff('thinning') ? mx.sTot : 1; out.mx = mx;
+    const cth = mx && (q.forceThin || !isOff('thinning')) ? mx.sTot : 1; out.mx = mx;
     out.Vc = Vc; out.fz = fz * rm.fz * cth * ld; out.po = po; out.fzBase = fz; out.cth = cth; out.ae = ae; out.ap = ap; out.apMax = apMax; out.perRev = perRev;
     out.VcBase = +b.Vc_base; out.basis = b.estimate_basis; out.capped = b.was_capped === true || b.was_capped === 'true'; if (out.capped) out.why.push('catalogue value capped at 2× typical');
     return out;
@@ -5220,6 +5223,181 @@ const V9M = (() => {
   return { build, seed, TABLES: ['material_groups', 'material_factors', 'diameter_bands', 'material_tool_baselines', 'multiplier_profiles', 'profile_op', 'cycle_map', 'cycle_reference', 'operations', 'rules_engine', 'tool_type_defaults', 'spindle_setup'], toolRow, TYPE, FACTORY };
 })();
 /*V9M-END*/
+/*NX-BEGIN*/
+/* ===================== NEW LINEAR WORKFLOW (2026-10-20) =====================
+   Material group › material (optional) › machining style (3-axis / 3+2 / 5-axis) › tool › machine (optional) ›
+   category › operation › style (where the operation has styles) › pass (rough / semi / finish, where the category has one) ›
+   hyperMILL cycle (traceability only — never changes a number).
+   Everything here is data the user can edit (Cutting data → Operations, Engagement, Pass tables):
+     lib/ops        one row per operation: category, name, styles, hyperMILL cycles, fixed class for holes.
+     profile_op     the engagement values (ae / ap ranges, Vc × / fz ×) per operation (+ style) and pass; profile id 'E.<op>' or
+                    'E.<op>/<style>'. A row's scope is '' (every material) or a list joined by '|' of materials and '@<ISO group>'s,
+                    so one row can cover SS 316 and 13-8PH together.
+     pass_mult      Vc × / fz × per tool family for semi and finish.
+   Pure functions, no DOM: NX.recommend(V9E, T, q) gives the starting values and the steps that built them. */
+const NX = (() => {
+  const CATS = [['rough', 'Roughing', false], ['contour', '2.5D / Contour', true], ['surf', 'Surfaces', true], ['holes', 'Holes', false], ['edges', 'Edges and chamfers', true], ['misc', 'Misc', false]];
+  const CAT = Object.fromEntries(CATS.map(([k, n, p]) => [k, { key: k, name: n, pass: p }]));
+  const AXES = ['3', '3+2', '5'], AXN = { '3': '3-axis', '3+2': '3+2-axis', '5': '5-axis' };
+  const PASSES = ['rough', 'semi', 'finish'], PASSN = { rough: 'Rough', semi: 'Semi-finish', finish: 'Finish' };
+  /* seed: key, category, name, [styles [key, name, old profile]], old profile, class (holes), hyperMILL cycles, old sub-cycle keys (style after ':') */
+  const S = (key, cat, name, prof, hm, legacy, extra) => Object.assign({ key, cat, name, prof, hm, legacy }, extra || {});
+  const SEED = [
+    S('trochoidal', 'rough', 'Trochoidal roughing', 'P21', ['3D Optimized Roughing', '3D Arbitrary Stock Roughing', '5X Optimized Rest Roughing', '5X MB Roughing', '5X Tube Roughing'], ['roughing.trochoidal', 'roughing.arbitrary-trochoidal', 'ax5.rest-rough', 'mb.rough', 'tube.rough']),
+    S('hf-shallow', 'rough', 'High feed shallow roughing', 'P03', ['3D Optimized Roughing', '3D Arbitrary Stock Roughing'], ['roughing.hf-shallow', 'roughing.arbitrary-hf-shallow']),
+    S('shoulder', 'rough', 'Shoulder roughing', 'P04', ['Contour Milling', '3D Optimized Roughing'], []),
+    S('traditional', 'rough', 'Traditional roughing', 'P04', ['3D Optimized Roughing', '3D Arbitrary Stock Roughing', '3D Blade Roughing'], ['roughing.traditional', 'roughing.arbitrary', 'mb.blade-rough-3d']),
+    S('full-slot', 'rough', 'Full slot roughing', 'P20', ['Contour Milling', 'Pocket Milling'], ['slotting.full']),
+    S('pocket-rough', 'rough', 'Pocket roughing', 'P05', ['Pocket Milling', 'Rectangular Pocket', 'Circular Pocket', 'Inclined Pocketing', '3D Optimized Roughing'], ['roughing.pocket']),
+    S('plunge', 'rough', 'Plunge roughing', 'P06', ['Plunge Milling', '5X MB Plunge Roughing'], ['roughing.plunge', 'mb.plunge-rough']),
+    S('shape-offset', 'rough', 'Shape-offset roughing', 'P07', ['5X Shape Offset Roughing'], ['roughing.shape-offset']),
+    S('rest-rough', 'rough', 'Rest roughing', 'P04', ['3D Optimized Roughing', 'Rest Machining'], []),
+    S('floor', 'contour', 'Floor milling', 'P11', ['3D Plane Machining', 'Pocket Milling', 'Face Milling'], ['finishing.plane']),
+    S('wall', 'contour', 'Wall milling', 'P09', ['Contour Milling', 'Contour Milling on 3D Model', 'Inclined Contouring', '5X Contouring', 'Playback Milling'],
+      ['contouring.2d:stepdown', 'contouring.2d-3d:stepdown', 'contouring.inclined:stepdown', 'contouring.5x:stepdown', 'contouring.playback:stepdown', 'contouring.spiral:spiral', 'contouring.full-flute:full-flute'],
+      { styles: [['stepdown', 'Stepdown', 'P09'], ['spiral', 'Spiral', 'P10'], ['full-flute', 'Full flute', 'P09']] }),
+    S('pocket', 'contour', 'Pocket milling', 'P05', ['Pocket Milling', 'Rectangular Pocket', 'Circular Pocket', 'Inclined Pocketing'], ['pocketing.circular', 'pocketing.rectangular', 'pocketing.inclined', 'pocketing.general']),
+    S('face', 'contour', 'Face milling', 'P19', ['Face Milling', '3D Plane Machining'], ['pocketing.face']),
+    S('free-path', 'contour', 'Free path milling', 'P08', ['3D Free Path Milling', '5X Free Path Milling'], ['finishing.free-path', 'ax5.free-path']),
+    S('undercut', 'contour', 'T-slot and undercut', 'P20', ['T-Slot Milling on 3D Model', 'Contour Milling'], ['edges.tslot-3d:tslot', 'slotting.tslot-2d:tslot', 'slotting.keyseat:woodruff', 'slotting.saw:saw'],
+      { styles: [['tslot', 'T-slot', 'P20'], ['woodruff', 'Woodruff / keyseat', 'P20'], ['saw', 'Slitting saw', 'P20']] }),
+    S('z-level', 'surf', 'Z level surfacing', 'P08', ['3D Z-Level Finishing', '3D Z-Level Shape Finishing', '5X Z-Level Finishing'], ['finishing.z-level', 'ax5.z-level']),
+    S('profile', 'surf', 'Profile surfacing', 'P08', ['3D Profile Finishing', '5X Profile Finishing', '3D Rib and Groove Machining'], ['finishing.profile', 'ax5.profile', 'finishing.rib-groove']),
+    S('iso', 'surf', 'ISO machining', 'P08', ['3D ISO Machining'], ['finishing.iso']),
+    S('equidistant', 'surf', 'Equidistant surfacing', 'P08', ['3D Equidistant Finishing', '5X Equidistant Finishing', '5X Shape Offset Finishing', '3D Complete Finishing'], ['finishing.equidistant', 'ax5.equidistant', 'ax5.shape-offset-finish', 'finishing.complete']),
+    S('rest', 'surf', 'Rest and pencil', 'P12', ['3D Pencil Milling', '3D Corner Rest Machining', '3D Automatic Rest Machining', '3D Rework Machining', '5X Rest Machining', '5X Corner Rest Machining', '5X Rework Machining', 'Rest Machining'],
+      ['finishing.pencil:pencil', 'finishing.corner-rest:corner', 'finishing.auto-rest:auto', 'rest.general:auto', 'rest.corner:corner', 'rest.rework:auto', 'ax5.rest:auto', 'ax5.corner-rest:corner', 'ax5.rework:auto'],
+      { styles: [['pencil', 'Pencil', 'P12'], ['corner', 'Corner rest', 'P12'], ['auto', 'Automatic rest', 'P12']] }),
+    S('swarf', 'surf', 'Swarf and flank', 'P13', ['5X Swarf Cutting One Curve', '5X Swarf Cutting Two Curves', '5X Cutting Edge Swarf', '5X Blade Swarf Cutting', '5X MB Flank Milling', '5X MB Edge Milling'],
+      ['ax5.swarf-1', 'ax5.swarf-2', 'edges.cutting-edge-swarf-5x', 'ax5.blade-flank', 'ax5.blade-swarf', 'mb.flank', 'mb.edge']),
+    S('5x-special', 'surf', '5-axis special', 'P08', ['5X Radial Machining', '5X Halfpipe Machining', '5X Top Milling', '5X ISO Top Milling', '5X Tangent Machining', '5X Tangent Plane Machining', '5X Prismatic Fillet Finishing',
+      '5X Blade Point Milling', '5X Blade Platform Machining', '5X Blade Top Milling', '5X Blade Tangent Milling', '5X MB Hub Finishing', '5X MB Point Milling', '5X MB Fillet Milling', '5X Tube Finishing', '5X Tube Rest Machining'],
+      ['ax5.blade-point', 'ax5.blade-top', 'ax5.radial', 'ax5.tangent-plane', 'ax5.halfpipe', 'ax5.top', 'ax5.iso-top', 'ax5.tangent', 'ax5.prismatic-fillet', 'mb.hub', 'mb.point', 'mb.fillet', 'mb.platform', 'tube.finish', 'tube.rest']),
+    S('spot', 'holes', 'Spot / centre drilling', 'P14', ['Centering'], ['drilling.spot'], { cls: 'drill' }),
+    S('drill', 'holes', 'Drilling', 'P14', ['Simple Drilling'], ['drilling.simple'], { cls: 'drill' }),
+    S('peck', 'holes', 'Peck and deep drilling', 'P14', ['Drilling with Chip Break / Pecking', 'Optimized Deep Hole Drilling', 'Gun Drilling'], ['drilling.peck', 'drilling.deep', 'drilling.gun'], { cls: 'drill' }),
+    S('ream', 'holes', 'Reaming', 'P16', ['Reaming'], ['reaming.simple'], { cls: 'ream' }),
+    S('bore', 'holes', 'Boring', 'P16', ['Boring', 'Back Boring'], ['boring.single', 'boring.back'], { cls: 'bore' }),
+    S('helical', 'holes', 'Helical interpolation', 'P15', ['Helical Drilling', '5X Helical Drilling', 'Circular Pocket'], ['drilling.helical', 'drilling.helical-5x'], { cls: 'rough', circ: true }),
+    S('thread-mill', 'holes', 'Thread milling', 'P17', ['Thread Milling'], ['threading.mill'], { cls: 'thread', circ: true }),
+    S('tap', 'holes', 'Tapping', 'P17', ['Tapping'], ['threading.tap'], { cls: 'thread', tap: true }),
+    S('chamfer', 'edges', 'Chamfer', 'P18', ['Chamfer Milling on 3D Model', 'Contour Milling'], ['edges.chamfer', 'edges.chamfer-3d']),
+    S('deburr', 'edges', 'Deburr and cutting edge', 'P18', ['3D Cutting Edge Machining', '5X Cutting Edge Plunge'], ['edges.cutting-edge-3d', 'edges.cutting-edge-plunge-5x']),
+    S('back-chamfer', 'edges', 'Back chamfer', 'P18', ['Contour Milling'], ['edges.back-chamfer']),
+    S('engraving', 'edges', 'Engraving', 'P18', [], ['engraving.text']),
+    S('probing', 'misc', 'Probing', '', ['3D Point Probing', 'Workpiece Alignment Along Edge', 'Workpiece Alignment Along with Holes', 'Rectangular Probing', 'Slot-Rib Probing', 'Circular Probing', 'Axis Dependent Probing'],
+      ['probing.point', 'probing.edge', 'probing.holes', 'probing.rect', 'probing.slot-rib', 'probing.circular', 'probing.axis'], { nospeeds: true })];
+
+  const pidOf = (op, style) => 'E.' + (op && op.key || op) + (style ? '/' + style : '');
+  const styleList = op => Array.isArray(op && op.styles) ? op.styles.filter(s => s && s.key) : [];
+  const hasPass = op => !!(op && CAT[op.cat] && CAT[op.cat].pass);
+  /* the engagement class the values are looked up under */
+  const clsOf = (op, pass) => !op ? 'rough' : op.cat === 'rough' ? 'rough' : !hasPass(op) ? (op.cls || 'rough') : (PASSES.includes(pass) ? pass : 'finish');
+  const passesOf = op => !op || op.nospeeds ? [] : op.cat === 'rough' ? ['rough'] : !hasPass(op) ? [op.cls || 'rough'] : PASSES.slice();
+  /* default hyperMILL axes for a cycle (the user ticks the real ones in Cutting data → Operations) */
+  const cycleAxes = (name, cat) => /^5X\b/i.test(name || '') ? ['5'] : /probing|drilling/i.test(cat || '') ? AXES.slice() : ['3', '3+2'];
+  const machineAxes = m => { const n = String(m && m.Machine || ''), a = String(m && (m['A Travel'] || m['C Travel'] || m['B Travel']) || '').trim();
+    return a || /\b\d*\s*U\b|UDi|variaxis|5[- ]?ax/i.test(n) ? AXES.slice() : ['3']; };
+  const listOf = v => { if (Array.isArray(v)) return v; const t = String(v == null ? '' : v).trim(); if (t[0] === '[') { try { const a = JSON.parse(t); if (Array.isArray(a)) return a; } catch (e) {} } return t.split(/[,|]/).map(x => x.trim()).filter(Boolean); };
+  const axesOf = (row, field) => listOf(row && row[field]).filter(a => AXES.includes(a));
+
+  /* ---------- scopes: '' = every material; else 'SS 316|SS13-8PH H950|@M' ---------- */
+  const scopeList = r => String(r && r.scope || '').split('|').map(x => x.trim()).filter(Boolean);
+  const META = ['profile_id', 'op_class', 'scope', 'note'];
+  /* values used = the every-material row, then rows that name the ISO group, then rows that name the material — blank fields inherit */
+  function engFor(rows, pid, cls, material, iso) {
+    rows = (rows || []).filter(r => r && r.profile_id === pid);
+    const gen = rows.find(r => r.op_class === cls && !scopeList(r).length) || rows.find(r => !scopeList(r).length) || { Vc_mult: 1, fz_mult: 1 };
+    const out = Object.assign({}, gen), layers = [];
+    const lay = test => rows.filter(r => r.op_class === cls && scopeList(r).length && scopeList(r).some(test))
+      .sort((a, b) => scopeList(b).length - scopeList(a).length) /* wider lists first, the narrowest wins */
+      .forEach(r => { let n = 0; Object.keys(r).forEach(k => { if (META.includes(k) || r[k] === '' || r[k] == null) return; out[k] = r[k]; n++; }); if (n) layers.push(scopeList(r).join(' + ')); });
+    if (iso) lay(x => x === '@' + iso);
+    if (material) lay(x => x === material);
+    out.scope = ''; out._layers = layers; return out;
+  }
+  function passFor(rows, family, pass) {
+    const r = (rows || []).find(x => x && String(x.tool_family).toUpperCase() === String(family || '').toUpperCase() && x.pass === pass) || (rows || []).find(x => x && x.tool_family === '*' && x.pass === pass);
+    const n = v => v === '' || v == null || !isFinite(+v) ? 1 : +v;
+    return r ? { vc: n(r.Vc_mult), fz: n(r.fz_mult), row: r } : { vc: 1, fz: 1, row: null };
+  }
+
+  /* ---------- starting values for one selection ----------
+     q: { op (ops row), style, pass, material ('' = the group's values), iso, family, type, D, z, R, flute, tilt, ldTier, ld (bool), stick }
+     Returns V9E.recommend's result plus: steps (how the number was built), Vc, fz (programmed, chip thinning included), fzChip (before thinning),
+     rpm, vf, warn (information only), pass multipliers. */
+  function recommend(E, T, q) {
+    const op = q.op; if (!op) return { err: 'Pick an operation' }; if (op.nospeeds) return { err: op.name + ' has no cutting data' };
+    const pid = pidOf(op, q.style && styleList(op).some(s => s.key === q.style) ? q.style : ''), cls = clsOf(op, q.pass);
+    /* engagement rows: the style's own set when it has one, else the operation's */
+    const PO = T.profile_op || [], usePid = PO.some(r => r.profile_id === pid) ? pid : pidOf(op, '');
+    const po = engFor(PO, usePid, cls, q.material, q.iso);
+    const T2 = Object.assign({}, T, { profile_op: [Object.assign({}, po, { profile_id: usePid, op_class: cls, scope: '' })] });
+    const r = E.recommend(T2, { material: q.material || '', iso: q.iso, family: q.family, type: q.type, D: q.D, z: q.z, op: cls, sub: '', parent: '', profile: usePid,
+      coolant: 'flood', noCoolant: true, flute: q.flute, R: q.R || 0, ldTier: q.ld ? q.ldTier : 1, limitsInfo: true, forceThin: true });
+    if (!r || r.err) return r || { err: 'No values' };
+    const pm = passFor(T.pass_mult, q.family, cls), b = r.baseline;
+    r.passVc = pm.vc; r.passFz = pm.fz; r.Vc *= pm.vc; r.fz *= pm.fz; r.fzChip = r.fz / (r.cth || 1); r.cls = cls; r.pid = usePid; r.eng = po;
+    const perRev = r.perRev, who = b.material || ('ISO ' + b.group_id), f = (v, d) => isFinite(v) ? (+v).toFixed(d) : '–';
+    const st = [];
+    st.push(['Base', `${who} › ${b.tool_family} › Ø${r.band.label}: Vc ${f(+b.Vc_base, 0)} m/min, chip ${f(+b.fz_base, 4)} mm${b.fz_unit === 'per_rev' ? '/rev' : ''} (${String(b.estimate_basis || '').replace(/_/g, ' ')})`]);
+    const eng = op.name + (q.style ? ' · ' + ((styleList(op).find(s => s.key === q.style) || {}).name || q.style) : '') + (hasPass(op) ? ' · ' + PASSN[cls] : '');
+    const rm = r.rm || { vc: 1, fz: 1 };
+    st.push(['Operation', `${eng}${po._layers.length ? ' (values for ' + po._layers.join(', ') + ')' : ''}${isFinite(r.ae) ? ` at ae ${f(r.ae / q.D, 3)}×Ø` : ''}${isFinite(r.ap) ? `, ap ${f(r.ap / q.D, 2)}×Ø` : ''}: Vc ×${f(rm.vc, 2)}, fz ×${f(rm.fz, 2)}`]);
+    if (hasPass(op)) st.push(['Pass', `${PASSN[cls]} for ${q.family}: Vc ×${f(pm.vc, 2)}, fz ×${f(pm.fz, 2)}${pm.row ? '' : ' (no row — ×1)'}`]);
+    if (q.ld && q.ldTier < 1) st.push(['Stick-out', `L/D reduction ×${f(q.ldTier, 2)} on ap and fz`]);
+    if (r.cth && r.cth !== 1) st.push(['Chip thinning', `×${f(r.cth, 2)}: chip ${f(r.fzChip, 4)} → programmed fz ${f(r.fz, 4)} mm`]);
+    st.push(['Result', `Vc ${f(r.Vc, 0)} m/min, fz ${f(r.fz, 4)} mm${perRev ? '/rev' : '/tooth'}`]);
+    r.steps = st;
+    r.warn = (r.limitInfo || []).slice();
+    if (r.capped) r.warn.push('Base value was capped at 2× the typical model');
+    return r;
+  }
+  /* feed and speed from Vc / fz — the simple formulas, plus the ones that are on by default for a tool type:
+     ball nose: cutting Ø at ap (tilt included on 3+2 / 5-axis); drills / reamers: feed per rev; taps: feed = pitch × rpm;
+     thread mill / helical: feed at the tool centre for the hole Ø (arc correction). */
+  function speeds(E, x) {
+    const D = x.D, z = x.z || 1, ball = /ball/.test(x.type || ''), Dc = ball && x.deff !== false ? E.deff(x.ap, D, x.tilt || 0) : D;
+    const rpm = x.Vc * 1000 / (Math.PI * Dc), o = { Dc, rpm, notes: [] };
+    if (x.tap && x.pitch > 0) { o.vf = rpm * x.pitch; o.notes.push(`tap: feed = pitch ${x.pitch} × rpm`); }
+    else if (x.perRev) { o.vf = rpm * x.fz; o.notes.push('feed per rev'); }
+    else o.vf = rpm * x.fz * z;
+    if (x.circ && x.Dh > D) { const k = x.internal === false ? (x.Dh + D) / x.Dh : (x.Dh - D) / x.Dh; o.vfEdge = o.vf; o.vf *= k; o.notes.push(`arc correction ×${k.toFixed(3)} for Ø${x.Dh} ${x.internal === false ? 'external' : 'internal'}`); }
+    if (ball && Dc < D - 1e-9) o.notes.push(`ball nose cutting Ø ${Dc.toFixed(2)} mm${x.tilt ? ' at ' + x.tilt + '° tilt' : ''}`);
+    if (x.nmax > 0 && rpm > x.nmax + .5) o.warn = `${Math.round(rpm)} rpm is over the machine's ${x.nmax} rpm`;
+    return o;
+  }
+
+  /* ---------- migration: old sub-cycle tree + value sets → operations + engagement rows ---------- */
+  function build(T) {
+    const PO = T.profile_op || [], MP = T.multiplier_profiles || [], ops = [], prof = [], rows = [], legacy = {};
+    const pname = id => (MP.find(p => p.profile_id === id) || {}).profile_name || id;
+    const copyProfile = (oldId, newId, name, op) => {
+      prof.push({ profile_id: newId, profile_name: name, is_neutral: false, toolpath_required: (MP.find(p => p.profile_id === oldId) || {}).toolpath_required || 'none', notes: oldId ? 'from value set ' + oldId + ' (' + pname(oldId) + ')' : '' });
+      passesOf(op).forEach(cls => {
+        const own = PO.filter(r => r.profile_id === oldId && r.op_class === cls);
+        if (own.length) own.forEach(r => rows.push(Object.assign({}, r, { profile_id: newId })));
+        else { const g = PO.find(r => r.profile_id === oldId && !String(r.scope || '')) || { Vc_mult: 1, fz_mult: 1, ap_cap: 'none' }; rows.push(Object.assign({}, g, { profile_id: newId, op_class: cls, scope: '' })); }
+      });
+    };
+    SEED.forEach((s, i) => {
+      const op = { key: s.key, cat: s.cat, name: s.name, order: i + 1, styles: (s.styles || []).map(([k, n]) => ({ key: k, name: n })), hm: s.hm.slice(), cls: s.cls || '', nospeeds: !!s.nospeeds, circ: !!s.circ, tap: !!s.tap, note: '' };
+      ops.push(op);
+      if (!op.nospeeds) { copyProfile(s.prof, pidOf(op), s.name, op); (s.styles || []).forEach(([k, n, p]) => copyProfile(p, pidOf(op, k), s.name + ' · ' + n, op)); }
+      s.legacy.forEach(l => { const [k, st] = l.split(':'); legacy[k] = { op: s.key, style: st || '' }; });
+    });
+    return { ops, multiplier_profiles: prof, profile_op: rows, legacy };
+  }
+  /* one logged cut → the new fields (op, style, pass, axes); null op = could not be mapped */
+  function mapCut(c, legacy, ops, machines) {
+    const m = legacy[c.subcycleKey] || null, op = m && ops.find(o => o.key === m.op), raw = String(c.subOp || c.operation || '').toLowerCase();
+    const pass = op ? clsOf(op, /semi/.test(raw) ? 'semi' : /fin/.test(raw) ? 'finish' : 'rough') : '';
+    const mc = (machines || []).find(x => x.Machine === c.machine), ax = mc ? axesOf(mc, 'Axes') : [];
+    return { nxOp: op ? op.key : '', nxStyle: m ? m.style : '', nxPass: op && hasPass(op) ? pass : '', nxAxes: ax.length === 1 ? ax[0] : '', nxCat: op ? op.cat : '', nxMapped: op ? 'auto' : 'check' };
+  }
+  return { CATS, CAT, AXES, AXN, PASSES, PASSN, SEED, pidOf, styleList, hasPass, clsOf, passesOf, cycleAxes, machineAxes, axesOf, listOf, scopeList, engFor, passFor, recommend, speeds, build, mapCut };
+})();
+/*NX-END*/
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
 let SET={ra:1.6,pref:'balanced',raK:1,tiers:null,engage:null,geo:null,srcOrder:null,locks:null,srcStyle:null,known:null};
 /* 2026-10-14 calculator engagement adjustment (lib/settings.engage): Vc boost at light ae, fz ease at deep ap */
@@ -5878,7 +6056,7 @@ function parseCSV(text){
   return rows;
 }
 async function loadSheets(id,tabs){
-  const out={},JSONC=['usableAs','opDefaults','ap','ae','hyperMILL','inputs','out','options'];
+  const out={},JSONC=['usableAs','opDefaults','ap','ae','hyperMILL','inputs','out','options','styles'];
   for(const tab of (tabs||[])){
     let csv='';
     try{
@@ -5968,7 +6146,7 @@ async function load(){
     /* 2026-10-13.1: cycle parameters rebuilt from the hyperMILL screenshots — record the key renames in the change log once */
     try{const via='CPD 2026-10-13.1';if(!CLOG.entries.some(e=>e.table==='cycleparams'&&e.via===via)){Object.entries(CP_RENAME).forEach(([a,b])=>logChange('cycleparams',a,'key',a,b,via,'same hyperMILL field; logged values under '+a+' are read as '+b));
      logChange('cycleparams','(built-in set)','rewritten','starter set','hyperMILL screenshots',via,'Log cut fields now match your hyperMILL dialogs; starter fields with no screenshot match are kept (hidden) so logged cuts keep their labels; old option wording mapped: Helix→Helical, Climb→Climb milling, Bottom-up/Top-down→Climb (upward)/Conventional (downward), Yes/No→On/Off');await saveCLOG()}}catch(e){}
-    const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{await cpPatchZL()}catch(e){console.error('cp-zlevel',e)}try{const r=await cycTreeHM();if(r)toast('Cycles regrouped as Family › hyperMILL cycle › Operation › Sub-cycle — Cycles → Cycle tree',6000)}catch(e){console.error('cycles-hm',e)}try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
+    const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{await cpPatchZL()}catch(e){console.error('cp-zlevel',e)}try{const r=await cycTreeHM();if(r)toast('Cycles regrouped as Family › hyperMILL cycle › Operation › Sub-cycle — Cycles → Cycle tree',6000)}catch(e){console.error('cycles-hm',e)}try{const r=await nxMigrate();if(r)toast(`New workflow set up: ${r.ops} operations; ${r.cuts} logged cuts tagged${r.check?' ('+r.check+' to check)':''}`,6000)}catch(e){console.error('nx-migrate',e)}try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
     await tdLoad();try{await tdAdd1015()}catch(e){}await caLoad();try{const qa=await db.collection('asks').get();ASKS=qa.docs.map(d=>({id:d.id,...dat(d)}));drawAH()}catch(e){}DBOK=true;setStatus(`${L.tools.length} tools · ${CUTS.length} cuts`,true);
   }catch(e){setStatus('Load error: '+(e.message||e.code),false)}
   SF.invalidate();renderAll();drawSync();
@@ -7296,6 +7474,37 @@ function v9PanelHtml(){let R=null;try{R=v9Run()}catch(e){console.error(e);return
  ${o.warn.map(w=>`<div class="note w" style="margin:4px 0">${esc(w)}</div>`).join('')}${o.notes.map(w=>`<div class="mu" style="font-size:13px">${esc(w)}</div>`).join('')}</details>`}
 function drawV9P(){const h=$('#v9p');if(h)h.innerHTML=v9PanelHtml()}
 document.addEventListener('toggle',e=>{if(e.target.id==='v9pd')C6.v9Open=e.target.open},true);
+/* ===================== 2026-10-20 new linear workflow: app glue ===================== */
+/* the tables the new engine reads (v9 tables + operations + pass tables) */
+const NXT=()=>Object.assign({},V9T(),{ops:L.ops||[],pass_mult:L.pass_mult||[]});
+const nxOp=k=>(L.ops||[]).find(o=>o&&o.key===k)||null;
+const nxCats=()=>NX.CATS.map(([k,n])=>({key:k,name:n,ops:(L.ops||[]).filter(o=>o&&o.cat===k).sort((a,b)=>(+a.order||0)-(+b.order||0))}));
+const nxHmAxes=name=>{const c=HMC().find(x=>x.Cycle===name);const a=c?NX.axesOf(c,'Axes'):[];return a.length?a:NX.cycleAxes(name,c&&c.Category)};
+const nxMachAxes=name=>{const m=L.machines.find(x=>x.Machine===name);if(!m)return NX.AXES.slice();const a=NX.axesOf(m,'Axes');return a.length?a:NX.machineAxes(m)};
+/* an operation is offered for a machining style when one of its hyperMILL cycles allows that style (or it has no cycles listed) */
+const nxOpAxes=op=>{const h=NX.listOf(op&&op.hm);if(!h.length)return NX.AXES.slice();return NX.AXES.filter(a=>h.some(n=>nxHmAxes(n).includes(a)))};
+/* tool families as the bases name them, e.g. BX, AL, PH */
+const nxFamilies=()=>[...new Set((L.material_tool_baselines||[]).map(r=>String(r.tool_family||'').toUpperCase()).filter(Boolean))].sort();
+const NX_FAMNAME={AL:'Aluminium end mills',BX:'Bi-helix end mills',BN:'Ball-nose end mills',BT:'Back-tapered end mills',DM:'Diamond / DLC end mills',LP:'Lollipop mills',CH:'Chamfer mills',
+ HFFM:'High-feed face mills',FM:'Face mills',PH:'T-slot / groove cutters',TS:'Woodruff / keyseat cutters',SS:'Slitting saws',TM:'Thread mills',SP:'Spot drills',CD:'Carbide drills',HSS:'HSS drills',RM:'Reamers'};
+
+/* ---------- one-time migration: cycle tree + value sets → operations, engagement rows per operation, pass tables, machine / cycle axes, cut tags ----------
+   Runs once (when lib/ops is empty). Every table it changes is copied to lib/backup-nx-<table>-<date> first; the old value sets and the
+   cycle tree stay in their tables (unused) until the final clean-up. */
+async function nxMigrate(){const via='nx-migrate 2026-10-20';if(OFFLINE||!db||(L.ops||[]).length||!(L.profile_op||[]).length)return null;
+ const d=today();for(const k of ['multiplier_profiles','profile_op','machines','cycles','pass_mult']){try{await db.doc(`lib/backup-nx-${k}-${d}`).set({v:LIB_V,at:new Date().toISOString(),rows:L[k]||[]})}catch(e){}}
+ const b=NX.build(NXT());
+ const oldP=(L.multiplier_profiles||[]).filter(p=>!/^E\./.test(p.profile_id)),oldR=(L.profile_op||[]).filter(r=>!/^E\./.test(r.profile_id));
+ L.ops=b.ops;L.multiplier_profiles=oldP.concat(b.multiplier_profiles);L.profile_op=oldR.concat(b.profile_op);
+ /* pass tables: one per tool family, ×1 until the recalculation fills them */
+ if(!(L.pass_mult||[]).length)L.pass_mult=nxFamilies().flatMap(f=>['semi','finish'].map(p=>({tool_family:f,pass:p,Vc_mult:1,fz_mult:1,note:'neutral — set by the recalculation or by you'})));
+ L.machines.forEach(m=>{if(!NX.axesOf(m,'Axes').length)m.Axes=NX.machineAxes(m).join(',')});
+ L.cycles.forEach(c=>{if(c&&!c.key&&!NX.axesOf(c,'Axes').length)c.Axes=NX.cycleAxes(c.Cycle,c.Category).join(',')});
+ for(const k of ['ops','multiplier_profiles','profile_op','pass_mult','machines','cycles'])await writeLib(k,L[k]);
+ /* logged cuts get the new tags; the old ones stay on the cut */
+ let n=0,chk=0;for(const c of CUTS){if(c.nxMapped)continue;const f=NX.mapCut(c,b.legacy,L.ops,L.machines);if(f.nxMapped==='check')chk++;Object.assign(c,f);try{await db.collection('cuts').doc(c.id).update(f);n++}catch(e){}}
+ logChange('ops','(new workflow)','created','',`${L.ops.length} operations, ${b.multiplier_profiles.length} engagement sets, ${L.pass_mult.length} pass rows`,via,`cycle tree and value sets replaced by operations › styles › passes; ${n} cuts tagged${chk?', '+chk+' to check':''}; previous tables in lib/backup-nx-*-${d}`);
+ await saveCLOG();V9B=null;SF.invalidate();return {ops:L.ops.length,cuts:n,check:chk}}
 /* ---------- health check ---------- */
 function v9Health(T){const out=[],keys=new Set((L.cycles||[]).filter(c=>c&&c.key&&c.parent).map(c=>c.key)),pids=new Set((T.multiplier_profiles||[]).map(p=>p.profile_id)),mats=new Set(L.materials.map(m=>m.Material)),grp=new Set((T.material_groups||[]).map(g=>g.iso_group_tag));
  const tools=L.tools.filter(t=>t&&t['Tool Code']).map(t=>V9M.toolRow(t,AUD.sfxOf));
