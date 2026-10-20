@@ -97,4 +97,23 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
   ok(NX.speeds(V9E, { D: 1, z: 2, Vc: 150, fz: 0.01, nmax: 12000 }).warn, 'rpm over the machine only warns');
   const b = NX.build({ profile_op: [{ profile_id: 'P09', op_class: 'finish', Vc_mult: 0.95 }], multiplier_profiles: [] });
   ok(b.ops.length > 30 && b.legacy['contouring.spiral'].style === 'spiral' && b.profile_op.some(x => x.profile_id === 'E.wall/full-flute' && x.Vc_mult === 0.95), 'migration: operations, styles and engagement copies'); }
+/* 2026-10-20 recalculation and logged-cut nudges */
+{ const ops = NX.build({ profile_op: [], multiplier_profiles: [] }).ops;
+  const r = NX.recalc({ ops, profile_op: [], pass_mult: [], material_tool_baselines: [{ tool_family: 'CD', fz_unit: 'per_tooth', fz_base: 0.2, band_id: 'B06' }, { tool_family: 'BN', fz_unit: 'per_tooth', fz_base: 0.054, band_id: 'B06' }] });
+  ok(r.material_tool_baselines[0].fz_unit === 'per_rev', 'recalc: drill feeds are per rev'); near(r.material_tool_baselines[1].fz_base, 0.019, 1e-9, 'recalc: ball-nose chip back to catalogue level');
+  const tr = (sc, k) => r.profile_op.find(x => x.profile_id === 'E.trochoidal' && x.scope === sc)[k];
+  ok(tr('@M|@S1|@S2|@H1|@H2', 'ap_ratio') === 1.5 && tr('@N1|@N2|@PL', 'ap_ratio') === 3, 'recalc: trochoidal ap 1.5×Ø stainless / hardened, 3×Ø aluminium');
+  ok(NX.engFor(r.profile_op, 'E.trochoidal', 'rough', 'SS13-8PH H950', 'H1').ap_ratio === 1.5, 'recalc: 13-8PH (H1) takes the hard values');
+  ok(r.pass_mult.some(x => x.tool_family === 'BX' && x.pass === 'finish' && x.Vc_mult === 1.1 && x.fz_mult === 0.8), 'recalc: pass tables per family');
+  const T = { ops, profile_op: r.profile_op, pass_mult: r.pass_mult, material_tool_baselines: [{ baseline_id: 'X1', material: '', group_id: 'P1', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true }],
+    diameter_bands: [{ band_id: 'B1', label: '6–12', lo_mm: 6, hi_mm: 12 }], cycle_map: [], operations: [] };
+  const tl = () => ({ D: 10, z: 4, type: 'end_mill_square', family: 'BX', fluteL: 25, R: 0 }), op = ops.find(o => o.key === 'traditional');
+  const base = NX.recommend(V9E, T, { op, pass: 'rough', material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, flute: 25 });
+  const cut = k => ({ id: 'c' + k, result: 'Good', nxOp: 'traditional', nxGrp: 'P1', tool: 'T', vc: base.Vc * 1.2, fz: base.fz, doc: base.ap, woc: base.ae });
+  const nd = NX.nudges(V9E, T, [cut(1), cut(2)], tl, () => 'P1');
+  near(nd.X1.vc, 1 + 0.5 * 0.2, 1e-6, 'nudge: two cuts pull Vc half way'); near(nd.X1.fz, 1, 1e-6, 'nudge: same chip, no fz change');
+  const nd2 = NX.nudges(V9E, T, [Object.assign(cut(3), { vc: base.Vc * 3 }), Object.assign(cut(4), { vc: base.Vc * 3 }), Object.assign(cut(5), { vc: base.Vc * 3, result: 'Bad' })], tl, () => 'P1');
+  near(nd2.X1.vc, 1.25, 1e-9, 'nudge: held at +25 %'); ok(nd2.X1.n === 2, 'nudge: Bad cuts are left out');
+  const wn = NX.recommend(V9E, T, { op, pass: 'rough', material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, flute: 25, nudge: nd });
+  near(wn.Vc, base.Vc * 1.1, 1e-9, 'nudge: applied in the recommendation'); near(wn.VcCat, base.Vc, 1e-9, 'nudge: catalogue value kept alongside'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);

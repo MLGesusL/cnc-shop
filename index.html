@@ -4889,7 +4889,7 @@ const V9E = (() => {
     if (vcool !== 1) out.why.push('coolant ×' + vcool);
     /* 2026-10-19: same multipliers as the calculator — bull-nose axial thinning when the starting ap is under the corner R */
     const mx = fin(ae) ? mults({ D: q.D, R: q.R || 0, ball: /ball/.test(q.type || ''), ae, ap: fin(ap) ? ap : 0, iso: q.iso }) : null;
-    const cth = mx && (q.forceThin || !isOff('thinning')) ? mx.sTot : 1; out.mx = mx;
+    const cth = b.value_basis === 'programmed_fz' ? 1 : mx && (q.forceThin || !isOff('thinning')) ? mx.sTot : 1; out.mx = mx; out.programmed = b.value_basis === 'programmed_fz';
     out.Vc = Vc; out.fz = fz * rm.fz * cth * ld; out.po = po; out.fzBase = fz; out.cth = cth; out.ae = ae; out.ap = ap; out.apMax = apMax; out.perRev = perRev;
     out.VcBase = +b.Vc_base; out.basis = b.estimate_basis; out.capped = b.was_capped === true || b.was_capped === 'true'; if (out.capped) out.why.push('catalogue value capped at 2× typical');
     return out;
@@ -5352,17 +5352,23 @@ const NX = (() => {
       coolant: 'flood', noCoolant: true, flute: q.flute, R: q.R || 0, ldTier: q.ld ? q.ldTier : 1, limitsInfo: true, forceThin: true });
     if (!r || r.err) return r || { err: 'No values' };
     const pm = passFor(T.pass_mult, q.family, cls), b = r.baseline;
-    r.passVc = pm.vc; r.passFz = pm.fz; r.Vc *= pm.vc; r.fz *= pm.fz; r.fzChip = r.fz / (r.cth || 1); r.cls = cls; r.pid = usePid; r.eng = po;
+    r.passVc = pm.vc; r.passFz = pm.fz; r.Vc *= pm.vc; r.fz *= pm.fz; r.cls = cls; r.pid = usePid; r.eng = po;
+    const nk = b.baseline_id || [b.material, b.group_id, b.tool_family, b.band_id].join('|'), nd = q.nudge && q.nudge[nk];
+    if (nd) { r.nudge = nd; r.VcCat = r.Vc; r.fzCat = r.fz; r.Vc *= nd.vc; r.fz *= nd.fz; }
+    r.fzChip = r.fz / (r.cth || 1);
     const perRev = r.perRev, who = b.material || ('ISO ' + b.group_id), f = (v, d) => isFinite(v) ? (+v).toFixed(d) : '–';
     const st = [];
-    st.push(['Base', `${who} › ${b.tool_family} › Ø${r.band.label}: Vc ${f(+b.Vc_base, 0)} m/min, chip ${f(+b.fz_base, 4)} mm${b.fz_unit === 'per_rev' ? '/rev' : ''} (${String(b.estimate_basis || '').replace(/_/g, ' ')})`]);
+    const pc = x => (x >= 1 ? '+' : '') + Math.round((x - 1) * 100) + ' %';
+    st.push(['Base', `${who} › ${b.tool_family} › Ø${r.band.label}: Vc ${f(+b.Vc_base, 0)} m/min, ${r.programmed ? 'programmed fz' : 'chip'} ${f(+b.fz_base, 4)} mm${b.fz_unit === 'per_rev' ? '/rev' : ''} (${String(b.estimate_basis || '').replace(/_/g, ' ')})` +
+      (r.nudge ? ` → with your ${r.nudge.n} logged cut${r.nudge.n === 1 ? '' : 's'}: Vc ${f(+b.Vc_base * r.nudge.vc, 0)} (${pc(r.nudge.vc)}), ${r.programmed ? 'fz' : 'chip'} ${f(+b.fz_base * r.nudge.fz, 4)} (${pc(r.nudge.fz)})` : '')]);
     const eng = op.name + (q.style ? ' · ' + ((styleList(op).find(s => s.key === q.style) || {}).name || q.style) : '') + (hasPass(op) ? ' · ' + PASSN[cls] : '');
     const rm = r.rm || { vc: 1, fz: 1 };
     st.push(['Operation', `${eng}${po._layers.length ? ' (values for ' + po._layers.join(', ') + ')' : ''}${isFinite(r.ae) ? ` at ae ${f(r.ae / q.D, 3)}×Ø` : ''}${isFinite(r.ap) ? `, ap ${f(r.ap / q.D, 2)}×Ø` : ''}: Vc ×${f(rm.vc, 2)}, fz ×${f(rm.fz, 2)}`]);
     if (hasPass(op)) st.push(['Pass', `${PASSN[cls]} for ${q.family}: Vc ×${f(pm.vc, 2)}, fz ×${f(pm.fz, 2)}${pm.row ? '' : ' (no row — ×1)'}`]);
     if (q.ld && q.ldTier < 1) st.push(['Stick-out', `L/D reduction ×${f(q.ldTier, 2)} on ap and fz`]);
     if (r.cth && r.cth !== 1) st.push(['Chip thinning', `×${f(r.cth, 2)}: chip ${f(r.fzChip, 4)} → programmed fz ${f(r.fz, 4)} mm`]);
-    st.push(['Result', `Vc ${f(r.Vc, 0)} m/min, fz ${f(r.fz, 4)} mm${perRev ? '/rev' : '/tooth'}`]);
+    if (r.programmed) st.push(['Chip thinning', 'none — this base is already a programmed feed']);
+    st.push(['Result', `Vc ${f(r.Vc, 0)} m/min, fz ${f(r.fz, 4)} mm${perRev ? '/rev' : '/tooth'}` + (r.nudge ? ` (catalogue only: Vc ${f(r.VcCat, 0)}, fz ${f(r.fzCat, 4)})` : '')]);
     r.steps = st;
     r.warn = (r.limitInfo || []).slice();
     if (r.capped) r.warn.push('Base value was capped at 2× the typical model');
@@ -5410,7 +5416,88 @@ const NX = (() => {
     const mc = (machines || []).find(x => x.Machine === c.machine), ax = mc ? axesOf(mc, 'Axes') : [];
     return { nxOp: op ? op.key : '', nxStyle: m ? m.style : '', nxPass: op && hasPass(op) ? pass : '', nxAxes: ax.length === 1 ? ax[0] : '', nxCat: op ? op.cat : '', nxMapped: op ? 'auto' : 'check' };
   }
-  return { CATS, CAT, AXES, AXN, PASSES, PASSN, SEED, pidOf, styleList, hasPass, clsOf, passesOf, cycleAxes, machineAxes, axesOf, listOf, scopeList, engFor, passFor, recommend, speeds, build, mapCut };
+
+  /* ---------- 2026-10-20 recalculation: engagement per operation / style / pass, pass tables, base fixes ----------
+     Ranges are × tool Ø. [aeMin, aeMax, aeStart, apMin, apMax, apStart, Vc×, fz×, Vc× at ae min, Vc× at ae max].
+     Sources: dynamic / trochoidal stepover 5–20 % of Ø within the flute length (jlccnc.com trochoidal guide, Kennametal
+     dynamic-milling notes); drilling feeds per rev (Haas general-purpose carbide drill chart); finishing passes: higher Vc,
+     lower fz (common catalogue practice). HARD = stainless, titanium, nickel and hardened groups; SOFT = aluminium, copper,
+     plastics. The user's rule: trochoidal ap 1.5×Ø in SS 316 / 13-8PH, 3×Ø in aluminium. */
+  const HARD = '@M|@S1|@S2|@H1|@H2', SOFT = '@N1|@N2|@PL';
+  const SURF = { rough: [.1, .25, .15, .05, .15, .1], semi: [.05, .12, .08, .03, .08, .05], finish: [.02, .06, .04, .01, .05, .03] };
+  const E3 = (r, s2, f) => ({ rough: r, semi: s2, finish: f });
+  const ENG = {
+    'trochoidal': { '': { rough: [.05, .15, .1, 1, 2.5, 2, 1.1, 1, 1.2, 1] }, [HARD]: { rough: [.05, .1, .07, 1, 1.5, 1.5, 1, 1, 1.1, .95] }, [SOFT]: { rough: [.1, .25, .15, 1.5, 3, 3, 1, 1, 1.1, 1] } },
+    'hf-shallow': { '': { rough: [.4, .7, .6, .03, .1, .05, 1, 1] } },
+    'shoulder': { '': { rough: [.2, .5, .3, .5, 1.5, 1, 1, 1] }, [HARD]: { rough: [.15, .3, .2, .5, 1, .75, 1, 1] }, [SOFT]: { rough: [.3, .5, .4, 1, 2, 1.5, 1, 1] } },
+    'traditional': { '': { rough: [.3, .6, .5, .25, 1, .5, 1, 1] }, [HARD]: { rough: [.3, .5, .4, .1, .5, .3, 1, 1] }, [SOFT]: { rough: [.4, .6, .5, .5, 1.5, 1, 1, 1] } },
+    'full-slot': { '': { rough: [1, 1, 1, .25, 1, .5, .9, .85] }, [HARD]: { rough: [1, 1, 1, .1, .5, .25, .8, .8] }, [SOFT]: { rough: [1, 1, 1, .5, 1, 1, .9, .85] } },
+    'pocket-rough': { '': { rough: [.3, .6, .5, .25, 1, .5, 1, 1] }, [HARD]: { rough: [.3, .5, .4, .1, .5, .3, 1, 1] }, [SOFT]: { rough: [.4, .6, .5, .5, 1.5, 1, 1, 1] } },
+    'plunge': { '': { rough: [.05, .15, .1, '', '', '', .85, .8] } },
+    'shape-offset': { '': { rough: [.2, .5, .3, .2, .5, .3, 1, 1] } },
+    'rest-rough': { '': { rough: [.1, .3, .2, .1, .5, .2, 1, 1] } },
+    'floor': { '': E3([.5, .75, .6, .1, .3, .2], [.5, .7, .6, .05, .15, .1], [.4, .7, .5, .02, .1, .05]) },
+    'wall': { '': E3([.1, .3, .2, .5, 1.5, 1], [.05, .1, .07, .5, 1.5, 1], [.02, .05, .03, .5, 1.5, 1]) },
+    'wall/stepdown': { '': E3([.1, .3, .2, .5, 1.5, 1], [.05, .1, .07, .5, 1.5, 1], [.02, .05, .03, .5, 1.5, 1]) },
+    'wall/spiral': { '': E3([.1, .3, .2, .05, .25, .1], [.05, .1, .07, .05, .2, .1], [.02, .05, .03, .02, .1, .05]) },
+    'wall/full-flute': { '': E3([.05, .15, .1, 1, 3, 2], [.03, .08, .05, 1, 3, 2], [.01, .04, .02, 1, 3, 2]) },
+    'pocket': { '': E3([.4, .6, .5, .25, 1, .5], [.3, .5, .4, .1, .5, .3], [.05, .2, .1, .5, 1, 1]) },
+    'face': { '': E3([.6, .8, .7, .02, .08, .04], [.6, .8, .7, .01, .04, .02], [.6, .8, .7, .005, .02, .01]) },
+    'free-path': { '': SURF }, 'z-level': { '': SURF }, 'profile': { '': SURF }, 'iso': { '': SURF }, 'equidistant': { '': SURF }, '5x-special': { '': SURF },
+    'undercut': { '': E3([.05, .3, .15, .05, .3, .15, .9, .8], [.05, .15, .1, .05, .3, .15, .9, .8], [.02, .08, .05, .05, .3, .15, .9, .8]) },
+    'rest': { '': E3([.05, .15, .1, .05, .15, .1, .9, .8], [.03, .08, .05, .03, .08, .05, .9, .8], [.02, .05, .03, .02, .05, .03, .9, .8]) },
+    'swarf': { '': E3([.05, .15, .1, .5, 2, 1], [.03, .08, .05, .5, 2, 1], [.01, .04, .02, .5, 2, 1]) },
+    'spot': { '': { drill: [1, 1, 1, '', '', '', 1, 1] } }, 'drill': { '': { drill: [1, 1, 1, '', '', '', 1, 1] } }, 'peck': { '': { drill: [1, 1, 1, '', '', '', .9, .9] } },
+    'ream': { '': { ream: [1, 1, 1, '', '', '', 1, 1] } }, 'bore': { '': { bore: [1, 1, 1, '', '', '', 1, 1] } },
+    'helical': { '': { rough: [.2, .5, .4, .05, .3, .15, 1, 1] } }, 'thread-mill': { '': { thread: [.05, .15, .1, 1, 2, 1, 1, 1] } }, 'tap': { '': { thread: [1, 1, 1, '', '', '', 1, 1] } },
+    'chamfer': { '': E3([.05, .2, .1, .05, .2, .1], [.05, .1, .05, .05, .1, .05], [.02, .05, .03, .02, .05, .03]) },
+    'back-chamfer': { '': E3([.05, .2, .1, .05, .2, .1], [.05, .1, .05, .05, .1, .05], [.02, .05, .03, .02, .05, .03]) },
+    'deburr': { '': E3([.02, .08, .04, .02, .08, .04], [.02, .08, .04, .02, .08, .04], [.02, .08, .04, .02, .08, .04]) },
+    'engraving': { '': E3([.05, .2, .1, .01, .05, .02, .8, .5], [.05, .2, .1, .01, .05, .02, .8, .5], [.05, .2, .1, .01, .05, .02, .8, .5]) } };
+  const PASSV = { AL: [1.05, .9, 1.1, .8], BX: [1.05, .9, 1.1, .8], BT: [1.05, .9, 1.1, .8], DM: [1.05, .9, 1.1, .8], BN: [1.05, .95, 1.1, .9], LP: [1.05, .95, 1.1, .9],
+    CH: [1, .9, 1.05, .8], FM: [1.05, .9, 1.15, .7], HFFM: [1, .8, 1, .6], PH: [1, .9, 1, .8], TS: [1, .9, 1, .8], SS: [1, .9, 1, .8] };
+  const BN_BAND = { B06: .35, B07: .22, B08: .17 };
+  const PER_REV = ['CD', 'SP', 'HSS', 'RM'];
+  const engRow = (pid, cls, a, scope, note) => { const o = { profile_id: pid, op_class: cls, scope: scope || '', ae_min: a[0], ae_max: a[1], ae_ratio: a[2], ap_min: a[3], ap_max: a[4], ap_ratio: a[5],
+    Vc_mult: a[6] != null ? a[6] : 1, fz_mult: a[7] != null ? a[7] : 1, Vc_mult_lo: a[8] != null ? a[8] : '', Vc_mult_hi: a[9] != null ? a[9] : '', fz_mult_lo: '', fz_mult_hi: '', Vc_mult_aplo: '', Vc_mult_aphi: '', fz_mult_aplo: '', fz_mult_aphi: '', ap_cap: 'flute_length', note: note };
+    if (!scope) return o; ['ae_min', 'ae_max', 'ae_ratio', 'ap_min', 'ap_max', 'ap_ratio', 'Vc_mult', 'fz_mult', 'Vc_mult_lo', 'Vc_mult_hi'].forEach(k => { if (o[k] === '') delete o[k]; }); return o; };
+  /* the recalculated tables; old rows the recalculation does not cover are kept */
+  function recalc(T) {
+    const note = 'recalculated 2026-10-20 (published practice)', ops = T.ops || [], PO = (T.profile_op || []).slice(), out = [], done = new Set();
+    ops.forEach(op => { if (op.nospeeds) return; ['', ...styleList(op).map(s => s.key)].forEach(st => {
+      const key = st ? op.key + '/' + st : op.key, spec = ENG[key] || (st ? null : ENG[op.key]); if (!spec) return; const pid = pidOf(op, st); done.add(pid);
+      Object.entries(spec).forEach(([scope, byCls]) => passesOf(op).forEach(cls => { const a = byCls[cls] || byCls.rough || byCls[Object.keys(byCls)[0]]; if (a) out.push(engRow(pid, cls, a, scope, note)); })); }); });
+    const keep = PO.filter(r => !done.has(r.profile_id));
+    const pass = Object.entries(PASSV).flatMap(([f, v]) => [{ tool_family: f, pass: 'semi', Vc_mult: v[0], fz_mult: v[1], note }, { tool_family: f, pass: 'finish', Vc_mult: v[2], fz_mult: v[3], note }]);
+    const passKeep = (T.pass_mult || []).filter(r => !PASSV[String(r.tool_family).toUpperCase()]);
+    const bases = (T.material_tool_baselines || []).map(r => { const f = String(r.tool_family || '').toUpperCase(), o = Object.assign({}, r);
+      if (PER_REV.includes(f) && o.fz_unit !== 'per_rev') { o.fz_unit = 'per_rev'; o.source_note = (o.source_note ? o.source_note + ' · ' : '') + 'feed is per rev (2026-10-20: was labelled per tooth; Haas carbide drill chart Ø8 alloy steel 0.18–0.24 mm/rev)'; }
+      if ((f === 'BN') && BN_BAND[o.band_id] && +o.fz_base > 0 && !o.fz_before_recalc) { o.fz_before_recalc = o.fz_base; o.fz_base = +(+o.fz_base * BN_BAND[o.band_id]).toPrecision(2);
+        o.source_note = (o.source_note ? o.source_note + ' · ' : '') + `2026-10-20: chip ×${BN_BAND[o.band_id]} — back to the catalogue's own value for this Ø range (was scaled up linearly from small tools)`; }
+      return o; });
+    return { profile_op: keep.concat(out), pass_mult: passKeep.concat(pass), material_tool_baselines: bases };
+  }
+  /* logged cuts nudge the bases: each Good / Stable / Good finish cut is divided back through its engagement, pass and chip thinning;
+     per base row the median ratio is pulled in by n / (n + 2) and held within ±25 %. */
+  const NUDGE_OK = /^(good|stable|good finish)$/i;
+  function nudges(E, T, cuts, toolOf, isoOf) {
+    const acc = {};
+    (cuts || []).forEach(c => { if (!NUDGE_OK.test(String(c.result || '').trim()) || !c.nxOp || !(+c.vc > 0) || !(+c.fz > 0)) return;
+      const op = (T.ops || []).find(o => o.key === c.nxOp), tl = toolOf(c.tool); if (!op || op.nospeeds || !tl || !(tl.D > 0)) return;
+      const iso = c.material ? isoOf(c.material) || c.nxGrp : c.nxGrp; if (!iso) return;
+      const r = recommend(E, T, { op, style: c.nxStyle, pass: c.nxPass, material: c.material || '', iso, family: tl.family, type: tl.type, D: tl.D, z: tl.z, flute: tl.fluteL, R: tl.R || 0 });
+      if (!r || r.err || r.perRev) return; const D = tl.D, ae = +c.woc > 0 ? +c.woc : r.ae, ap = +c.doc > 0 ? +c.doc : r.ap;
+      const rm = E.rangeAt(r.eng, ae / D, ap / D), ball = /ball/.test(tl.type || ''), mx = E.mults({ D, R: ball ? D / 2 : (tl.R || 0), ball, ae, ap: ap || 0, iso }), cth = r.programmed ? 1 : Math.min(mx.sTot, E.K.cthMax);
+      const b = r.baseline, vcB = +b.Vc_base, chB = +b.fz_base * (b.fz_unit === 'per_rev' ? 1 / (tl.z || 1) : 1);
+      const vcI = +c.vc / (rm.vc * r.passVc), chI = +c.fz / (rm.fz * r.passFz * cth);
+      if (!(vcB > 0) || !(chB > 0) || !isFinite(vcI) || !isFinite(chI)) return;
+      const k = b.baseline_id || [b.material, b.group_id, b.tool_family, b.band_id].join('|'); (acc[k] = acc[k] || { row: b, vc: [], ch: [], ids: [] }); acc[k].vc.push(vcI / vcB); acc[k].ch.push(chI / chB); acc[k].ids.push(c.id); });
+    const med = a => { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    const out = {}; Object.entries(acc).forEach(([k, x]) => { const n = x.ids.length, w = n / (n + 2), cl = v => Math.max(.75, Math.min(1.25, v));
+      out[k] = { n, vc: cl(1 + w * (med(x.vc) - 1)), fz: cl(1 + w * (med(x.ch) - 1)), rawVc: med(x.vc), rawFz: med(x.ch), ids: x.ids, row: x.row }; });
+    return out;
+  }
+  return { ENG, PASSV, recalc, nudges, CATS, CAT, AXES, AXN, PASSES, PASSN, SEED, pidOf, styleList, hasPass, clsOf, passesOf, cycleAxes, machineAxes, axesOf, listOf, scopeList, engFor, passFor, recommend, speeds, build, mapCut };
 })();
 /*NX-END*/
 const SFC={};/* engine contexts, one per material + machine, so SF.build can memoise on them */
@@ -6161,7 +6248,7 @@ async function load(){
     /* 2026-10-13.1: cycle parameters rebuilt from the hyperMILL screenshots — record the key renames in the change log once */
     try{const via='CPD 2026-10-13.1';if(!CLOG.entries.some(e=>e.table==='cycleparams'&&e.via===via)){Object.entries(CP_RENAME).forEach(([a,b])=>logChange('cycleparams',a,'key',a,b,via,'same hyperMILL field; logged values under '+a+' are read as '+b));
      logChange('cycleparams','(built-in set)','rewritten','starter set','hyperMILL screenshots',via,'Log cut fields now match your hyperMILL dialogs; starter fields with no screenshot match are kept (hidden) so logged cuts keep their labels; old option wording mapped: Helix→Helical, Climb→Climb milling, Bottom-up/Top-down→Climb (upward)/Conventional (downward), Yes/No→On/Off');await saveCLOG()}}catch(e){}
-    const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{await cpPatchZL()}catch(e){console.error('cp-zlevel',e)}try{const r=await cycTreeHM();if(r)toast('Cycles regrouped as Family › hyperMILL cycle › Operation › Sub-cycle — Cycles → Cycle tree',6000)}catch(e){console.error('cycles-hm',e)}try{const r=await nxMigrate();if(r)toast(`New workflow set up: ${r.ops} operations; ${r.cuts} logged cuts tagged${r.check?' ('+r.check+' to check)':''}`,6000)}catch(e){console.error('nx-migrate',e)}try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
+    const q=await db.collection('cuts').get();CUTS=q.docs.map(d=>({id:d.id,...dat(d)}));try{await cpPatchZL()}catch(e){console.error('cp-zlevel',e)}try{const r=await cycTreeHM();if(r)toast('Cycles regrouped as Family › hyperMILL cycle › Operation › Sub-cycle — Cycles → Cycle tree',6000)}catch(e){console.error('cycles-hm',e)}try{const r=await nxMigrate();if(r)toast(`New workflow set up: ${r.ops} operations; ${r.cuts} logged cuts tagged${r.check?' ('+r.check+' to check)':''}`,6000)}catch(e){console.error('nx-migrate',e)}try{const r=await nxRecalc();if(r)toast(`Cutting data recalculated (${r.nb} base rows corrected) — Cutting data → Bases to review`,6000)}catch(e){console.error('nx-recalc',e)}try{KB=(await db.collection('knowledge').get()).docs.map(d=>({id:d.id,...dat(d)}))}catch(e){}
     await tdLoad();try{await tdAdd1015()}catch(e){}await caLoad();try{const qa=await db.collection('asks').get();ASKS=qa.docs.map(d=>({id:d.id,...dat(d)}));drawAH()}catch(e){}DBOK=true;setStatus(`${L.tools.length} tools · ${CUTS.length} cuts`,true);
   }catch(e){setStatus('Load error: '+(e.message||e.code),false)}
   SF.invalidate();renderAll();drawSync();
@@ -7232,7 +7319,7 @@ document.addEventListener('click',e=>{const t=e.target.closest&&e.target.closest
  if(t.id==='c6mat')return c6MatSheet();if(t.id==='c6geo'||t.id==='c6geo2')return c6ToolSheet();
  const S=NXS.calc,o=nxOp(S.op);if(!o||!NX.hasPass(o))return;S.pass=NX.PASSES[(NX.PASSES.indexOf(S.pass)+1)%3];nxApply('calc')});
 
-function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.grp,NXS.calc,NXO,v.holder,(L.pass_mult||[]).length,v.mach,v.band,v.so,(L.profile_op||[]).length,(L.material_tool_baselines||[]).length,C6.op,C6.srcSel||'',C6.adv.coolant,(L.calc_fields||[]).length,JSON.stringify(SET.tiers||null),JSON.stringify(L.rules||[]),SET.raK,(L.baseline||[]).length])}
+function c6Sig(){const v=CALCV;return JSON.stringify([v.tool,v.mat,v.grp,NXS.calc,NXO,nxNudgeOn(),CUTS.length,v.holder,(L.pass_mult||[]).length,v.mach,v.band,v.so,(L.profile_op||[]).length,(L.material_tool_baselines||[]).length,C6.op,C6.srcSel||'',C6.adv.coolant,(L.calc_fields||[]).length,JSON.stringify(SET.tiers||null),JSON.stringify(L.rules||[]),SET.raK,(L.baseline||[]).length])}
 function drawCalc6(force){const h=$('#calc6');if(!h)return;const sg=c6Sig();if(force||sg!==C6.sig){C6.sig=sg;c6Reset()}
  const a=document.activeElement,id=a&&h.contains(a)?a.id:'',raw=id?a.value:null,pos=id?(()=>{try{return a.selectionStart}catch(e){return null}})():null;h.innerHTML=calc6Html();
  /* the box being typed in keeps exactly what was typed (a space in "37 BX", the "0." of "0.05") */
@@ -7575,7 +7662,7 @@ function nxLdTier(D,tl){if(!NXO.ld)return 1;let so=v9n(CALCV.so);if(!(so>0)||!tl
  try{const sg=V9E.segments(Object.assign({D},tl),so),M9=V9E.MAT[tl.material]||V9E.MAT.carbide,E=M9[0],bm=V9E.beam(sg.segs,E,M9[1],sg.tipMass),dRef=tl.necked&&tl.neckD>0?tl.neckD:sg.dFlute,ldq=Math.cbrt(3*E*Math.PI*dRef**4/64/bm.k)/dRef;return V9E.ldTier(ldq)}catch(e){return 1}}
 /* starting values for the calculator's selection */
 function nxStart(D,Z){const S=NXS.calc,op=nxOp(S.op);if(!op||!(D>0))return null;const iso=nxIso(S);if(!iso)return null;const tl=v9Tool(CALCV.tool),G=c6Geo();
- return NX.recommend(V9E,NXT(),{op,style:S.style,pass:S.pass,material:S.mat,iso,family:tl.family,type:tl.type,D,z:Z>0?Z:1,flute:tl.fluteL,R:G.R||0,ld:NXO.ld,ldTier:nxLdTier(D,tl)})}
+ return NX.recommend(V9E,NXT(),{op,style:S.style,pass:S.pass,material:S.mat,iso,family:tl.family,type:tl.type,D,z:Z>0?Z:1,flute:tl.fluteL,R:G.R||0,ld:NXO.ld,ldTier:nxLdTier(D,tl),nudge:nxNudgeMap()})}
 /* how the number was built + information-only warnings, under the calculator */
 function nxWhyHtml(){const d=C6.def||{},r=d.nx;if(!r)return '';if(r.err)return `<div class="note w" style="margin:8px">${esc(r.err)}</div>`;
  const S=NXS.calc,op=nxOp(S.op),G=c6Geo(),st=C6.st,g=k=>{const x=c6Row(k);return x?st[x.key]:NaN},ae=g('ae'),ap=g('ap'),fz=g('fz'),D=g('D')||G.D;
@@ -7595,7 +7682,7 @@ function nxLogApply(typing){const S=nxFix(NXS.log),set=(id,v)=>{const el=$('#f_'
  const fc=$('#f_cycle');if(fc)fc.dispatchEvent(new Event('change',{bubbles:true}));if(typeof calc==='function'&&$('#o_rpm'))calc()}
 /* recommended start for Log cut's selection (same engine as the calculator, no optional formulas) */
 function nxLogRec(code){const S=NXS.log,op=nxOp(S.op),t=tool(code);if(!op)return {err:'Pick the operation in step 2 for a recommended start'};if(op.nospeeds)return null;const iso=nxIso(S);if(!iso||!t)return null;
- const tl=v9ToolOf(code)||{},D=+t['Diameter (mm)'],z=+t.Flutes||1,r=NX.recommend(V9E,NXT(),{op,style:S.style,pass:S.pass,material:S.mat,iso,family:tl.family||AUD.sfxOf(code),type:tl.type,D,z,flute:tl.fluteL,R:tl.R||0});
+ const tl=v9ToolOf(code)||{},D=+t['Diameter (mm)'],z=+t.Flutes||1,r=NX.recommend(V9E,NXT(),{op,style:S.style,pass:S.pass,material:S.mat,iso,family:tl.family||AUD.sfxOf(code),type:tl.type,D,z,flute:tl.fluteL,R:tl.R||0,nudge:nxNudgeMap()});
  if(!r||r.err)return r;return {vc:r.Vc,fz:r.perRev?r.fz/z:r.fz,ap:isFinite(r.ap)?r.ap:null,ae:isFinite(r.ae)?Math.min(r.ae,D):null,basedOn:r.steps.slice(0,-1).map(x=>x[1]).join(' · ')}}
 /* a logged cut's new tags as one line, e.g. "Wall milling · Spiral · Semi-finish · 3+2-axis" */
 const nxCutLabel=c=>{const o=nxOp(c.nxOp);if(!o)return c.nxOp||'';const st=NX.styleList(o).find(x=>x.key===c.nxStyle);return [o.name,st&&st.name,c.nxPass&&NX.PASSN[c.nxPass],c.nxAxes&&NX.AXN[c.nxAxes]].filter(Boolean).join(' · ')};
@@ -7709,7 +7796,7 @@ let NXR={grp:'',mat:'',tool:'',axes:'3',cat:'',q:''};
 function nxRecRows(){const S=NXR,t=tool(S.tool),iso=S.mat?nxIsoOfMat(S.mat)||S.grp:S.grp;if(!t||!iso)return null;const tl=v9ToolOf(S.tool)||{},D=+t['Diameter (mm)'],z=+t.Flutes||1,T=NXT(),q=S.q.toLowerCase();
  return nxCats().filter(c=>!S.cat||c.key===S.cat).map(c=>({c,rows:c.ops.filter(o=>!o.nospeeds&&nxOpAxes(o).includes(S.axes)).flatMap(o=>{const sts=NX.styleList(o);return (sts.length?sts:[{key:'',name:''}]).flatMap(st=>NX.passesOf(o).map(cls=>{
   const lab=[c.name,o.name,st.name,NX.hasPass(o)?NX.PASSN[cls]:''].join(' ').toLowerCase();if(q&&!lab.includes(q))return null;
-  const r=NX.recommend(V9E,T,{op:o,style:st.key,pass:cls,material:S.mat,iso,family:tl.family||AUD.sfxOf(S.tool),type:tl.type,D,z,flute:tl.fluteL,R:tl.R||0});
+  const r=NX.recommend(V9E,T,{op:o,style:st.key,pass:cls,material:S.mat,iso,family:tl.family||AUD.sfxOf(S.tool),type:tl.type,D,z,flute:tl.fluteL,R:tl.R||0,nudge:nxNudgeMap()});
   if(!r||r.err)return {o,st,cls,err:r?r.err:'no values'};const sp=NX.speeds(V9E,{D,z,type:tl.type,Vc:r.Vc,fz:r.fz,ap:r.ap,perRev:r.perRev,tilt:0});
   const mine=CUTS.filter(x=>x.nxOp===o.key&&(x.nxStyle||'')===st.key&&x.tool===S.tool&&(S.mat?x.material===S.mat:(x.nxGrp||nxIsoOfMat(x.material))===iso)).length;
   return {o,st,cls,r,sp,mine}})).filter(Boolean)})})).filter(x=>x.rows.length)}
@@ -7726,6 +7813,29 @@ const nxRecDraw=()=>{const h=$('#nxrecw');if(!h)return;const a=document.activeEl
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('button[data-nxr]');if(!b)return;NXR[b.dataset.nxr]=b.dataset.v;nxRecDraw()});
 document.addEventListener('change',e=>{const el=e.target;if(!el.dataset||!el.dataset.nxr||el.tagName==='BUTTON')return;NXR[el.dataset.nxr]=el.value;if(el.dataset.nxr==='grp'&&NXR.mat&&nxIsoOfMat(NXR.mat)!==NXR.grp)NXR.mat='';if(el.dataset.nxr==='mat'&&el.value)NXR.grp=nxIsoOfMat(el.value)||NXR.grp;nxRecDraw()});
 let NXRT=null;document.addEventListener('input',e=>{const el=e.target;if(!el.dataset||!el.dataset.nxri)return;NXR[el.dataset.nxri]=el.value;clearTimeout(NXRT);NXRT=setTimeout(nxRecDraw,el.dataset.nxri==='q'?250:150)});
+/* ---------- 2026-10-20 recalculation (one time) and logged cuts nudging the bases ---------- */
+async function nxRecalc(){const via='nx-recalc 2026-10-20';if(OFFLINE||!db||!(L.ops||[]).length||CLOG.entries.some(e=>e.via===via))return null;const d=today();
+ for(const k of ['profile_op','pass_mult','material_tool_baselines']){try{await db.doc(`lib/backup-recalc-${k}-${d}`).set({v:LIB_V,at:new Date().toISOString(),rows:L[k]||[]})}catch(e){}}
+ const r=NX.recalc(NXT()),cnt=k=>(L[k]||[]).length;const nb=r.material_tool_baselines.filter((x,i)=>JSON.stringify(x)!==JSON.stringify(L.material_tool_baselines[i])).length;
+ L.profile_op=r.profile_op;L.pass_mult=r.pass_mult;L.material_tool_baselines=r.material_tool_baselines;
+ for(const k of ['profile_op','pass_mult','material_tool_baselines'])await writeLib(k,L[k]);
+ logChange('profile_op','(recalculation)','engagement, pass tables, bases','',`${cnt('profile_op')} engagement rows, ${cnt('pass_mult')} pass rows, ${nb} base rows corrected`,via,`drill / spot / HSS / reamer feeds marked per rev; ball-nose chip Ø6–15.99 back to catalogue level; engagement ranges per operation with stainless / Ti / Ni / hardened and aluminium / copper / plastic values; previous tables in lib/backup-recalc-*-${d}`);
+ await saveCLOG();V9B=null;SF.invalidate();return {nb}}
+const nxNudgeOn=()=>!(SETDOC&&SETDOC.cutsNudge===false);
+let NXN={k:'',m:null};
+function nxNudgeMap(force){if(!nxNudgeOn()&&!force)return null;const k=[CUTS.length,CUTS.filter(c=>c.nxOp).length,(L.profile_op||[]).length,JSON.stringify(L.pass_mult||[]).length,(L.material_tool_baselines||[]).length,ED?ED.log.length:0].join('|');
+ if(NXN.k!==k){NXN.k=k;try{NXN.m=NX.nudges(V9E,NXT(),CUTS,c=>{const t=tool(c);if(!t)return null;const x=v9ToolOf(c)||{};return {D:+t['Diameter (mm)'],z:+t.Flutes||1,type:x.type,family:x.family||AUD.sfxOf(c),fluteL:x.fluteL,R:x.R||0}},nxIsoOfMat)}catch(e){console.error('nudges',e);NXN.m={}}}return NXN.m}
+function nxNudgeCard(){const h=$('#pbody');if(!h)return;const on=nxNudgeOn(),m=nxNudgeMap(true)||{},rows=Object.values(m).sort((a,b)=>Math.max(Math.abs(b.vc-1),Math.abs(b.fz-1))-Math.max(Math.abs(a.vc-1),Math.abs(a.fz-1)));
+ const pc=x=>(x>=1?'+':'')+Math.round((x-1)*100)+' %',big=x=>Math.abs(x.vc-1)>.15||Math.abs(x.fz-1)>.15;
+ const div=document.createElement('div');div.className='card';div.id='nxnudge';
+ div.innerHTML=`<h2>Your logged cuts and the bases</h2><label class="nxtick"><input type="checkbox" data-nav="1" id="nxnudgeon"${on?' checked':''}> <b>Let logged cuts nudge the base values</b></label>
+ <p class="mu" style="margin:4px 0">Cuts with result Good, Stable or Good finish are divided back through their engagement, pass and chip thinning. For each base row the median is pulled in by n ÷ (n + 2) and held within ±25 %. The calculator and tables show both the catalogue and the nudged value. ${on?'On':'Off'} now — ${rows.length} base row${rows.length===1?'':'s'} have cuts${rows.filter(big).length?`, <b>${rows.filter(big).length} move more than 15 %</b> (marked ⚠ — check them)`:''}.</p>
+ ${rows.length?`<details${rows.filter(big).length?' open':''}><summary>Review the rows your cuts move</summary><div class="tw"><table><thead><tr><th>Base row</th><th class="n">Cuts</th><th class="n">Vc catalogue</th><th class="n">Vc with cuts</th><th class="n">chip catalogue</th><th class="n">chip with cuts</th><th class="n">Your cuts say</th><th></th></tr></thead><tbody>
+ ${rows.map(x=>{const b=x.row;return `<tr><td>${esc(b.material||'ISO '+b.group_id)} › ${esc(b.tool_family)} › ${esc((v9Bands().find(z=>z.band_id===b.band_id)||{}).label||b.band_id)}</td><td class="n">${x.n}</td><td class="n">${f(+b.Vc_base)}</td><td class="n">${f(+b.Vc_base*x.vc)} <small class="mu">${pc(x.vc)}</small></td><td class="n">${f(+b.fz_base,4)}</td><td class="n">${f(+b.fz_base*x.fz,4)} <small class="mu">${pc(x.fz)}</small></td><td class="n mu">Vc ${pc(x.rawVc)}, chip ${pc(x.rawFz)}</td><td>${big(x)?'⚠':''}</td></tr>`}).join('')}</tbody></table></div></details>`:''}`;
+ h.prepend(div)}
+document.addEventListener('change',async e=>{if(e.target.id!=='nxnudgeon')return;const v=e.target.checked;SETDOC=Object.assign(SETDOC||{},{cutsNudge:v});NXN.k='';
+ if(!OFFLINE&&db){try{await db.doc('lib/settings').update({v:LIB_V,cutsNudge:v})}catch(x){try{await db.doc('lib/settings').set(Object.assign({v:LIB_V},SETDOC))}catch(y){toast('Not saved: '+(y.message||y))}}}
+ logChange('settings','logged cuts nudge bases','cutsNudge',v?'off':'on',v?'on':'off','Cutting data');saveCLOG();C6.sig='';drawParams();toast(v?'Logged cuts now nudge the bases':'Bases use catalogue values only')});
 /* ---------- health check ---------- */
 function v9Health(T){const out=[],keys=new Set((L.cycles||[]).filter(c=>c&&c.key&&c.parent).map(c=>c.key)),pids=new Set((T.multiplier_profiles||[]).map(p=>p.profile_id)),mats=new Set(L.materials.map(m=>m.Material)),grp=new Set((T.material_groups||[]).map(g=>g.iso_group_tag));
  const tools=L.tools.filter(t=>t&&t['Tool Code']).map(t=>V9M.toolRow(t,AUD.sfxOf));
@@ -8504,7 +8614,7 @@ function drawParams(){if(CUR!=='cycles'&&V9_PHP.some(x=>x[0]===PS)){PHJUMP=PS;PS
   const cc=$('#cdx_clr');if(cc)cc.onclick=()=>{CDX.iso='';CDX.fam='';drawParams()}}
  $('#lbody').querySelector('#psub').onclick=async e=>{const b=e.target.closest('[data-ps]'),k=b&&b.dataset.ps;if(!k||k===(cyc?PS2:PS))return;if(!cyc&&!(await edLeave()))return;if(cyc)PS2=k;else PS=k;drawParams();if(!cyc)window.scrollTo(0,0)};$('#lbody').onchange=null;$('#lbody').onclick=null;
  if(cyc){if(PS2==='tree')drawTreeEd();else drawParamGroups()}
- else if(PS==='bands')drawV9Bands();else if(PS==='ops')drawNxOps();else if(PS==='eng')drawNxEng();else if(PS==='pass')drawNxPass();else if(PS==='phys')drawV9LimPhys();else drawV9Setup()}
+ else if(PS==='bands'){drawV9Bands();nxNudgeCard()}else if(PS==='ops')drawNxOps();else if(PS==='eng')drawNxEng();else if(PS==='pass')drawNxPass();else if(PS==='phys')drawV9LimPhys();else drawV9Setup()}
 /* one page, four parts, each in its own container; the jump bar stays at the top while scrolling */
 function drawV9LimPhys(){try{const t=$('.top');if(t)document.documentElement.style.setProperty('--toph',Math.max(0,Math.round(t.getBoundingClientRect().bottom))+'px')}catch(e){}$('#pbody').innerHTML=`<div class="note">Everything on this page is <b>information only</b>: limits, material cutting force, machines, physics and strategy rules show figures and warnings — they never change a speed or feed. Click a part's heading to fold it away (remembered on this PC).</div><nav class="phnav noprint" aria-label="Parts of this page">${V9_PHP.map(([k,l],i)=>`<button data-nav="1" data-phj="${k}">${i+1} · ${esc(l)}</button>`).join('')}</nav>
  ${V9_PHP.map(([k,l,sub],i)=>`<section class="phpart${PHSHUT.has(k)?' shut':''}" id="ph_${k}" data-ph="${k}" aria-labelledby="phh_${k}"><h2 class="phh" id="phh_${k}" role="button" tabindex="0" aria-expanded="${!PHSHUT.has(k)}" title="Click to fold this part"><span class="phn">${i+1}</span>${esc(l)} <small class="mu">${esc(sub)}</small></h2><div class="phost" id="pb_${k}"></div></section>`).join('')}`;
