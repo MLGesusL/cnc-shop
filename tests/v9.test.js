@@ -116,4 +116,18 @@ mig.tables.rules_engine.forEach(x => { try { V9E.evalExpr(x.trigger_expression, 
   near(nd2.X1.vc, 1.25, 1e-9, 'nudge: held at +25 %'); ok(nd2.X1.n === 2, 'nudge: Bad cuts are left out');
   const wn = NX.recommend(V9E, T, { op, pass: 'rough', material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, flute: 25, nudge: nd });
   near(wn.Vc, base.Vc * 1.1, 1e-9, 'nudge: applied in the recommendation'); near(wn.VcCat, base.Vc, 1e-9, 'nudge: catalogue value kept alongside'); }
+/* 2026-10-20 roughing and finishing bases */
+{ const rows = [{ baseline_id: 'A', material: '', group_id: 'P1', tool_family: 'BX', band_id: 'B1', Vc_base: 100, fz_base: 0.05, fz_unit: 'per_tooth', is_active: true },
+    { baseline_id: 'B', material: '', group_id: 'P1', tool_family: 'BN', band_id: 'B1', Vc_base: 110, fz_base: 0.02, fz_unit: 'per_tooth', is_active: true }];
+  const pm = [{ tool_family: 'BX', pass: 'finish', Vc_mult: 1.1, fz_mult: 0.8 }, { tool_family: 'BN', pass: 'finish', Vc_mult: 1.1, fz_mult: 0.9 }, { tool_family: 'BX', pass: 'semi', Vc_mult: 1.05, fz_mult: 0.9 }];
+  let sp = NX.splitRows(rows, pm, 'BX'); sp = NX.splitRows(sp, pm, 'BN');
+  ok(sp.length === 4 && sp.filter(r => r.pass === 'finish').length === 2, 'split: one roughing and one finishing row per range');
+  near(sp.find(r => r.tool_family === 'BX' && r.pass === 'finish').Vc_base, 110, 1e-9, 'split: end-mill finishing = roughing × pass table');
+  near(sp.find(r => r.tool_family === 'BN' && r.pass === 'rough').Vc_base, 100, 1e-9, 'split: ball-nose roughing = finishing ÷ pass table');
+  const ops = NX.build({ profile_op: [], multiplier_profiles: [] }).ops, op = ops.find(o => o.key === 'wall'), T = { ops, profile_op: [{ profile_id: 'E.wall', op_class: 'finish', ae_ratio: .5, ap_ratio: 1 }, { profile_id: 'E.wall', op_class: 'semi', ae_ratio: .5, ap_ratio: 1 }], pass_mult: pm,
+    material_tool_baselines: sp.map(r => Object.assign({}, r, r.pass === 'finish' && r.tool_family === 'BX' ? { Vc_base: 150 } : {})), diameter_bands: [{ band_id: 'B1', label: '6–12', lo_mm: 6, hi_mm: 12 }], cycle_map: [], operations: [] };
+  const q = pass => ({ op, pass, material: '', iso: 'P1', family: 'BX', type: 'end_mill_square', D: 10, z: 4, flute: 25 });
+  near(NX.recommend(V9E, T, q('finish')).Vc, 150, 1e-9, 'finish uses the finishing base, pass table not applied');
+  near(NX.recommend(V9E, T, q('semi')).Vc, 105, 1e-9, 'semi uses the roughing base × the semi pass table');
+  near(NX.recommend(V9E, T, q('rough')).Vc, 100, 1e-9, 'rough uses the roughing base'); }
 console.log(bad ? `${bad} of ${n} checks failed` : `all ${n} checks passed`); process.exit(bad ? 1 : 0);
